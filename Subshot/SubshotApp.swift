@@ -16,7 +16,7 @@ struct SubshotApp: App {
         // "Development mode" banner already seen on the web test page).
     }
 
-    var body: some Scene {
+    var body: some SwiftUI.Scene {
         WindowGroup {
             RootView()
                 .environment(Clerk.shared)
