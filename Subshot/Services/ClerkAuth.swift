@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import ClerkKit
 
 /// Thin bridge between Clerk (handles sign-in/session/token) and our own
@@ -18,8 +19,12 @@ final class BackendAuth: ObservableObject {
     @Published var currentUser: Me?
 
     private init() {
+        // NOTE (2026-07-07): getToken() returns the JWT String directly in
+        // the installed SDK version — a `.jwt` was assumed from docs/older
+        // examples and didn't compile ("Value of type 'String' has no
+        // member 'jwt'").
         APIClient.shared.tokenProvider = {
-            try await Clerk.shared.session?.getToken()?.jwt
+            try await Clerk.shared.session?.getToken()
         }
     }
 

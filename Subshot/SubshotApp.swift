@@ -3,11 +3,12 @@ import ClerkKit
 
 @main
 struct SubshotApp: App {
-    @State private var clerkLoaded = false
-
     init() {
         // Publishable key from the Subshot Clerk application (dashboard.clerk.com) —
         // same value used server-side as CLERK_PUBLISHABLE_KEY in /opt/subshot/.env.
+        // SDK v1: Clerk.configure(...) alone is enough — no separate .load() call
+        // (that was the v0 API and no longer exists; caused a build error here
+        // on 2026-07-07 when the installed package turned out to be v1).
         Clerk.configure(publishableKey: "pk_test_YmlnLXNuYWtlLTY2LmNsZXJrLmFjY291bnRzLmRldiQ")
         // NOTE: this is the TEST-mode key (pk_test_...) — fine for development,
         // but swap to a pk_live_... key from a production Clerk instance before
@@ -19,10 +20,6 @@ struct SubshotApp: App {
         WindowGroup {
             RootView()
                 .environment(Clerk.shared)
-                .task {
-                    try? await Clerk.shared.load()
-                    clerkLoaded = true
-                }
         }
     }
 }
