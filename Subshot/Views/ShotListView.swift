@@ -4,10 +4,11 @@ struct ShotListView: View {
     @StateObject private var viewModel: ShotListViewModel
     let projectName: String
 
-    @State private var addingToScene: String??  // nil = not adding; .some(nil) = adding to "no scene"; .some(id) = adding to that scene
+    @State private var addingToScene: String??  // nil = not adding; .some(nil) = "no scene"; .some(id) = that scene
     @State private var newShotText = ""
     @State private var selectedShot: Shot?
     @State private var showingTeamSheet = false
+    @State private var editingScene: Scene??      // nil = sheet closed; .some(nil) = creating; .some(scene) = renaming
     @FocusState private var newRowFocused: Bool
     private let projectId: String
 
@@ -18,29 +19,26 @@ struct ShotListView: View {
     }
 
     var body: some View {
-        List {
-            // Shots with no scene assigned always show first, un-sectioned —
-            // most projects start here before any scenes exist at all.
-            shotSection(scene: nil)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 24) {
+                unassignedSection()
 
-            ForEach(viewModel.scenes, id: \.id) { scene in
-                shotSection(scene: scene)
+                ForEach(viewModel.scenes) { scene in
+                    sceneCard(scene: scene)
+                }
+
+                Button {
+                    editingScene = .some(nil)
+                } label: {
+                    Label("Szene hinzufügen", systemImage: "plus.rectangle.on.rectangle")
+                        .font(.subheadline.weight(.medium))
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 4)
             }
-
-            Button {
-                Task { await viewModel.createScene(name: nil, color: randomSceneColor()) }
-            } label: {
-                Label("Szene hinzufügen", systemImage: "plus.rectangle.on.rectangle")
-            }
-
-            // Tap-empty-area-to-add, same affordance as ProjectListView.
-            Color.clear
-                .frame(height: 80)
-                .contentShape(Rectangle())
-                .onTapGesture { startAdding(sceneId: nil) }
-                .listRowSeparator(.hidden)
+            .padding(.vertical, 16)
         }
-        .listStyle(.plain)
+        .background(Color(.systemGroupedBackground))
         .navigationTitle(projectName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -58,6 +56,20 @@ struct ShotListView: View {
         .sheet(isPresented: $showingTeamSheet) {
             TeamSheet(projectId: projectId)
         }
+        .sheet(isPresented: Binding(
+            get: { editingScene != nil },
+            set: { if !$0 { editingScene = nil } }
+        )) {
+            if case .some(let existing) = editingScene {
+                SceneEditSheet(existing: existing) { name, color in
+                    if let existing {
+                        await viewModel.renameScene(existing, name: name, color: color)
+                    } else {
+                        await viewModel.createScene(name: name.isEmpty ? "Unbenannte Szene" : name, color: color)
+                    }
+                }
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             if let pending = viewModel.pendingUndoShot {
                 undoToast(for: pending)
@@ -65,44 +77,120 @@ struct ShotListView: View {
         }
     }
 
-    @ViewBuilder
-    private func shotSection(scene: Scene?) -> some View {
-        Section {
-            ForEach(viewModel.shots(in: scene)) { shot in
-                ShotRow(shot: shot)
-                    .contentShape(Rectangle())
-                    .onTapGesture { selectedShot = shot }
-                    .swipeActions(edge: .leading) {
-                        Button {
-                            Task { await viewModel.toggleDone(shot) }
-                        } label: {
-                            Label("Erledigt", systemImage: "checkmark")
-                        }
-                        .tint(.green)
-                    }
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) {
-                            viewModel.deleteWithUndo(shot)
-                        } label: {
-                            Label("Löschen", systemImage: "trash")
-                        }
-                    }
-            }
+    // MARK: - Sections
 
-            if addingToScene == .some(scene?.id) {
-                TextField("Neue Einstellung", text: $newShotText)
-                    .focused($newRowFocused)
-                    .submitLabel(.done)
-                    .onSubmit { Task { await commitNewShot(sceneId: scene?.id) } }
+    @ViewBuilder
+    private func unassignedSection() -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(viewModel.shots(in: nil)) { shot in
+                shotCardView(shot: shot, sceneId: nil)
             }
-        } header: {
-            if let scene {
-                HStack(spacing: 6) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(Color(hex: scene.color))
-                        .frame(width: 4, height: 14)
-                    Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
+            addRow(sceneId: nil)
+        }
+        .padding(.horizontal, 16)
+        .dropDestination(for: String.self) { ids, _ in
+            guard let dragged = ids.first else { return }
+            Task { await viewModel.moveShot(dragged, toScene: nil) }
+        }
+    }
+
+    @ViewBuilder
+    private func sceneCard(scene: Scene) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sceneHeader(scene: scene)
+            ForEach(viewModel.shots(in: scene)) { shot in
+                shotCardView(shot: shot, sceneId: scene.id)
+            }
+            addRow(sceneId: scene.id)
+        }
+        .padding(12)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(.horizontal, 16)
+        .dropDestination(for: String.self) { ids, _ in
+            guard let dragged = ids.first else { return }
+            Task { await viewModel.moveShot(dragged, toScene: scene.id) }
+        }
+    }
+
+    @ViewBuilder
+    private func sceneHeader(scene: Scene) -> some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(Color(hex: scene.color))
+                    .frame(width: 14, height: 14)
+                Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
+                    .font(.headline)
+                Text("\(viewModel.shots(in: scene).count)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { editingScene = .some(scene) }
+
+            Spacer()
+
+            Menu {
+                Button {
+                    Task { await moveSceneUp(scene) }
+                } label: {
+                    Label("Nach oben", systemImage: "arrow.up")
                 }
+                Button {
+                    Task { await moveSceneDown(scene) }
+                } label: {
+                    Label("Nach unten", systemImage: "arrow.down")
+                }
+            } label: {
+                Image(systemName: "line.3.horizontal")
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 4)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func shotCardView(shot: Shot, sceneId: String?) -> some View {
+        ShotCard(shot: shot)
+            .contentShape(Rectangle())
+            .onTapGesture { selectedShot = shot }
+            .contextMenu {
+                Button {
+                    Task { await viewModel.toggleDone(shot) }
+                } label: {
+                    Label(shot.status == .done ? "Als offen markieren" : "Erledigt", systemImage: "checkmark.circle")
+                }
+                Button(role: .destructive) {
+                    viewModel.deleteWithUndo(shot)
+                } label: {
+                    Label("Löschen", systemImage: "trash")
+                }
+            }
+            .draggable(shot.id)
+            .dropDestination(for: String.self) { ids, _ in
+                guard let dragged = ids.first, dragged != shot.id else { return }
+                Task { await viewModel.moveShot(dragged, toScene: sceneId, before: shot.id) }
+            }
+    }
+
+    @ViewBuilder
+    private func addRow(sceneId: String?) -> some View {
+        if addingToScene == .some(sceneId) {
+            TextField("Neue Einstellung", text: $newShotText)
+                .focused($newRowFocused)
+                .submitLabel(.done)
+                .onSubmit { Task { await commitNewShot(sceneId: sceneId) } }
+                .padding(10)
+                .background(Color(.tertiarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+        } else {
+            Button {
+                startAdding(sceneId: sceneId)
+            } label: {
+                Label("Einstellung hinzufügen", systemImage: "plus")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -121,6 +209,8 @@ struct ShotListView: View {
         .background(.thinMaterial)
     }
 
+    // MARK: - Actions
+
     private func startAdding(sceneId: String?) {
         newShotText = ""
         addingToScene = .some(sceneId)
@@ -134,35 +224,69 @@ struct ShotListView: View {
         await viewModel.createShot(description: newShotText, sceneId: sceneId)
     }
 
-    private func randomSceneColor() -> String {
-        // Palette check-validated pastel set (see dataviz skill notes on this
-        // project) — reused from the SUBLI speaker-diarization palette rather
-        // than picking arbitrary colors that might collide under CVD.
-        let palette = ["#3875bd", "#0f7e55", "#4e4295", "#d1504f", "#b9507b", "#a64c22"]
-        return palette.randomElement() ?? "#3875bd"
+    private func moveSceneUp(_ scene: Scene) async {
+        guard let idx = viewModel.scenes.firstIndex(where: { $0.id == scene.id }), idx > 0 else { return }
+        let target = viewModel.scenes[idx - 1]
+        await viewModel.reorderScene(scene.id, before: target.id)
+    }
+
+    private func moveSceneDown(_ scene: Scene) async {
+        guard let idx = viewModel.scenes.firstIndex(where: { $0.id == scene.id }) else { return }
+        let nextIndex = idx + 2  // "insert before" semantics — see reorderScene
+        let targetId = nextIndex < viewModel.scenes.count ? viewModel.scenes[nextIndex].id : nil
+        await viewModel.reorderScene(scene.id, before: targetId)
     }
 }
 
-private struct ShotRow: View {
+/// Storyboard-style card: big photo (if one's been added) on top, description
+/// and metadata below — replaces the old compact list row so the picture
+/// itself carries the weight, matching how a shot list is actually used on
+/// set (glance at the frame, not the text).
+private struct ShotCard: View {
     let shot: Shot
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: shot.status == .done ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(shot.status == .done ? .green : .secondary)
-                .font(.title3)
+        VStack(alignment: .leading, spacing: 0) {
+            ZStack(alignment: .topLeading) {
+                if let imageUrl = shot.imageUrl {
+                    AsyncShotThumbnail(path: imageUrl, size: nil)
+                        .frame(height: 180)
+                        .frame(maxWidth: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                } else {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color(.tertiarySystemGroupedBackground))
+                        .frame(height: 90)
+                        .overlay {
+                            Image(systemName: "camera")
+                                .font(.title2)
+                                .foregroundStyle(.secondary)
+                        }
+                }
 
-            if let priority = shot.priority {
-                Circle()
-                    .fill(priorityColor(priority))
-                    .frame(width: 8, height: 8)
+                HStack(spacing: 6) {
+                    Image(systemName: shot.status == .done ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(shot.status == .done ? .green : .white)
+                        .font(.title3)
+                        .shadow(radius: 2)
+
+                    if let priority = shot.priority {
+                        Circle()
+                            .fill(priorityColor(priority))
+                            .frame(width: 8, height: 8)
+                    }
+                }
+                .padding(8)
             }
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(shot.description?.isEmpty == false ? shot.description! : "Ohne Beschreibung")
+                    .font(.subheadline.weight(.medium))
                     .strikethrough(shot.status == .done)
                     .foregroundStyle(shot.status == .done ? .secondary : .primary)
-                HStack(spacing: 6) {
+                    .lineLimit(2)
+
+                HStack(spacing: 10) {
                     if let angle = shot.cameraAngle, !angle.isEmpty {
                         Label(angle, systemImage: "camera")
                     }
@@ -173,14 +297,10 @@ private struct ShotRow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
-
-            Spacer()
-
-            if let imageUrl = shot.imageUrl {
-                AsyncShotThumbnail(path: imageUrl)
-            }
+            .padding(10)
         }
-        .padding(.vertical, 4)
+        .background(Color(.tertiarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     private func priorityColor(_ priority: ShotPriority) -> Color {

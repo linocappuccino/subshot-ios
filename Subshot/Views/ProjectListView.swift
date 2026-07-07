@@ -20,12 +20,23 @@ struct ProjectListView: View {
                 }
                 ForEach(viewModel.projects) { project in
                     NavigationLink(value: project) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(project.name).font(.body)
-                            Text(project.lastOpenedAt, style: .relative)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        HStack(spacing: 12) {
+                            Circle()
+                                .fill(Color.stable(for: project.id))
+                                .frame(width: 32, height: 32)
+                                .overlay {
+                                    Image(systemName: "film.stack")
+                                        .font(.caption)
+                                        .foregroundStyle(.white)
+                                }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(project.name).font(.body)
+                                Text(project.lastOpenedAt, style: .relative)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
+                        .padding(.vertical, 4)
                     }
                 }
                 .onDelete { indexSet in

@@ -55,11 +55,75 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
-    func createScene(name: String?, color: String) async {
+    @discardableResult
+    func createScene(name: String, color: String) async -> Scene? {
         do {
             let sortOrder = (scenes.map(\.sortOrder).max() ?? -1) + 1
             let scene = try await APIClient.shared.createScene(projectId: projectId, name: name, color: color, sortOrder: sortOrder)
             scenes.append(scene)
+            return scene
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    func renameScene(_ scene: Scene, name: String, color: String) async {
+        do {
+            let updated = try await APIClient.shared.patchScene(scene.id, name: name, color: color)
+            if let index = scenes.firstIndex(where: { $0.id == updated.id }) {
+                scenes[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Drag & drop, cross-scene case: moves `shotId` into `sceneId` (nil =
+    /// unassigned), inserted right before `targetId` if given, else appended
+    /// at the end of that scene. Also covers same-scene reordering (pass the
+    /// shot's current sceneId back in) since both are really "recompute this
+    /// scene's shot order" — reassigns every sort_order in the destination
+    /// list sequentially afterward; there's no bulk-reorder endpoint yet, so
+    /// this is one PATCH per shot in that list.
+    func moveShot(_ shotId: String, toScene sceneId: String?, before targetId: String? = nil) async {
+        guard let shot = shots.first(where: { $0.id == shotId }) else { return }
+        var destination = shots(in: scenes.first { $0.id == sceneId })
+        destination.removeAll { $0.id == shotId }
+        if let targetId, let idx = destination.firstIndex(where: { $0.id == targetId }) {
+            destination.insert(shot, at: idx)
+        } else {
+            destination.append(shot)
+        }
+        do {
+            for (index, s) in destination.enumerated() {
+                let updated = try await APIClient.shared.moveShot(s.id, sceneId: sceneId, sortOrder: index)
+                replace(updated)
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Drag & drop for scene headers themselves — reorders `scenes` and
+    /// persists the new sort_order for every scene whose position changed.
+    func reorderScene(_ sceneId: String, before targetId: String?) async {
+        var list = scenes
+        guard let scene = list.first(where: { $0.id == sceneId }) else { return }
+        list.removeAll { $0.id == sceneId }
+        if let targetId, let idx = list.firstIndex(where: { $0.id == targetId }) {
+            list.insert(scene, at: idx)
+        } else {
+            list.append(scene)
+        }
+        do {
+            for (index, sc) in list.enumerated() where sc.sortOrder != index {
+                let updated = try await APIClient.shared.patchScene(sc.id, sortOrder: index)
+                if let i = scenes.firstIndex(where: { $0.id == updated.id }) {
+                    scenes[i] = updated
+                }
+            }
+            scenes.sort { $0.sortOrder < $1.sortOrder }
         } catch {
             errorMessage = error.localizedDescription
         }

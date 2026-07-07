@@ -223,6 +223,21 @@ final class APIClient {
         return try await send(req)
     }
 
+    /// Drag & drop: reassigns scene (nil = unassigned) and position in one
+    /// call. Unlike `patchShot(_:sceneId:)` above, `sceneId` here can be
+    /// explicitly null'd out (moving a shot back to "kein Szene"), so this
+    /// builds the JSON body by hand like `patchShotFull` does.
+    func moveShot(_ id: String, sceneId: String?, sortOrder: Int) async throws -> Shot {
+        var req = try await authorizedRequest("shots/\(id)", method: "PATCH")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let payload: [String: Any] = [
+            "scene_id": sceneId ?? NSNull(),
+            "sort_order": sortOrder,
+        ]
+        req.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        return try await send(req)
+    }
+
     func deleteShot(_ id: String) async throws {
         let req = try await authorizedRequest("shots/\(id)", method: "DELETE")
         try await sendNoContent(req)

@@ -7,7 +7,10 @@ import SwiftUI
 /// APIClient's authorized-request machinery and decodes them into a UIImage.
 struct AsyncShotThumbnail: View {
     let path: String  // e.g. "/shots/{id}/image/{filename}" (already relative to baseURL)
-    var size: CGFloat = 44
+
+    /// Square frame side length. Pass `nil` for the big storyboard-card look,
+    /// where the caller applies its own (non-square) `.frame(...)` instead.
+    var size: CGFloat? = 44
 
     @State private var image: UIImage?
     @State private var failed = false
@@ -25,7 +28,7 @@ struct AsyncShotThumbnail: View {
                 ProgressView()
             }
         }
-        .frame(width: size, height: size)
+        .modifier(OptionalSquareFrame(size: size))
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .task(id: path) {
             await load()
@@ -37,6 +40,18 @@ struct AsyncShotThumbnail: View {
             image = try await APIClient.shared.fetchImage(path: path)
         } catch {
             failed = true
+        }
+    }
+}
+
+private struct OptionalSquareFrame: ViewModifier {
+    let size: CGFloat?
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let size {
+            content.frame(width: size, height: size)
+        } else {
+            content
         }
     }
 }

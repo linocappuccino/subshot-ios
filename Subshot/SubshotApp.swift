@@ -20,6 +20,9 @@ struct SubshotApp: App {
         WindowGroup {
             RootView()
                 .environment(Clerk.shared)
+                // App is dark-mode-only by design (matches the Reminders-app
+                // look this whole UI follows) — not just "supports" dark mode.
+                .preferredColorScheme(.dark)
         }
     }
 }
