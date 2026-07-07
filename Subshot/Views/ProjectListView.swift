@@ -1,0 +1,88 @@
+import SwiftUI
+import ClerkKit
+
+struct ProjectListView: View {
+    @StateObject private var viewModel = ProjectListViewModel()
+    @Environment(Clerk.self) private var clerk
+    @State private var isAddingNew = false
+    @State private var newProjectName = ""
+    @State private var path: [Project] = []
+    @FocusState private var newRowFocused: Bool
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            List {
+                if isAddingNew {
+                    TextField("Projektname", text: $newProjectName)
+                        .focused($newRowFocused)
+                        .submitLabel(.done)
+                        .onSubmit { Task { await commitNewProject() } }
+                }
+                ForEach(viewModel.projects) { project in
+                    NavigationLink(value: project) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(project.name).font(.body)
+                            Text(project.lastOpenedAt, style: .relative)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .onDelete { indexSet in
+                    Task {
+                        for index in indexSet { await viewModel.delete(viewModel.projects[index]) }
+                    }
+                }
+
+                // Reminders-style: the empty area below the list is itself the
+                // "add new" affordance, not just a small toolbar button.
+                Color.clear
+                    .frame(height: 80)
+                    .contentShape(Rectangle())
+                    .onTapGesture { startAddingNew() }
+                    .listRowSeparator(.hidden)
+            }
+            .listStyle(.plain)
+            .navigationTitle("Subshot")
+            .navigationDestination(for: Project.self) { project in
+                ShotListView(projectId: project.id, projectName: project.name)
+            }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { startAddingNew() } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.title2)
+                    }
+                }
+            }
+            .overlay {
+                if viewModel.isLoading && viewModel.projects.isEmpty {
+                    ProgressView()
+                } else if viewModel.projects.isEmpty && !isAddingNew {
+                    ContentUnavailableView(
+                        "Noch keine Projekte",
+                        systemImage: "film.stack",
+                        description: Text("Tippe auf + um dein erstes Projekt anzulegen.")
+                    )
+                }
+            }
+            .task { await viewModel.load() }
+            .refreshable { await viewModel.load() }
+        }
+    }
+
+    private func startAddingNew() {
+        newProjectName = ""
+        isAddingNew = true
+        // Focus needs a beat after the row appears in the list.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            newRowFocused = true
+        }
+    }
+
+    private func commitNewProject() async {
+        isAddingNew = false
+        guard let project = await viewModel.create(name: newProjectName) else { return }
+        path.append(project)
+    }
+}
