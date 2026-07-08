@@ -62,10 +62,10 @@ struct ProjectInfoBox: View {
                 Image(systemName: "info.circle.fill")
                     .foregroundStyle(.secondary)
                 Text("Projektinfos")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.headline)
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
+                    .font(.subheadline.weight(.bold))
                     .foregroundStyle(.secondary)
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
             }
@@ -83,7 +83,7 @@ struct ProjectInfoBox: View {
         let deletesAt = lastOpenedAt.addingTimeInterval(30 * 24 * 3600)
         let daysLeft = max(0, Calendar.current.dateComponents([.day], from: .now, to: deletesAt).day ?? 0)
         return Label("Wird gelöscht in \(daysLeft) Tagen", systemImage: "clock")
-            .font(.caption)
+            .font(.footnote)
             .foregroundStyle(.secondary)
             .padding(.top, 4)
     }
@@ -91,7 +91,7 @@ struct ProjectInfoBox: View {
     private var peopleSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Personen", systemImage: "person.2")
-                .font(.caption.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
             HStack(spacing: -8) {
                 ForEach(viewModel.members) { member in
@@ -101,7 +101,7 @@ struct ProjectInfoBox: View {
                     showingTeamSheet = true
                 } label: {
                     Image(systemName: "plus")
-                        .font(.caption.weight(.bold))
+                        .font(.subheadline.weight(.bold))
                         .foregroundStyle(.secondary)
                         .frame(width: 32, height: 32)
                         .background(Color(.tertiarySystemGroupedBackground))
@@ -118,7 +118,7 @@ struct ProjectInfoBox: View {
         let source = member.name?.isEmpty == false ? member.name! : member.email
         let initials = String(source.prefix(2)).uppercased()
         return Text(initials)
-            .font(.caption2.weight(.bold))
+            .font(.caption.weight(.bold))
             .foregroundStyle(.white)
             .frame(width: 32, height: 32)
             .background(Color.stableColor(for: member.userId))
@@ -135,7 +135,7 @@ private struct ShootDateSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Drehdatum", systemImage: "calendar")
-                .font(.caption.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
             // Plain $bindings + .onChange, not a custom Binding(get:set:) with
             // side effects in the setter — the latter caused a real
@@ -173,37 +173,28 @@ private struct LocationSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Location", systemImage: "mappin.and.ellipse")
-                .font(.caption.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
 
             if let address = viewModel.locationAddress, !isEditing {
                 HStack(alignment: .top, spacing: 10) {
                     if let lat = viewModel.locationLat, let lng = viewModel.locationLng {
-                        // Deliberately NOT a Map/MKMapSnapshotter — both
-                        // reliably crashed the whole Simulator (a known
-                        // MapKit-rendering/Metal issue, not specific to
-                        // either API). A plain icon tile has zero rendering
-                        // risk; tapping it still opens Google Maps.
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color.accentColor.opacity(0.2))
-                            .frame(width: 64, height: 64)
-                            .overlay {
-                                Image(systemName: "mappin.and.ellipse")
-                                    .font(.title2)
-                                    .foregroundStyle(Color.accentColor)
-                            }
-                            .contentShape(Rectangle())
-                            .onTapGesture { LocationSearch.openInGoogleMaps(lat: lat, lng: lng) }
+                        // Real map preview now (SceneMapThumbnail, same as
+                        // scenes) — the earlier "crashes the Simulator"
+                        // finding turned out to be the general iOS-26.5-
+                        // Simulator rendering bug, not MapKit itself, see
+                        // project memory. Tapping it opens Google Maps.
+                        SceneMapThumbnail(lat: lat, lng: lng, size: 64)
                     }
                     VStack(alignment: .leading, spacing: 4) {
                         Text(address)
-                            .font(.footnote)
+                            .font(.subheadline)
                             .lineLimit(3)
                         Button("Ändern") {
                             query = address
                             isEditing = true
                         }
-                        .font(.caption)
+                        .font(.footnote)
                     }
                 }
             } else {
@@ -220,9 +211,9 @@ private struct LocationSection: View {
                                 Task { await select(result) }
                             } label: {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(result.title).font(.footnote)
+                                    Text(result.title).font(.subheadline)
                                     if !result.subtitle.isEmpty {
-                                        Text(result.subtitle).font(.caption2).foregroundStyle(.secondary)
+                                        Text(result.subtitle).font(.footnote).foregroundStyle(.secondary)
                                     }
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -264,7 +255,7 @@ private struct TodoListsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Todo-Listen", systemImage: "checklist")
-                .font(.caption.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
 
             ForEach(viewModel.todoLists) { list in
@@ -274,7 +265,7 @@ private struct TodoListsSection: View {
             if isAddingList {
                 HStack {
                     TextField("Listenname", text: $newListName)
-                        .font(.footnote)
+                        .font(.subheadline)
                         .focused($newListFocused)
                         .submitLabel(.done)
                         .onSubmit { Task { await commitNewList() } }
@@ -292,7 +283,7 @@ private struct TodoListsSection: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { newListFocused = true }
                 } label: {
                     Label("Liste hinzufügen", systemImage: "plus")
-                        .font(.caption)
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -328,13 +319,13 @@ private struct TodoListCard: View {
             HStack {
                 if isRenaming {
                     TextField("Listenname", text: $renameText)
-                        .font(.subheadline.weight(.semibold))
+                        .font(.headline)
                         .focused($renameFocused)
                         .submitLabel(.done)
                         .onSubmit { Task { await commitRename() } }
                 } else {
                     Text(list.name)
-                        .font(.subheadline.weight(.semibold))
+                        .font(.headline)
                         .contentShape(Rectangle())
                         .onTapGesture { startRenaming() }
                 }
@@ -343,7 +334,7 @@ private struct TodoListCard: View {
                     Task { await viewModel.deleteTodoList(list) }
                 } label: {
                     Image(systemName: "trash")
-                        .font(.caption2)
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -355,7 +346,7 @@ private struct TodoListCard: View {
 
             if isAddingItem {
                 TextField("Neuer Punkt", text: $newItemText)
-                    .font(.footnote)
+                    .font(.subheadline)
                     .focused($newItemFocused)
                     .submitLabel(.done)
                     .onSubmit { Task { await commitNewItem() } }
@@ -366,7 +357,7 @@ private struct TodoListCard: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { newItemFocused = true }
                 } label: {
                     Label("Punkt hinzufügen", systemImage: "plus")
-                        .font(.caption2)
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -415,7 +406,7 @@ private struct TodoItemRow: View {
             .buttonStyle(.plain)
 
             Text(item.text)
-                .font(.footnote)
+                .font(.subheadline)
                 .strikethrough(item.done)
                 .foregroundStyle(item.done ? .secondary : .primary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -457,7 +448,7 @@ private struct TodoItemRow: View {
                 initialsBadge(assignee)
             } else {
                 Image(systemName: "person.crop.circle.badge.plus")
-                    .font(.caption)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         }
@@ -467,9 +458,9 @@ private struct TodoItemRow: View {
         let source = member.name?.isEmpty == false ? member.name! : member.email
         let initials = String(source.prefix(2)).uppercased()
         return Text(initials)
-            .font(.system(size: 9, weight: .bold))
+            .font(.system(size: 11, weight: .bold))
             .foregroundStyle(.white)
-            .frame(width: 18, height: 18)
+            .frame(width: 22, height: 22)
             .background(Color.stableColor(for: member.userId))
             .clipShape(Circle())
     }
