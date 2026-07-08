@@ -132,9 +132,9 @@ struct ShotListView: View {
             set: { if !$0 { editingScene = nil } }
         )) {
             if case .some(let existing) = editingScene {
-                SceneEditSheet(existing: existing, isIntermediateStep: creatingIntermediateStep, viewModel: viewModel) { name, color, description, dialogue, focalLength, scheduledAt, durationMinutes in
+                SceneEditSheet(existing: existing, isIntermediateStep: creatingIntermediateStep, viewModel: viewModel) { name, color, description, dialogue, focalLength, scheduledAt, durationMinutes, priority in
                     if let existing {
-                        await viewModel.renameScene(existing, name: name, color: color, description: description, dialogue: dialogue, focalLengthMm: focalLength, scheduledAt: scheduledAt, durationMinutes: durationMinutes)
+                        await viewModel.renameScene(existing, name: name, color: color, description: description, dialogue: dialogue, focalLengthMm: focalLength, scheduledAt: scheduledAt, durationMinutes: durationMinutes, priority: priority)
                         return existing
                     } else {
                         return await viewModel.createScene(
@@ -143,7 +143,8 @@ struct ShotListView: View {
                             dialogue: dialogue.isEmpty ? nil : dialogue,
                             focalLengthMm: focalLength,
                             scheduledAt: scheduledAt,
-                            durationMinutes: durationMinutes
+                            durationMinutes: durationMinutes,
+                            priority: priority
                         )
                     }
                 } onImagePicked: { scene, image in

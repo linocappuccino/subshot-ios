@@ -29,7 +29,7 @@ struct SceneEditSheet: View {
     /// Returns the created/renamed scene so a picked-but-not-yet-uploaded
     /// image can be attached right after — matters for brand-new scenes,
     /// which have no id (and thus nowhere to upload to) until this returns.
-    var onSave: (String, String, String, String, Int?, Date?, Int?) async -> Scene?
+    var onSave: (String, String, String, String, Int?, Date?, Int?, ShotPriority?) async -> Scene?
     var onImagePicked: ((Scene, UIImage) async -> Void)?
 
     @State private var name: String
@@ -40,6 +40,7 @@ struct SceneEditSheet: View {
     @State private var hasDate: Bool
     @State private var scheduledDate: Date
     @State private var durationMinutes: Int?
+    @State private var priority: ShotPriority?
     @State private var uploadedImage: UIImage?
     @State private var isAddingShot = false
     @State private var newShotText = ""
@@ -50,7 +51,7 @@ struct SceneEditSheet: View {
         existing: Scene?,
         isIntermediateStep: Bool = false,
         viewModel: ShotListViewModel,
-        onSave: @escaping (String, String, String, String, Int?, Date?, Int?) async -> Scene?,
+        onSave: @escaping (String, String, String, String, Int?, Date?, Int?, ShotPriority?) async -> Scene?,
         onImagePicked: ((Scene, UIImage) async -> Void)? = nil
     ) {
         self.existing = existing
@@ -66,6 +67,7 @@ struct SceneEditSheet: View {
         _hasDate = State(initialValue: existing?.scheduledAt != nil)
         _scheduledDate = State(initialValue: existing?.scheduledAt ?? Date())
         _durationMinutes = State(initialValue: existing?.durationMinutes)
+        _priority = State(initialValue: existing?.priority)
     }
 
     var body: some View {
@@ -104,6 +106,15 @@ struct SceneEditSheet: View {
 
                 Section("Name") {
                     TextField("z.B. Küche, Aussen Tag 1", text: $name)
+                }
+                Section("Priorität") {
+                    Picker("Priorität", selection: $priority) {
+                        Text("Keine").tag(ShotPriority?.none)
+                        ForEach(ShotPriority.allCases) { p in
+                            Text(p.label).tag(ShotPriority?.some(p))
+                        }
+                    }
+                    .pickerStyle(.segmented)
                 }
                 Section("Beschreibung") {
                     TextField("z.B. Handlung, Notizen", text: $description, axis: .vertical)
@@ -159,12 +170,6 @@ struct SceneEditSheet: View {
                     }
                 }
 
-                if let existing {
-                    Section("Priorität") {
-                        ScenePrioritySection(scene: existing, viewModel: viewModel)
-                    }
-                }
-
                 // Managing shots (like the cover photo below) only makes sense
                 // for an existing scene — a not-yet-created one has no id to
                 // attach a shot to. Not offered for Zwischenschritt scenes at
@@ -212,7 +217,8 @@ struct SceneEditSheet: View {
                                 dialogue.trimmingCharacters(in: .whitespacesAndNewlines),
                                 focalLength,
                                 hasDate ? scheduledDate : nil,
-                                hasDate ? durationMinutes : nil
+                                hasDate ? durationMinutes : nil,
+                                priority
                             )
                             // existing's id never changes on rename, so prefer it when
                             // present; `saved` only matters for a brand-new scene, which
@@ -297,27 +303,5 @@ private struct SceneLocationSection: View {
         isEditing = false
         completer.clear()
         query = ""
-    }
-}
-
-/// Same segmented-picker pattern as ShotDetailSheet's priority field, colored
-/// per option (must=red, should=orange, optional=gray — matches ShotCard's
-/// priorityColor) so the picker itself previews what the scene tile's badge
-/// will look like.
-private struct ScenePrioritySection: View {
-    let scene: Scene
-    @ObservedObject var viewModel: ShotListViewModel
-
-    var body: some View {
-        Picker("Priorität", selection: Binding(
-            get: { scene.priority },
-            set: { newValue in Task { await viewModel.updateScenePriority(scene, priority: newValue) } }
-        )) {
-            Text("Keine").tag(ShotPriority?.none)
-            ForEach(ShotPriority.allCases) { p in
-                Text(p.label).tag(ShotPriority?.some(p))
-            }
-        }
-        .pickerStyle(.segmented)
     }
 }

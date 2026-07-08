@@ -206,14 +206,14 @@ final class ShotListViewModel: ObservableObject {
     }
 
     @discardableResult
-    func createScene(name: String, color: String, description: String? = nil, dialogue: String? = nil, focalLengthMm: Int? = nil, scheduledAt: Date? = nil, durationMinutes: Int? = nil, sectionId: String? = nil) async -> Scene? {
+    func createScene(name: String, color: String, description: String? = nil, dialogue: String? = nil, focalLengthMm: Int? = nil, scheduledAt: Date? = nil, durationMinutes: Int? = nil, sectionId: String? = nil, priority: ShotPriority? = nil) async -> Scene? {
         do {
             let sortOrder = (scenes.map(\.sortOrder).max() ?? -1) + 1
             let scene = try await APIClient.shared.createScene(
                 projectId: projectId, name: name, color: color,
                 description: description, dialogue: dialogue, focalLengthMm: focalLengthMm,
                 scheduledAt: scheduledAt, durationMinutes: durationMinutes,
-                sectionId: sectionId, sortOrder: sortOrder
+                sectionId: sectionId, sortOrder: sortOrder, priority: priority
             )
             scenes.append(scene)
             return scene
@@ -250,29 +250,13 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
-    /// Same "own dedicated call, existing scenes only" reasoning as location.
-    func updateScenePriority(_ scene: Scene, priority: ShotPriority?) async {
-        do {
-            let updated: Scene
-            if let priority {
-                updated = try await APIClient.shared.patchScene(scene.id, priority: priority)
-            } else {
-                updated = try await APIClient.shared.patchScene(scene.id, clearPriority: true)
-            }
-            if let index = scenes.firstIndex(where: { $0.id == updated.id }) {
-                scenes[index] = updated
-            }
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    func renameScene(_ scene: Scene, name: String, color: String, description: String, dialogue: String, focalLengthMm: Int?, scheduledAt: Date?, durationMinutes: Int?) async {
+    func renameScene(_ scene: Scene, name: String, color: String, description: String, dialogue: String, focalLengthMm: Int?, scheduledAt: Date?, durationMinutes: Int?, priority: ShotPriority?) async {
         do {
             let updated = try await APIClient.shared.patchScene(
                 scene.id, name: name, color: color,
                 description: description, dialogue: dialogue, focalLengthMm: focalLengthMm,
-                scheduledAt: scheduledAt, durationMinutes: durationMinutes
+                scheduledAt: scheduledAt, durationMinutes: durationMinutes,
+                priority: priority, clearPriority: priority == nil
             )
             if let index = scenes.firstIndex(where: { $0.id == updated.id }) {
                 scenes[index] = updated
