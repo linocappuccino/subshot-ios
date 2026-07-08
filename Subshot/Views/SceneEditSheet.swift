@@ -1,5 +1,4 @@
 import SwiftUI
-import PhotosUI
 import MapKit
 
 /// Reminders' "New List" sheet, adapted for Scenes: a name field + color
@@ -32,7 +31,6 @@ struct SceneEditSheet: View {
     @State private var hasDate: Bool
     @State private var scheduledDate: Date
     @State private var durationMinutes: Int?
-    @State private var photoItem: PhotosPickerItem?
     @State private var uploadedImage: UIImage?
     @State private var isAddingShot = false
     @State private var newShotText = ""
@@ -64,12 +62,12 @@ struct SceneEditSheet: View {
             Form {
                 // First thing in the sheet, and available immediately even
                 // while creating a brand-new scene — picking a photo just
-                // stages it locally (handlePhotoPicked) and it uploads once
-                // "Fertig" actually creates/saves the scene (see the toolbar
-                // button below), since uploading needs a scene id a new
-                // scene doesn't have yet.
+                // stages it locally (ImageSourceButton's onImagePicked) and
+                // it uploads once "Fertig" actually creates/saves the scene
+                // (see the toolbar button below), since uploading needs a
+                // scene id a new scene doesn't have yet.
                 Section("Bild") {
-                    PhotosPicker(selection: $photoItem, matching: .images) {
+                    ImageSourceButton(onImagePicked: { uploadedImage = $0 }) {
                         HStack {
                             if let uploadedImage {
                                 Image(uiImage: uploadedImage)
@@ -88,9 +86,6 @@ struct SceneEditSheet: View {
                             Text((uploadedImage == nil && existing?.imageUrl == nil) ? "Bild hinzufügen" : "Bild ändern")
                                 .foregroundStyle(.primary)
                         }
-                    }
-                    .onChange(of: photoItem) { _, newItem in
-                        Task { await handlePhotoPicked(newItem) }
                     }
                 }
 
@@ -226,12 +221,6 @@ struct SceneEditSheet: View {
             }
         }
         .preferredColorScheme(.dark)
-    }
-
-    private func handlePhotoPicked(_ item: PhotosPickerItem?) async {
-        guard let item, let data = try? await item.loadTransferable(type: Data.self),
-              let image = UIImage(data: data) else { return }
-        uploadedImage = image
     }
 
     private func addShot(to scene: Scene) async {

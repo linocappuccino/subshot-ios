@@ -1,5 +1,4 @@
 import SwiftUI
-import PhotosUI
 
 struct ShotDetailSheet: View {
     @State var shot: Shot
@@ -12,7 +11,6 @@ struct ShotDetailSheet: View {
     @State private var customAngleText: String
     @State private var priority: ShotPriority?
     @State private var goodTake: String
-    @State private var photoItem: PhotosPickerItem?
     @State private var uploadedImage: UIImage?
     @State private var isSaving = false
 
@@ -32,7 +30,9 @@ struct ShotDetailSheet: View {
         NavigationStack {
             Form {
                 Section("Bild") {
-                    PhotosPicker(selection: $photoItem, matching: .images) {
+                    ImageSourceButton(onImagePicked: { image in
+                        Task { await handlePhotoPicked(image) }
+                    }) {
                         HStack {
                             if let uploadedImage {
                                 Image(uiImage: uploadedImage)
@@ -51,9 +51,6 @@ struct ShotDetailSheet: View {
                             Text(shot.imageUrl == nil ? "Foto hinzufügen" : "Foto ändern")
                                 .foregroundStyle(.primary)
                         }
-                    }
-                    .onChange(of: photoItem) { _, newItem in
-                        Task { await handlePhotoPicked(newItem) }
                     }
                 }
 
@@ -111,9 +108,7 @@ struct ShotDetailSheet: View {
         }
     }
 
-    private func handlePhotoPicked(_ item: PhotosPickerItem?) async {
-        guard let item, let data = try? await item.loadTransferable(type: Data.self),
-              let image = UIImage(data: data) else { return }
+    private func handlePhotoPicked(_ image: UIImage) async {
         uploadedImage = image
         do {
             let updated = try await APIClient.shared.uploadShotImage(shotId: shot.id, image: image)
