@@ -145,8 +145,8 @@ enum ShotPriority: String, Codable, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .must: return "Muss"
-        case .should: return "Sollte"
+        case .must: return "Wichtig"
+        case .should: return "Nice to have"
         case .optional: return "Optional"
         }
     }

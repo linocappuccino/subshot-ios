@@ -513,6 +513,15 @@ struct ShotListView: View {
                 Text("\(viewModel.shots(in: scene).count) Einstellungen")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
+                if let priority = scene.priority {
+                    Text(priority.label)
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(sceneAccentColor(priority))
+                        .clipShape(Capsule())
+                }
                 Spacer()
                 sceneAssigneeMenu(scene: scene)
                 imKastenButton(scene: scene)
