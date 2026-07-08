@@ -9,6 +9,7 @@ struct ShotListView: View {
     @State private var selectedShot: Shot?
     @State private var showingTeamSheet = false
     @State private var editingScene: Scene??      // nil = sheet closed; .some(nil) = creating; .some(scene) = renaming
+    @State private var editingSection: SceneSection??  // same nesting convention as editingScene
     @State private var isExportingPdf = false
     @State private var exportedPdfURL: URL?
     @FocusState private var newRowFocused: Bool
@@ -24,17 +25,31 @@ struct ShotListView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 24) {
                 // Scrolls with the rest of the content again — the earlier
-                // hang/crash was MapKit's rendering itself (Map AND
-                // MKMapSnapshotter both crashed the Simulator), not the fact
-                // that it lived in a LazyVStack. Now that the location
-                // thumbnail is a plain icon tile with no MapKit rendering at
-                // all, there's nothing left for scrolling to repeatedly stress.
+                // hang/crash turned out to be the general iOS-26.5-Simulator
+                // rendering bug (see project memory), not MapKit itself, so
+                // scene tiles below do use a real MKMapSnapshotter thumbnail
+                // (SceneMapThumbnail, cached like AsyncShotThumbnail so
+                // LazyVStack recycling doesn't regenerate one per re-render).
                 ProjectInfoBox(viewModel: viewModel, projectId: projectId)
 
                 unassignedSection()
 
-                ForEach(viewModel.scenes) { scene in
-                    sceneCard(scene: scene)
+                // Sections are opt-in — a project that's never created one
+                // renders exactly like before (flat scene list, no headers).
+                // Only once at least one section exists does grouping (with
+                // an explicit "Ohne Abschnitt" bucket for the rest) kick in.
+                if viewModel.sections.isEmpty {
+                    ForEach(viewModel.scenes) { scene in
+                        sceneCard(scene: scene)
+                    }
+                } else {
+                    ForEach(viewModel.sections) { section in
+                        sectionGroup(section: section)
+                    }
+                    let unassigned = viewModel.scenes(in: nil)
+                    if !unassigned.isEmpty {
+                        sectionGroup(section: nil)
+                    }
                 }
             }
             .padding(.vertical, 16)
@@ -102,6 +117,20 @@ struct ShotListView: View {
                 }
             }
         }
+        .sheet(isPresented: Binding(
+            get: { editingSection != nil },
+            set: { if !$0 { editingSection = nil } }
+        )) {
+            if case .some(let existing) = editingSection {
+                SectionEditSheet(existing: existing) { name in
+                    if let existing {
+                        await viewModel.renameSection(existing, name: name)
+                    } else {
+                        await viewModel.createSection(name: name)
+                    }
+                }
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             if let pending = viewModel.pendingUndoShot {
                 undoToast(for: pending)
@@ -109,12 +138,22 @@ struct ShotListView: View {
         }
     }
 
-    /// Always-visible floating "add scene" button, bottom-trailing — replaces
-    /// the old inline "Szene hinzufügen" row at the end of the list, which
-    /// meant scrolling all the way down every time.
+    /// Always-visible floating add button, bottom-trailing — replaces the old
+    /// inline "Szene hinzufügen" row at the end of the list, which meant
+    /// scrolling all the way down every time. A short menu now, so the same
+    /// button also creates sections instead of needing a second control.
     private var addSceneButton: some View {
-        Button {
-            editingScene = .some(nil)
+        Menu {
+            Button {
+                editingScene = .some(nil)
+            } label: {
+                Label("Neue Szene", systemImage: "film")
+            }
+            Button {
+                editingSection = .some(nil)
+            } label: {
+                Label("Neuer Abschnitt", systemImage: "folder.badge.plus")
+            }
         } label: {
             Image(systemName: "plus")
                 .font(.title2.weight(.bold))
@@ -123,12 +162,90 @@ struct ShotListView: View {
                 .background(Circle().fill(Color.accentColor))
                 .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
         }
-        .buttonStyle(.plain)
         .padding(.trailing, 20)
         .padding(.bottom, 20)
     }
 
     // MARK: - Sections
+
+    /// `section == nil` renders the "Ohne Abschnitt" bucket — only shown at
+    /// all once at least one real section exists (see body above).
+    @ViewBuilder
+    private func sectionGroup(section: SceneSection?) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader(section: section)
+            ForEach(viewModel.scenes(in: section)) { scene in
+                sceneCard(scene: scene)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func sectionHeader(section: SceneSection?) -> some View {
+        HStack {
+            if let section {
+                sectionReorderMenu(section: section)
+            } else {
+                Spacer().frame(width: 44)
+            }
+            Text(section?.name ?? "Ohne Abschnitt")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Spacer()
+            if let section {
+                Menu {
+                    Button {
+                        editingSection = .some(section)
+                    } label: {
+                        Label("Umbenennen", systemImage: "pencil")
+                    }
+                    Button(role: .destructive) {
+                        Task { await viewModel.deleteSection(section) }
+                    } label: {
+                        Label("Löschen", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    @ViewBuilder
+    private func sectionReorderMenu(section: SceneSection) -> some View {
+        Menu {
+            Button {
+                Task { await moveSectionUp(section) }
+            } label: {
+                Label("Nach oben", systemImage: "arrow.up")
+            }
+            Button {
+                Task { await moveSectionDown(section) }
+            } label: {
+                Label("Nach unten", systemImage: "arrow.down")
+            }
+        } label: {
+            Image(systemName: "line.3.horizontal")
+                .foregroundStyle(.secondary)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+    }
+
+    private func moveSectionUp(_ section: SceneSection) async {
+        guard let idx = viewModel.sections.firstIndex(where: { $0.id == section.id }), idx > 0 else { return }
+        let target = viewModel.sections[idx - 1]
+        await viewModel.reorderSection(section.id, before: target.id)
+    }
+
+    private func moveSectionDown(_ section: SceneSection) async {
+        guard let idx = viewModel.sections.firstIndex(where: { $0.id == section.id }) else { return }
+        let nextIndex = idx + 2
+        let targetId = nextIndex < viewModel.sections.count ? viewModel.sections[nextIndex].id : nil
+        await viewModel.reorderSection(section.id, before: targetId)
+    }
 
     @ViewBuilder
     private func unassignedSection() -> some View {
@@ -222,6 +339,15 @@ struct ShotListView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if let address = scene.locationAddress, let lat = scene.locationLat, let lng = scene.locationLng {
+                HStack(spacing: 10) {
+                    SceneMapThumbnail(lat: lat, lng: lng, size: 48)
+                    Text(address)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
         }
         .contentShape(Rectangle())
         .onTapGesture { editingScene = .some(scene) }
@@ -231,17 +357,49 @@ struct ShotListView: View {
     private func sceneHeader(scene: Scene) -> some View {
         HStack(spacing: 8) {
             reorderMenu(scene: scene)
-            Circle()
-                .fill(Color(hex: scene.color))
-                .frame(width: 14, height: 14)
+            Text(scene.displayNumber)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(Color(hex: scene.color))
+                .clipShape(Capsule())
             Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
                 .font(.headline)
             Text("\(viewModel.shots(in: scene).count)")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             Spacer()
+            if !viewModel.sections.isEmpty {
+                sceneSectionMenu(scene: scene)
+            }
             sceneAssigneeMenu(scene: scene)
             imKastenButton(scene: scene)
+        }
+    }
+
+    /// Only shown once the project actually has sections — no point
+    /// cluttering the header with an empty-state menu.
+    @ViewBuilder
+    private func sceneSectionMenu(scene: Scene) -> some View {
+        Menu {
+            if scene.sectionId != nil {
+                Button {
+                    Task { await viewModel.assignSceneToSection(scene, sectionId: nil) }
+                } label: {
+                    Label("Ohne Abschnitt", systemImage: "xmark.circle")
+                }
+            }
+            ForEach(viewModel.sections) { section in
+                Button {
+                    Task { await viewModel.assignSceneToSection(scene, sectionId: section.id) }
+                } label: {
+                    Text(section.name)
+                }
+            }
+        } label: {
+            Image(systemName: "folder")
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -509,6 +667,13 @@ private struct ShotCard: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+                if let goodTake = shot.goodTakeFilename, !goodTake.isEmpty {
+                    Label("Good Take: \(goodTake)", systemImage: "checkmark.seal.fill")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.green)
+                        .lineLimit(1)
+                }
             }
             .padding(10)
         }

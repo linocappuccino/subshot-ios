@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import MapKit
 
 /// Reminders' "New List" sheet, adapted for Scenes: a name field + color
 /// swatch grid, plus a description and cover photo. Used both to create a
@@ -155,6 +156,15 @@ struct SceneEditSheet: View {
                     .pickerStyle(.wheel)
                 }
 
+                // Same reasoning as "Einstellungen" below: location is patched
+                // straight onto the scene via its own dedicated endpoint call,
+                // which needs an id a not-yet-created scene doesn't have.
+                if let existing {
+                    Section("Location") {
+                        SceneLocationSection(scene: existing, viewModel: viewModel)
+                    }
+                }
+
                 // Managing shots (like the cover photo below) only makes sense
                 // for an existing scene — a not-yet-created one has no id to
                 // attach a shot to.
@@ -228,5 +238,65 @@ struct SceneEditSheet: View {
         isAddingShot = false
         await viewModel.createShot(description: newShotText, sceneId: scene.id)
         newShotText = ""
+    }
+}
+
+/// Per-scene address field, same MKLocalSearchCompleter autocomplete as the
+/// project-level LocationSection in ProjectInfoBox — but with its own
+/// completer instance rather than reusing `viewModel.locationCompleter`
+/// (that one's scoped to the project box; a scene sheet is a modal with its
+/// own short lifetime, no scroll-churn risk to guard against here).
+private struct SceneLocationSection: View {
+    let scene: Scene
+    @ObservedObject var viewModel: ShotListViewModel
+    @StateObject private var completer = LocationSearchCompleter()
+    @State private var query = ""
+    @State private var isEditing = false
+
+    var body: some View {
+        if let address = scene.locationAddress, !isEditing {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(address).font(.subheadline)
+                HStack {
+                    Button("Ändern") {
+                        query = address
+                        isEditing = true
+                    }
+                    .font(.caption)
+                    Spacer()
+                    Button("Entfernen", role: .destructive) {
+                        Task { await viewModel.clearSceneLocation(scene) }
+                    }
+                    .font(.caption)
+                }
+            }
+        } else {
+            TextField("Adresse eingeben", text: $query)
+                .onChange(of: query) { _, newValue in
+                    completer.update(query: newValue)
+                }
+            if !completer.results.isEmpty {
+                ForEach(completer.results.prefix(5), id: \.self) { result in
+                    Button {
+                        Task { await select(result) }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(result.title).font(.footnote).foregroundStyle(.primary)
+                            if !result.subtitle.isEmpty {
+                                Text(result.subtitle).font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func select(_ completion: MKLocalSearchCompletion) async {
+        guard let resolved = try? await LocationSearch.resolve(completion) else { return }
+        await viewModel.updateSceneLocation(scene, address: resolved.address, lat: resolved.lat, lng: resolved.lng)
+        isEditing = false
+        completer.clear()
+        query = ""
     }
 }

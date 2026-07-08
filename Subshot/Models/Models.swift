@@ -80,9 +80,14 @@ struct Scene: Codable, Identifiable, Hashable {
     var sortOrder: Int
     var assigneeId: String?
     var sectionId: String?
+    var locationAddress: String?
+    var locationLat: Double?
+    var locationLng: Double?
+    let number: Int
+    let letter: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, color, description, dialogue, completed
+        case id, name, color, description, dialogue, completed, number, letter
         case projectId = "project_id"
         case focalLengthMm = "focal_length_mm"
         case scheduledAt = "scheduled_at"
@@ -91,6 +96,14 @@ struct Scene: Codable, Identifiable, Hashable {
         case sortOrder = "sort_order"
         case assigneeId = "assignee_id"
         case sectionId = "section_id"
+        case locationAddress = "location_address"
+        case locationLat = "location_lat"
+        case locationLng = "location_lng"
+    }
+
+    /// "3A" / "12" — the display label shown on the scene tile.
+    var displayNumber: String {
+        number.description + (letter ?? "")
     }
 }
 
@@ -122,6 +135,7 @@ struct Shot: Codable, Identifiable, Hashable {
     var priority: ShotPriority?
     var status: ShotStatus
     var sortOrder: Int
+    var goodTakeFilename: String?
     let createdAt: Date
     let updatedAt: Date
 
@@ -133,6 +147,7 @@ struct Shot: Codable, Identifiable, Hashable {
         case durationSeconds = "duration_seconds"
         case cameraAngle = "camera_angle"
         case sortOrder = "sort_order"
+        case goodTakeFilename = "good_take_filename"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }

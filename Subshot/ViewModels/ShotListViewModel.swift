@@ -31,6 +31,7 @@ final class ShotListViewModel: ObservableObject {
     @Published var locationLng: Double?
     @Published var members: [Member] = []
     @Published var todoLists: [TodoList] = []
+    @Published var sections: [SceneSection] = []
 
     /// Owned here, not as a @StateObject inside LocationSection — that view
     /// lives inside the scrolling LazyVStack and gets torn down/rebuilt
@@ -63,6 +64,7 @@ final class ShotListViewModel: ObservableObject {
             locationLat = detail.locationLat
             locationLng = detail.locationLng
             todoLists = detail.todoLists.sorted { $0.sortOrder < $1.sortOrder }
+            sections = detail.sections.sorted { $0.sortOrder < $1.sortOrder }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -110,6 +112,76 @@ final class ShotListViewModel: ObservableObject {
         shotsBySceneId[scene?.id] ?? []
     }
 
+    /// Scenes belonging to a section, in order — nil means the "no section"
+    /// group. Plain filter (not cached like shotsBySceneId): scene counts
+    /// per project are small enough that re-scanning per render is cheap.
+    func scenes(in section: SceneSection?) -> [Scene] {
+        scenes.filter { $0.sectionId == section?.id }
+    }
+
+    // MARK: - Sections
+
+    @discardableResult
+    func createSection(name: String) async -> SceneSection? {
+        do {
+            let sortOrder = (sections.map(\.sortOrder).max() ?? -1) + 1
+            let section = try await APIClient.shared.createSection(projectId: projectId, name: name, sortOrder: sortOrder)
+            sections.append(section)
+            return section
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    func renameSection(_ section: SceneSection, name: String) async {
+        do {
+            let updated = try await APIClient.shared.patchSection(section.id, name: name)
+            if let index = sections.firstIndex(where: { $0.id == updated.id }) {
+                sections[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Scenes in a deleted section fall back to "no section" server-side
+    /// (ON DELETE SET NULL) — mirrored locally so the scene tiles don't
+    /// vanish from the list.
+    func deleteSection(_ section: SceneSection) async {
+        sections.removeAll { $0.id == section.id }
+        for index in scenes.indices where scenes[index].sectionId == section.id {
+            scenes[index].sectionId = nil
+        }
+        do {
+            try await APIClient.shared.deleteSection(section.id)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func reorderSection(_ sectionId: String, before targetId: String?) async {
+        var list = sections
+        guard let section = list.first(where: { $0.id == sectionId }) else { return }
+        list.removeAll { $0.id == sectionId }
+        if let targetId, let idx = list.firstIndex(where: { $0.id == targetId }) {
+            list.insert(section, at: idx)
+        } else {
+            list.append(section)
+        }
+        do {
+            for (index, sec) in list.enumerated() where sec.sortOrder != index {
+                let updated = try await APIClient.shared.patchSection(sec.id, sortOrder: index)
+                if let i = sections.firstIndex(where: { $0.id == updated.id }) {
+                    sections[i] = updated
+                }
+            }
+            sections.sort { $0.sortOrder < $1.sortOrder }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     @discardableResult
     func createShot(description: String, sceneId: String?) async -> Shot? {
         let trimmed = description.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -129,19 +201,47 @@ final class ShotListViewModel: ObservableObject {
     }
 
     @discardableResult
-    func createScene(name: String, color: String, description: String? = nil, dialogue: String? = nil, focalLengthMm: Int? = nil, scheduledAt: Date? = nil, durationMinutes: Int? = nil) async -> Scene? {
+    func createScene(name: String, color: String, description: String? = nil, dialogue: String? = nil, focalLengthMm: Int? = nil, scheduledAt: Date? = nil, durationMinutes: Int? = nil, sectionId: String? = nil) async -> Scene? {
         do {
             let sortOrder = (scenes.map(\.sortOrder).max() ?? -1) + 1
             let scene = try await APIClient.shared.createScene(
                 projectId: projectId, name: name, color: color,
                 description: description, dialogue: dialogue, focalLengthMm: focalLengthMm,
-                scheduledAt: scheduledAt, durationMinutes: durationMinutes, sortOrder: sortOrder
+                scheduledAt: scheduledAt, durationMinutes: durationMinutes,
+                sectionId: sectionId, sortOrder: sortOrder
             )
             scenes.append(scene)
             return scene
         } catch {
             errorMessage = error.localizedDescription
             return nil
+        }
+    }
+
+    /// Scene location has its own dedicated update call — same reasoning as
+    /// the project-level LocationSection in ProjectInfoBox: it's edited via
+    /// its own address-autocomplete flow, not bundled into the general
+    /// rename/save, and (like the scene image) only applies to a scene that
+    /// already exists.
+    func updateSceneLocation(_ scene: Scene, address: String, lat: Double, lng: Double) async {
+        do {
+            let updated = try await APIClient.shared.patchScene(scene.id, locationAddress: address, locationLat: lat, locationLng: lng)
+            if let index = scenes.firstIndex(where: { $0.id == updated.id }) {
+                scenes[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func clearSceneLocation(_ scene: Scene) async {
+        do {
+            let updated = try await APIClient.shared.patchScene(scene.id, clearLocation: true)
+            if let index = scenes.firstIndex(where: { $0.id == updated.id }) {
+                scenes[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 
@@ -209,6 +309,24 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
+    /// Same quick-menu idea as assignScene, for putting a scene into a
+    /// section from the tile itself rather than needing the full edit sheet.
+    func assignSceneToSection(_ scene: Scene, sectionId: String?) async {
+        do {
+            let updated: Scene
+            if let sectionId {
+                updated = try await APIClient.shared.patchScene(scene.id, sectionId: sectionId)
+            } else {
+                updated = try await APIClient.shared.patchScene(scene.id, clearSection: true)
+            }
+            if let index = scenes.firstIndex(where: { $0.id == updated.id }) {
+                scenes[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     #if canImport(UIKit)
     func uploadSceneImage(_ scene: Scene, image: UIImage) async {
         do {
@@ -248,8 +366,11 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
-    /// Drag & drop for scene headers themselves — reorders `scenes` and
-    /// persists the new sort_order for every scene whose position changed.
+    /// Scene reordering (up/down menu): a single server-side move — see
+    /// APIClient.moveScene. The server renumbers just the moved scene
+    /// (screenplay-style) and reassigns every sibling's sort_order in one
+    /// transaction; locally we just optimistically relocate it in `scenes`
+    /// and then reconcile with whatever the server returns.
     func reorderScene(_ sceneId: String, before targetId: String?) async {
         var list = scenes
         guard let scene = list.first(where: { $0.id == sceneId }) else { return }
@@ -259,14 +380,15 @@ final class ShotListViewModel: ObservableObject {
         } else {
             list.append(scene)
         }
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+            scenes = list
+        }
         do {
-            for (index, sc) in list.enumerated() where sc.sortOrder != index {
-                let updated = try await APIClient.shared.patchScene(sc.id, sortOrder: index)
-                if let i = scenes.firstIndex(where: { $0.id == updated.id }) {
-                    scenes[i] = updated
-                }
+            let updated = try await APIClient.shared.moveScene(sceneId, beforeSceneId: targetId)
+            if let index = scenes.firstIndex(where: { $0.id == updated.id }) {
+                scenes[index] = updated
             }
-            scenes.sort { $0.sortOrder < $1.sortOrder }
+            await load()
         } catch {
             errorMessage = error.localizedDescription
         }

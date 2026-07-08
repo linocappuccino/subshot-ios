@@ -11,6 +11,7 @@ struct ShotDetailSheet: View {
     @State private var cameraAngle: CameraAngle
     @State private var customAngleText: String
     @State private var priority: ShotPriority?
+    @State private var goodTake: String
     @State private var photoItem: PhotosPickerItem?
     @State private var uploadedImage: UIImage?
     @State private var isSaving = false
@@ -24,6 +25,7 @@ struct ShotDetailSheet: View {
         _cameraAngle = State(initialValue: known ?? (shot.cameraAngle == nil ? .wide : .other))
         _customAngleText = State(initialValue: known == nil ? (shot.cameraAngle ?? "") : "")
         _priority = State(initialValue: shot.priority)
+        _goodTake = State(initialValue: shot.goodTakeFilename ?? "")
     }
 
     var body: some View {
@@ -85,6 +87,15 @@ struct ShotDetailSheet: View {
                     }
                     .pickerStyle(.segmented)
                 }
+
+                // For noting the keeper take's filename on set, once picture
+                // has called it — a plain free-text field, not tied to any
+                // file-naming convention.
+                Section("Good Take:") {
+                    TextField("Dateiname, z.B. A003_C012", text: $goodTake)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                }
             }
             .navigationTitle("Einstellung bearbeiten")
             .navigationBarTitleDisplayMode(.inline)
@@ -118,12 +129,14 @@ struct ShotDetailSheet: View {
         defer { isSaving = false }
         let angleValue: String? = cameraAngle == .other ? customAngleText : cameraAngle.rawValue
         do {
+            let trimmedGoodTake = goodTake.trimmingCharacters(in: .whitespacesAndNewlines)
             let updated = try await APIClient.shared.patchShotFull(
                 shot.id,
                 description: description,
                 durationSeconds: Int(durationText),
                 cameraAngle: angleValue,
-                priority: priority?.rawValue
+                priority: priority?.rawValue,
+                goodTakeFilename: trimmedGoodTake.isEmpty ? nil : trimmedGoodTake
             )
             viewModel.replace(updated)
         } catch {

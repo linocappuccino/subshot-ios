@@ -162,7 +162,8 @@ final class APIClient {
         projectId: String, name: String?, color: String,
         description: String? = nil, dialogue: String? = nil, focalLengthMm: Int? = nil,
         scheduledAt: Date? = nil, durationMinutes: Int? = nil,
-        assigneeId: String? = nil, sectionId: String? = nil, sortOrder: Int = 0
+        assigneeId: String? = nil, sectionId: String? = nil, sortOrder: Int = 0,
+        locationAddress: String? = nil, locationLat: Double? = nil, locationLng: Double? = nil
     ) async throws -> Scene {
         var req = try await authorizedRequest("projects/\(projectId)/scenes", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -171,25 +172,30 @@ final class APIClient {
             let dialogue: String?; let focal_length_mm: Int?; let scheduled_at: Date?
             let duration_minutes: Int?; let assignee_id: String?; let section_id: String?
             let sort_order: Int
+            let location_address: String?; let location_lat: Double?; let location_lng: Double?
         }
         req.httpBody = try encoder.encode(Body(
             name: name, color: color, description: description,
             dialogue: dialogue, focal_length_mm: focalLengthMm, scheduled_at: scheduledAt,
             duration_minutes: durationMinutes, assignee_id: assigneeId, section_id: sectionId,
-            sort_order: sortOrder
+            sort_order: sortOrder,
+            location_address: locationAddress, location_lat: locationLat, location_lng: locationLng
         ))
         return try await send(req)
     }
 
-    /// `clearAssignee`/`clearSection` mirror the backend's ScenePatch escape
-    /// hatches — a plain nil assigneeId/sectionId here means "don't touch it",
-    /// not "remove it" (same convention as patchTodoItem).
+    /// `clearAssignee`/`clearSection`/`clearLocation` mirror the backend's
+    /// ScenePatch escape hatches — a plain nil assigneeId/sectionId/location
+    /// here means "don't touch it", not "remove it" (same convention as
+    /// patchTodoItem).
     func patchScene(
         _ id: String, name: String? = nil, color: String? = nil,
         description: String? = nil, dialogue: String? = nil, focalLengthMm: Int? = nil,
         scheduledAt: Date? = nil, durationMinutes: Int? = nil, completed: Bool? = nil,
         assigneeId: String? = nil, clearAssignee: Bool = false,
-        sectionId: String? = nil, clearSection: Bool = false, sortOrder: Int? = nil
+        sectionId: String? = nil, clearSection: Bool = false, sortOrder: Int? = nil,
+        locationAddress: String? = nil, locationLat: Double? = nil, locationLng: Double? = nil,
+        clearLocation: Bool = false
     ) async throws -> Scene {
         var req = try await authorizedRequest("scenes/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -200,6 +206,8 @@ final class APIClient {
             let assignee_id: String?; let clear_assignee: Bool
             let section_id: String?; let clear_section: Bool
             let sort_order: Int?
+            let location_address: String?; let location_lat: Double?; let location_lng: Double?
+            let clear_location: Bool
         }
         req.httpBody = try encoder.encode(Body(
             name: name, color: color, description: description,
@@ -207,8 +215,22 @@ final class APIClient {
             duration_minutes: durationMinutes, completed: completed,
             assignee_id: assigneeId, clear_assignee: clearAssignee,
             section_id: sectionId, clear_section: clearSection,
-            sort_order: sortOrder
+            sort_order: sortOrder,
+            location_address: locationAddress, location_lat: locationLat, location_lng: locationLng,
+            clear_location: clearLocation
         ))
+        return try await send(req)
+    }
+
+    /// Repositions a scene relative to its siblings — server renumbers just
+    /// this scene (screenplay-style: stable numbers, letter suffix if it
+    /// lands in a gap between two already-numbered scenes). Replaces the old
+    /// client-computed multi-PATCH reorder for scenes specifically.
+    func moveScene(_ id: String, beforeSceneId: String?) async throws -> Scene {
+        var req = try await authorizedRequest("scenes/\(id)/move", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let before_scene_id: String? }
+        req.httpBody = try encoder.encode(Body(before_scene_id: beforeSceneId))
         return try await send(req)
     }
 
@@ -287,7 +309,8 @@ final class APIClient {
         description: String?,
         durationSeconds: Int?,
         cameraAngle: String?,
-        priority: String?
+        priority: String?,
+        goodTakeFilename: String?
     ) async throws -> Shot {
         var req = try await authorizedRequest("shots/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -296,6 +319,7 @@ final class APIClient {
             "duration_seconds": durationSeconds ?? NSNull(),
             "camera_angle": cameraAngle ?? NSNull(),
             "priority": priority ?? NSNull(),
+            "good_take_filename": goodTakeFilename ?? NSNull(),
         ]
         req.httpBody = try JSONSerialization.data(withJSONObject: payload)
         return try await send(req)
