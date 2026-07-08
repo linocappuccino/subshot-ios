@@ -30,6 +30,7 @@ final class ShotListViewModel: ObservableObject {
     @Published var locationLat: Double?
     @Published var locationLng: Double?
     @Published var members: [Member] = []
+    @Published var todoLists: [TodoList] = []
 
     /// Owned here, not as a @StateObject inside LocationSection — that view
     /// lives inside the scrolling LazyVStack and gets torn down/rebuilt
@@ -61,6 +62,7 @@ final class ShotListViewModel: ObservableObject {
             locationAddress = detail.locationAddress
             locationLat = detail.locationLat
             locationLng = detail.locationLng
+            todoLists = detail.todoLists.sorted { $0.sortOrder < $1.sortOrder }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -287,6 +289,96 @@ final class ShotListViewModel: ObservableObject {
     func replace(_ shot: Shot) {
         if let index = shots.firstIndex(where: { $0.id == shot.id }) {
             shots[index] = shot
+        }
+    }
+
+    // MARK: - Todo lists
+
+    static let maxTodoLists = 5
+
+    @discardableResult
+    func createTodoList(name: String) async -> TodoList? {
+        guard todoLists.count < Self.maxTodoLists else { return nil }
+        do {
+            let sortOrder = (todoLists.map(\.sortOrder).max() ?? -1) + 1
+            let list = try await APIClient.shared.createTodoList(projectId: projectId, name: name, sortOrder: sortOrder)
+            todoLists.append(list)
+            return list
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    func renameTodoList(_ list: TodoList, name: String) async {
+        do {
+            let updated = try await APIClient.shared.patchTodoList(list.id, name: name)
+            if let index = todoLists.firstIndex(where: { $0.id == updated.id }) {
+                todoLists[index].name = updated.name
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func deleteTodoList(_ list: TodoList) async {
+        todoLists.removeAll { $0.id == list.id }
+        do {
+            try await APIClient.shared.deleteTodoList(list.id)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    @discardableResult
+    func createTodoItem(in list: TodoList, text: String) async -> TodoItem? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let listIndex = todoLists.firstIndex(where: { $0.id == list.id }) else { return nil }
+        do {
+            let sortOrder = (todoLists[listIndex].items.map(\.sortOrder).max() ?? -1) + 1
+            let item = try await APIClient.shared.createTodoItem(todoListId: list.id, text: trimmed, sortOrder: sortOrder)
+            todoLists[listIndex].items.append(item)
+            return item
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    func toggleTodoItemDone(_ item: TodoItem) async {
+        guard let listIndex = todoLists.firstIndex(where: { $0.id == item.todoListId }),
+              let itemIndex = todoLists[listIndex].items.firstIndex(where: { $0.id == item.id }) else { return }
+        do {
+            let updated = try await APIClient.shared.patchTodoItem(item.id, done: !item.done)
+            todoLists[listIndex].items[itemIndex] = updated
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func assignTodoItem(_ item: TodoItem, to userId: String?) async {
+        guard let listIndex = todoLists.firstIndex(where: { $0.id == item.todoListId }),
+              let itemIndex = todoLists[listIndex].items.firstIndex(where: { $0.id == item.id }) else { return }
+        do {
+            let updated: TodoItem
+            if let userId {
+                updated = try await APIClient.shared.patchTodoItem(item.id, assigneeId: userId)
+            } else {
+                updated = try await APIClient.shared.patchTodoItem(item.id, clearAssignee: true)
+            }
+            todoLists[listIndex].items[itemIndex] = updated
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func deleteTodoItem(_ item: TodoItem) async {
+        guard let listIndex = todoLists.firstIndex(where: { $0.id == item.todoListId }) else { return }
+        todoLists[listIndex].items.removeAll { $0.id == item.id }
+        do {
+            try await APIClient.shared.deleteTodoItem(item.id)
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }

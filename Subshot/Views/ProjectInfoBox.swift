@@ -24,6 +24,8 @@ struct ProjectInfoBox: View {
                     LocationSection(viewModel: viewModel, completer: viewModel.locationCompleter)
                     Divider()
                     peopleSection
+                    Divider()
+                    TodoListsSection(viewModel: viewModel)
                 }
                 .padding(.top, 12)
                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -233,5 +235,182 @@ private extension Color {
         let hash = id.unicodeScalars.reduce(into: 0) { $0 = $0 &* 31 &+ Int($1.value) }
         let hex = Color.subshotPalette[abs(hash) % Color.subshotPalette.count]
         return Color(hex: hex)
+    }
+}
+
+/// Up to 5 lists per project (spec limit, enforced by both the backend and
+/// `ShotListViewModel.maxTodoLists` here). Renaming and adding items are
+/// inline (tap-to-edit / tap-to-add-row), matching the rest of this screen's
+/// style rather than introducing sheets or native alerts for such a small edit.
+private struct TodoListsSection: View {
+    @ObservedObject var viewModel: ShotListViewModel
+    @State private var isAddingList = false
+    @State private var newListName = ""
+    @FocusState private var newListFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Todo-Listen", systemImage: "checklist")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            ForEach(viewModel.todoLists) { list in
+                TodoListCard(list: list, viewModel: viewModel)
+            }
+
+            if isAddingList {
+                HStack {
+                    TextField("Listenname", text: $newListName)
+                        .font(.footnote)
+                        .focused($newListFocused)
+                        .submitLabel(.done)
+                        .onSubmit { Task { await commitNewList() } }
+                    Button {
+                        Task { await commitNewList() }
+                    } label: {
+                        Image(systemName: "checkmark.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                }
+            } else if viewModel.todoLists.count < ShotListViewModel.maxTodoLists {
+                Button {
+                    newListName = ""
+                    isAddingList = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { newListFocused = true }
+                } label: {
+                    Label("Liste hinzufügen", systemImage: "plus")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func commitNewList() async {
+        isAddingList = false
+        let trimmed = newListName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        await viewModel.createTodoList(name: trimmed)
+    }
+}
+
+private struct TodoListCard: View {
+    let list: TodoList
+    @ObservedObject var viewModel: ShotListViewModel
+
+    @State private var isRenaming = false
+    @State private var renameText = ""
+    @FocusState private var renameFocused: Bool
+
+    @State private var isAddingItem = false
+    @State private var newItemText = ""
+    @FocusState private var newItemFocused: Bool
+
+    private var sortedItems: [TodoItem] {
+        list.items.sorted { $0.sortOrder < $1.sortOrder }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                if isRenaming {
+                    TextField("Listenname", text: $renameText)
+                        .font(.subheadline.weight(.semibold))
+                        .focused($renameFocused)
+                        .submitLabel(.done)
+                        .onSubmit { Task { await commitRename() } }
+                } else {
+                    Text(list.name)
+                        .font(.subheadline.weight(.semibold))
+                        .contentShape(Rectangle())
+                        .onTapGesture { startRenaming() }
+                }
+                Spacer()
+                Button(role: .destructive) {
+                    Task { await viewModel.deleteTodoList(list) }
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            ForEach(sortedItems) { item in
+                TodoItemRow(item: item, viewModel: viewModel)
+            }
+
+            if isAddingItem {
+                TextField("Neuer Punkt", text: $newItemText)
+                    .font(.footnote)
+                    .focused($newItemFocused)
+                    .submitLabel(.done)
+                    .onSubmit { Task { await commitNewItem() } }
+            } else {
+                Button {
+                    newItemText = ""
+                    isAddingItem = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { newItemFocused = true }
+                } label: {
+                    Label("Punkt hinzufügen", systemImage: "plus")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(10)
+        .background(Color(.tertiarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func startRenaming() {
+        renameText = list.name
+        isRenaming = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { renameFocused = true }
+    }
+
+    private func commitRename() async {
+        isRenaming = false
+        let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != list.name else { return }
+        await viewModel.renameTodoList(list, name: trimmed)
+    }
+
+    private func commitNewItem() async {
+        isAddingItem = false
+        await viewModel.createTodoItem(in: list, text: newItemText)
+    }
+}
+
+private struct TodoItemRow: View {
+    let item: TodoItem
+    @ObservedObject var viewModel: ShotListViewModel
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button {
+                Task { await viewModel.toggleTodoItemDone(item) }
+            } label: {
+                Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(item.done ? .green : .secondary)
+            }
+            .buttonStyle(.plain)
+
+            Text(item.text)
+                .font(.footnote)
+                .strikethrough(item.done)
+                .foregroundStyle(item.done ? .secondary : .primary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+        }
+        .animation(.easeInOut(duration: 0.2), value: item.done)
+        .contextMenu {
+            Button(role: .destructive) {
+                Task { await viewModel.deleteTodoItem(item) }
+            } label: {
+                Label("Löschen", systemImage: "trash")
+            }
+        }
     }
 }

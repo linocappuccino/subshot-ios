@@ -49,6 +49,8 @@ struct ProjectDetail: Codable {
     let createdAt: Date
     var scenes: [Scene]
     var shots: [Shot]
+    var todoLists: [TodoList]
+    var sections: [SceneSection]
 
     enum CodingKeys: String, CodingKey {
         case id, name, color, scenes, shots
@@ -58,6 +60,8 @@ struct ProjectDetail: Codable {
         case locationLng = "location_lng"
         case lastOpenedAt = "last_opened_at"
         case createdAt = "created_at"
+        case todoLists = "todo_lists"
+        case sections
     }
 }
 
@@ -74,6 +78,8 @@ struct Scene: Codable, Identifiable, Hashable {
     var imageUrl: String?
     var completed: Bool
     var sortOrder: Int
+    var assigneeId: String?
+    var sectionId: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, color, description, dialogue, completed
@@ -83,6 +89,8 @@ struct Scene: Codable, Identifiable, Hashable {
         case durationMinutes = "duration_minutes"
         case imageUrl = "image_url"
         case sortOrder = "sort_order"
+        case assigneeId = "assignee_id"
+        case sectionId = "section_id"
     }
 }
 
@@ -155,6 +163,79 @@ struct Invite: Codable {
         case id, email, role, token
         case createdAt = "created_at"
         case acceptedAt = "accepted_at"
+    }
+}
+
+struct TodoItem: Codable, Identifiable, Hashable {
+    let id: String
+    let todoListId: String
+    var text: String
+    var done: Bool
+    var assigneeId: String?
+    var sortOrder: Int
+    let createdAt: Date
+    let completedAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, text, done
+        case todoListId = "todo_list_id"
+        case assigneeId = "assignee_id"
+        case sortOrder = "sort_order"
+        case createdAt = "created_at"
+        case completedAt = "completed_at"
+    }
+}
+
+struct TodoList: Codable, Identifiable, Hashable {
+    let id: String
+    let projectId: String
+    var name: String
+    var sortOrder: Int
+    var items: [TodoItem]
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, items
+        case projectId = "project_id"
+        case sortOrder = "sort_order"
+    }
+}
+
+/// Named `SceneSection` (not `Section`) to avoid shadowing SwiftUI's own
+/// `Section` view type in this module — the exact same trap as the earlier
+/// `Scene`/`SwiftUI.Scene` collision (see SubshotApp.swift), and `Section(...)
+/// { }` is used everywhere in Forms/Lists across this app.
+struct SceneSection: Codable, Identifiable, Hashable {
+    let id: String
+    let projectId: String
+    var name: String
+    var sortOrder: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id, name
+        case projectId = "project_id"
+        case sortOrder = "sort_order"
+    }
+}
+
+/// Named `AppNotification` to avoid colliding with Foundation's own
+/// `Notification` type.
+struct AppNotification: Codable, Identifiable, Hashable {
+    let id: String
+    let projectId: String
+    let kind: String
+    let count: Int
+    let title: String
+    let body: String
+    let createdAt: Date
+    let updatedAt: Date
+    let readAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, kind, count, title, body
+        case projectId = "project_id"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+        case readAt = "read_at"
     }
 }
 

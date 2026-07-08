@@ -365,6 +365,102 @@ final class APIClient {
         let req = try await authorizedRequest("projects/\(projectId)/members/\(userId)", method: "DELETE")
         try await sendNoContent(req)
     }
+
+    // MARK: - Todo lists
+
+    func createTodoList(projectId: String, name: String, sortOrder: Int) async throws -> TodoList {
+        var req = try await authorizedRequest("projects/\(projectId)/todo-lists", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let name: String; let sort_order: Int }
+        req.httpBody = try encoder.encode(Body(name: name, sort_order: sortOrder))
+        return try await send(req)
+    }
+
+    func patchTodoList(_ id: String, name: String) async throws -> TodoList {
+        var req = try await authorizedRequest("todo-lists/\(id)", method: "PATCH")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try encoder.encode(["name": name])
+        return try await send(req)
+    }
+
+    func deleteTodoList(_ id: String) async throws {
+        let req = try await authorizedRequest("todo-lists/\(id)", method: "DELETE")
+        try await sendNoContent(req)
+    }
+
+    func createTodoItem(todoListId: String, text: String, assigneeId: String? = nil, sortOrder: Int) async throws -> TodoItem {
+        var req = try await authorizedRequest("todo-lists/\(todoListId)/items", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let text: String; let assignee_id: String?; let sort_order: Int }
+        req.httpBody = try encoder.encode(Body(text: text, assignee_id: assigneeId, sort_order: sortOrder))
+        return try await send(req)
+    }
+
+    /// Partial update, same "only non-nil is sent" convention as patchScene —
+    /// `clearAssignee` is the explicit escape hatch to unassign (mirrors the
+    /// backend's ScenePatch.clear_assignee), since a plain nil assigneeId here
+    /// means "don't touch it", not "remove it".
+    func patchTodoItem(
+        _ id: String, text: String? = nil, done: Bool? = nil,
+        assigneeId: String? = nil, clearAssignee: Bool = false, sortOrder: Int? = nil
+    ) async throws -> TodoItem {
+        var req = try await authorizedRequest("todo-items/\(id)", method: "PATCH")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable {
+            let text: String?; let done: Bool?; let assignee_id: String?
+            let clear_assignee: Bool; let sort_order: Int?
+        }
+        req.httpBody = try encoder.encode(Body(
+            text: text, done: done, assignee_id: assigneeId,
+            clear_assignee: clearAssignee, sort_order: sortOrder
+        ))
+        return try await send(req)
+    }
+
+    func deleteTodoItem(_ id: String) async throws {
+        let req = try await authorizedRequest("todo-items/\(id)", method: "DELETE")
+        try await sendNoContent(req)
+    }
+
+    // MARK: - Sections
+
+    func createSection(projectId: String, name: String, sortOrder: Int) async throws -> SceneSection {
+        var req = try await authorizedRequest("projects/\(projectId)/sections", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let name: String; let sort_order: Int }
+        req.httpBody = try encoder.encode(Body(name: name, sort_order: sortOrder))
+        return try await send(req)
+    }
+
+    func patchSection(_ id: String, name: String? = nil, sortOrder: Int? = nil) async throws -> SceneSection {
+        var req = try await authorizedRequest("sections/\(id)", method: "PATCH")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let name: String?; let sort_order: Int? }
+        req.httpBody = try encoder.encode(Body(name: name, sort_order: sortOrder))
+        return try await send(req)
+    }
+
+    func deleteSection(_ id: String) async throws {
+        let req = try await authorizedRequest("sections/\(id)", method: "DELETE")
+        try await sendNoContent(req)
+    }
+
+    // MARK: - Notifications
+
+    func notifications(unreadOnly: Bool = true) async throws -> [AppNotification] {
+        let req = try await authorizedRequest("me/notifications?unread_only=\(unreadOnly)")
+        return try await send(req)
+    }
+
+    func markNotificationRead(_ id: String) async throws -> AppNotification {
+        let req = try await authorizedRequest("me/notifications/\(id)/read", method: "POST")
+        return try await send(req)
+    }
+
+    func markAllNotificationsRead() async throws {
+        let req = try await authorizedRequest("me/notifications/read-all", method: "POST")
+        try await sendNoContent(req)
+    }
 }
 
 private extension JSONDecoder.DateDecodingStrategy {
