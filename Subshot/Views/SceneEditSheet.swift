@@ -11,13 +11,16 @@ struct SceneEditSheet: View {
     /// from 10-400 would be 391 entries to scroll through for no real benefit,
     /// nobody dials in "247mm". `nil` (front of the list) means "not set".
     static let focalLengths: [Int?] = [nil, 10, 12, 14, 16, 18, 20, 24, 28, 35, 40, 50, 65, 85, 100, 135, 150, 200, 300, 400]
+    /// Estimated scene length, offered in 5-minute steps — matches how a
+    /// shooting schedule is actually blocked out, no one dials in "37 Min.".
+    static let durations: [Int?] = [nil] + stride(from: 5, through: 240, by: 5).map { $0 }
 
     let existing: Scene?
     @ObservedObject var viewModel: ShotListViewModel
     /// Returns the created/renamed scene so a picked-but-not-yet-uploaded
     /// image can be attached right after — matters for brand-new scenes,
     /// which have no id (and thus nowhere to upload to) until this returns.
-    var onSave: (String, String, String, String, Int?, Date?) async -> Scene?
+    var onSave: (String, String, String, String, Int?, Date?, Int?) async -> Scene?
     var onImagePicked: ((Scene, UIImage) async -> Void)?
 
     @State private var name: String
@@ -27,6 +30,7 @@ struct SceneEditSheet: View {
     @State private var focalLength: Int?
     @State private var hasDate: Bool
     @State private var scheduledDate: Date
+    @State private var durationMinutes: Int?
     @State private var photoItem: PhotosPickerItem?
     @State private var uploadedImage: UIImage?
     @State private var isAddingShot = false
@@ -37,7 +41,7 @@ struct SceneEditSheet: View {
     init(
         existing: Scene?,
         viewModel: ShotListViewModel,
-        onSave: @escaping (String, String, String, String, Int?, Date?) async -> Scene?,
+        onSave: @escaping (String, String, String, String, Int?, Date?, Int?) async -> Scene?,
         onImagePicked: ((Scene, UIImage) async -> Void)? = nil
     ) {
         self.existing = existing
@@ -51,6 +55,7 @@ struct SceneEditSheet: View {
         _focalLength = State(initialValue: existing?.focalLengthMm)
         _hasDate = State(initialValue: existing?.scheduledAt != nil)
         _scheduledDate = State(initialValue: existing?.scheduledAt ?? Date())
+        _durationMinutes = State(initialValue: existing?.durationMinutes)
     }
 
     var body: some View {
@@ -128,6 +133,19 @@ struct SceneEditSheet: View {
                     }
                 }
 
+                if hasDate {
+                    // Only meaningful once a start time exists — the live/countdown
+                    // badge on the scene card is scheduledAt + durationMinutes.
+                    Section("Geschätzte Länge") {
+                        Picker("Länge", selection: $durationMinutes) {
+                            ForEach(Self.durations, id: \.self) { mins in
+                                Text(mins.map { "\($0) Min." } ?? "–").tag(mins)
+                            }
+                        }
+                        .pickerStyle(.wheel)
+                    }
+                }
+
                 Section("Brennweite") {
                     Picker("Brennweite", selection: $focalLength) {
                         ForEach(Self.focalLengths, id: \.self) { mm in
@@ -182,7 +200,8 @@ struct SceneEditSheet: View {
                                 description.trimmingCharacters(in: .whitespacesAndNewlines),
                                 dialogue.trimmingCharacters(in: .whitespacesAndNewlines),
                                 focalLength,
-                                hasDate ? scheduledDate : nil
+                                hasDate ? scheduledDate : nil,
+                                hasDate ? durationMinutes : nil
                             )
                             // existing's id never changes on rename, so prefer it when
                             // present; `saved` only matters for a brand-new scene, which

@@ -22,4 +22,27 @@ extension Color {
     /// project) — used for both scene AND project color swatches, so the
     /// whole app draws from one set.
     static let subshotPalette = ["#3875bd", "#0f7e55", "#4e4295", "#d1504f", "#b9507b", "#a64c22"]
+
+    /// Linear RGB blend toward `other`, `fraction` clamped to 0...1 — used
+    /// for the scene deadline countdown color (grey→yellow→red), which fades
+    /// continuously rather than snapping between three fixed colors.
+    func interpolated(to other: Color, fraction: Double) -> Color {
+        let f = min(max(fraction, 0), 1)
+        #if canImport(UIKit)
+        let from = UIColor(self)
+        let to = UIColor(other)
+        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
+        var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
+        from.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
+        to.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+        return Color(
+            red: r1 + (r2 - r1) * f,
+            green: g1 + (g2 - g1) * f,
+            blue: b1 + (b2 - b1) * f,
+            opacity: a1 + (a2 - a1) * f
+        )
+        #else
+        return f < 0.5 ? self : other
+        #endif
+    }
 }

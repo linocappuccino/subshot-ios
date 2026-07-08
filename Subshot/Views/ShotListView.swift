@@ -83,9 +83,9 @@ struct ShotListView: View {
             set: { if !$0 { editingScene = nil } }
         )) {
             if case .some(let existing) = editingScene {
-                SceneEditSheet(existing: existing, viewModel: viewModel) { name, color, description, dialogue, focalLength, scheduledAt in
+                SceneEditSheet(existing: existing, viewModel: viewModel) { name, color, description, dialogue, focalLength, scheduledAt, durationMinutes in
                     if let existing {
-                        await viewModel.renameScene(existing, name: name, color: color, description: description, dialogue: dialogue, focalLengthMm: focalLength, scheduledAt: scheduledAt)
+                        await viewModel.renameScene(existing, name: name, color: color, description: description, dialogue: dialogue, focalLengthMm: focalLength, scheduledAt: scheduledAt, durationMinutes: durationMinutes)
                         return existing
                     } else {
                         return await viewModel.createScene(
@@ -93,7 +93,8 @@ struct ShotListView: View {
                             description: description.isEmpty ? nil : description,
                             dialogue: dialogue.isEmpty ? nil : dialogue,
                             focalLengthMm: focalLength,
-                            scheduledAt: scheduledAt
+                            scheduledAt: scheduledAt,
+                            durationMinutes: durationMinutes
                         )
                     }
                 } onImagePicked: { scene, image in
@@ -183,9 +184,27 @@ struct ShotListView: View {
             }
             sceneHeader(scene: scene)
             if let scheduledAt = scene.scheduledAt {
-                Label(scheduledAt.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                // Live-ticking, not just recomputed on the next incidental
+                // re-render — TimelineView keeps this in sync with the wall
+                // clock on its own (every 30s is plenty for a color that
+                // shifts over tens of minutes).
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    Label(scheduledAt.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
+                        .font(.caption)
+                        .foregroundStyle(urgencyColor(for: scheduledAt, now: context.date))
+                        .animation(.easeInOut(duration: 0.4), value: urgencyColor(for: scheduledAt, now: context.date))
+                }
+            }
+            if let scheduledAt = scene.scheduledAt, let durationMinutes = scene.durationMinutes {
+                // Separate 1s-ticking timeline (vs. the 30s one above) — this
+                // one drives an actual mm:ss countdown while the scene is
+                // running, so it needs second-level precision.
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    let end = scheduledAt.addingTimeInterval(TimeInterval(durationMinutes) * 60)
+                    if context.date >= scheduledAt && context.date < end {
+                        LiveSceneBadge(remaining: end.timeIntervalSince(context.date))
+                    }
+                }
             }
             if let description = scene.description, !description.isEmpty {
                 Text(description)
@@ -372,6 +391,22 @@ struct ShotListView: View {
             viewModel.errorMessage = error.localizedDescription
         }
     }
+
+    /// Grey more than 1h out, fading through yellow at the 30min mark, red
+    /// once the scheduled time has passed — a continuous fade, not a hard
+    /// 3-way switch, so it visibly "warms up" as the deadline approaches.
+    private func urgencyColor(for scheduledAt: Date, now: Date) -> Color {
+        let remaining = scheduledAt.timeIntervalSince(now)
+        if remaining <= 0 {
+            return .red
+        } else if remaining <= 1800 {
+            return .yellow.interpolated(to: .red, fraction: 1 - (remaining / 1800))
+        } else if remaining <= 3600 {
+            return Color(.secondaryLabel).interpolated(to: .yellow, fraction: 1 - ((remaining - 1800) / 1800))
+        } else {
+            return Color(.secondaryLabel)
+        }
+    }
 }
 
 /// Storyboard-style card: big photo (if one's been added) on top, description
@@ -445,5 +480,40 @@ private struct ShotCard: View {
         case .should: return .orange
         case .optional: return .gray
         }
+    }
+}
+
+/// Shown on a scene's tile while `now` falls inside [scheduledAt,
+/// scheduledAt + durationMinutes) — a gently pulsing dot + live mm:ss
+/// countdown so it's obvious at a glance which scene is currently rolling.
+private struct LiveSceneBadge: View {
+    let remaining: TimeInterval
+    @State private var pulse = false
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(Color.white)
+                .frame(width: 6, height: 6)
+                .scaleEffect(pulse ? 1.5 : 0.85)
+                .opacity(pulse ? 0.35 : 1.0)
+            Text("Läuft · noch \(Self.format(remaining))")
+                .font(.caption2.weight(.bold))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.red)
+        .clipShape(Capsule())
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                pulse = true
+            }
+        }
+    }
+
+    private static func format(_ seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds))
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }

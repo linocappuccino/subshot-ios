@@ -161,17 +161,19 @@ final class APIClient {
     func createScene(
         projectId: String, name: String?, color: String,
         description: String? = nil, dialogue: String? = nil, focalLengthMm: Int? = nil,
-        scheduledAt: Date? = nil, sortOrder: Int = 0
+        scheduledAt: Date? = nil, durationMinutes: Int? = nil, sortOrder: Int = 0
     ) async throws -> Scene {
         var req = try await authorizedRequest("projects/\(projectId)/scenes", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         struct Body: Encodable {
             let name: String?; let color: String; let description: String?
-            let dialogue: String?; let focal_length_mm: Int?; let scheduled_at: Date?; let sort_order: Int
+            let dialogue: String?; let focal_length_mm: Int?; let scheduled_at: Date?
+            let duration_minutes: Int?; let sort_order: Int
         }
         req.httpBody = try encoder.encode(Body(
             name: name, color: color, description: description,
-            dialogue: dialogue, focal_length_mm: focalLengthMm, scheduled_at: scheduledAt, sort_order: sortOrder
+            dialogue: dialogue, focal_length_mm: focalLengthMm, scheduled_at: scheduledAt,
+            duration_minutes: durationMinutes, sort_order: sortOrder
         ))
         return try await send(req)
     }
@@ -179,19 +181,19 @@ final class APIClient {
     func patchScene(
         _ id: String, name: String? = nil, color: String? = nil,
         description: String? = nil, dialogue: String? = nil, focalLengthMm: Int? = nil,
-        scheduledAt: Date? = nil, completed: Bool? = nil, sortOrder: Int? = nil
+        scheduledAt: Date? = nil, durationMinutes: Int? = nil, completed: Bool? = nil, sortOrder: Int? = nil
     ) async throws -> Scene {
         var req = try await authorizedRequest("scenes/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         struct Body: Encodable {
             let name: String?; let color: String?; let description: String?
             let dialogue: String?; let focal_length_mm: Int?; let scheduled_at: Date?
-            let completed: Bool?; let sort_order: Int?
+            let duration_minutes: Int?; let completed: Bool?; let sort_order: Int?
         }
         req.httpBody = try encoder.encode(Body(
             name: name, color: color, description: description,
             dialogue: dialogue, focal_length_mm: focalLengthMm, scheduled_at: scheduledAt,
-            completed: completed, sort_order: sortOrder
+            duration_minutes: durationMinutes, completed: completed, sort_order: sortOrder
         ))
         return try await send(req)
     }
