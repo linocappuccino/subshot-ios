@@ -48,7 +48,7 @@ struct ProjectInfoBox: View {
             HStack {
                 Image(systemName: "info.circle.fill")
                     .foregroundStyle(.secondary)
-                Text("Info")
+                Text("Projektinfos")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
                 Image(systemName: "chevron.right")
