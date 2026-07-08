@@ -71,13 +71,26 @@ struct AsyncShotThumbnail: View {
             image = cached
             return
         }
+        print("🔵 [\(Self.ts())] START loading \(path)")
         do {
             let fetched = try await APIClient.shared.fetchImage(path: path)
             Self.cache.setObject(fetched, forKey: key)
             image = fetched
+            print("🟢 [\(Self.ts())] DONE loading \(path)")
         } catch {
             failed = true
+            print("🔴 [\(Self.ts())] FAILED loading \(path): \(error)")
         }
+    }
+
+    // TEMPORARY debugging aid for the scroll-freeze investigation — remove
+    // once the cause is confirmed. A START print with no matching DONE/
+    // FAILED print in the console right before a freeze means that specific
+    // fetch is the one stuck.
+    private static func ts() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss.SSS"
+        return f.string(from: Date())
     }
 }
 
