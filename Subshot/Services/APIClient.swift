@@ -106,10 +106,10 @@ final class APIClient {
         return try await send(req)
     }
 
-    func createProject(name: String) async throws -> Project {
+    func createProject(name: String, color: String) async throws -> Project {
         var req = try await authorizedRequest("projects", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try encoder.encode(["name": name])
+        req.httpBody = try encoder.encode(["name": name, "color": color])
         return try await send(req)
     }
 
@@ -118,10 +118,11 @@ final class APIClient {
         return try await send(req)
     }
 
-    func renameProject(_ id: String, name: String) async throws -> Project {
+    func patchProject(_ id: String, name: String? = nil, color: String? = nil) async throws -> Project {
         var req = try await authorizedRequest("projects/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try encoder.encode(["name": name])
+        struct Body: Encodable { let name: String?; let color: String? }
+        req.httpBody = try encoder.encode(Body(name: name, color: color))
         return try await send(req)
     }
 

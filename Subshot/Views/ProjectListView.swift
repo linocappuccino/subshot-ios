@@ -7,6 +7,7 @@ struct ProjectListView: View {
     @State private var isAddingNew = false
     @State private var newProjectName = ""
     @State private var path: [Project] = []
+    @State private var editingProject: Project?
     @FocusState private var newRowFocused: Bool
 
     var body: some View {
@@ -22,7 +23,7 @@ struct ProjectListView: View {
                     NavigationLink(value: project) {
                         HStack(spacing: 12) {
                             Circle()
-                                .fill(Color.stable(for: project.id))
+                                .fill(Color(hex: project.color))
                                 .frame(width: 32, height: 32)
                                 .overlay {
                                     Image(systemName: "film.stack")
@@ -37,6 +38,14 @@ struct ProjectListView: View {
                             }
                         }
                         .padding(.vertical, 4)
+                    }
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            editingProject = project
+                        } label: {
+                            Label("Bearbeiten", systemImage: "pencil")
+                        }
+                        .tint(.blue)
                     }
                 }
                 .onDelete { indexSet in
@@ -79,6 +88,11 @@ struct ProjectListView: View {
             }
             .task { await viewModel.load() }
             .refreshable { await viewModel.load() }
+            .sheet(item: $editingProject) { project in
+                ProjectEditSheet(project: project) { name, color in
+                    await viewModel.update(project, name: name, color: color)
+                }
+            }
         }
     }
 

@@ -35,6 +35,12 @@ struct ShotListView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .dropDestination(for: String.self) { ids, _ in
+                    guard let dragged = ids.first, viewModel.scenes.contains(where: { $0.id == dragged }) else { return }
+                    Task { await viewModel.reorderScene(dragged, before: nil) }
+                }
             }
             .padding(.vertical, 16)
         }
@@ -89,7 +95,7 @@ struct ShotListView: View {
         }
         .padding(.horizontal, 16)
         .dropDestination(for: String.self) { ids, _ in
-            guard let dragged = ids.first else { return }
+            guard let dragged = ids.first, !viewModel.scenes.contains(where: { $0.id == dragged }) else { return }
             Task { await viewModel.moveShot(dragged, toScene: nil) }
         }
     }
@@ -108,8 +114,14 @@ struct ShotListView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .padding(.horizontal, 16)
         .dropDestination(for: String.self) { ids, _ in
-            guard let dragged = ids.first else { return }
-            Task { await viewModel.moveShot(dragged, toScene: scene.id) }
+            guard let dragged = ids.first, dragged != scene.id else { return }
+            Task {
+                if viewModel.scenes.contains(where: { $0.id == dragged }) {
+                    await viewModel.reorderScene(dragged, before: scene.id)
+                } else {
+                    await viewModel.moveShot(dragged, toScene: scene.id)
+                }
+            }
         }
     }
 
@@ -131,22 +143,16 @@ struct ShotListView: View {
 
             Spacer()
 
-            Menu {
-                Button {
-                    Task { await moveSceneUp(scene) }
-                } label: {
-                    Label("Nach oben", systemImage: "arrow.up")
-                }
-                Button {
-                    Task { await moveSceneDown(scene) }
-                } label: {
-                    Label("Nach unten", systemImage: "arrow.down")
-                }
-            } label: {
-                Image(systemName: "line.3.horizontal")
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 4)
-            }
+            // Drag handle — dragging this card's header onto another scene
+            // reorders scenes (inserts before the drop target); dropping
+            // below the last scene, on the "Szene hinzufügen" row, moves it
+            // to the end. Replaces the old up/down menu.
+            Image(systemName: "line.3.horizontal")
+                .foregroundStyle(.secondary)
+                .padding(.leading, 4)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+                .draggable(scene.id)
         }
     }
 
@@ -222,19 +228,6 @@ struct ShotListView: View {
     private func commitNewShot(sceneId: String?) async {
         addingToScene = nil
         await viewModel.createShot(description: newShotText, sceneId: sceneId)
-    }
-
-    private func moveSceneUp(_ scene: Scene) async {
-        guard let idx = viewModel.scenes.firstIndex(where: { $0.id == scene.id }), idx > 0 else { return }
-        let target = viewModel.scenes[idx - 1]
-        await viewModel.reorderScene(scene.id, before: target.id)
-    }
-
-    private func moveSceneDown(_ scene: Scene) async {
-        guard let idx = viewModel.scenes.firstIndex(where: { $0.id == scene.id }) else { return }
-        let nextIndex = idx + 2  // "insert before" semantics — see reorderScene
-        let targetId = nextIndex < viewModel.scenes.count ? viewModel.scenes[nextIndex].id : nil
-        await viewModel.reorderScene(scene.id, before: targetId)
     }
 }
 

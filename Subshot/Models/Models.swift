@@ -18,11 +18,12 @@ struct Me: Codable {
 struct Project: Codable, Identifiable, Hashable {
     let id: String
     var name: String
+    var color: String
     let lastOpenedAt: Date
     let createdAt: Date
 
     enum CodingKeys: String, CodingKey {
-        case id, name
+        case id, name, color
         case lastOpenedAt = "last_opened_at"
         case createdAt = "created_at"
     }
@@ -31,13 +32,14 @@ struct Project: Codable, Identifiable, Hashable {
 struct ProjectDetail: Codable {
     let id: String
     var name: String
+    var color: String
     let lastOpenedAt: Date
     let createdAt: Date
     var scenes: [Scene]
     var shots: [Shot]
 
     enum CodingKeys: String, CodingKey {
-        case id, name, scenes, shots
+        case id, name, color, scenes, shots
         case lastOpenedAt = "last_opened_at"
         case createdAt = "created_at"
     }
