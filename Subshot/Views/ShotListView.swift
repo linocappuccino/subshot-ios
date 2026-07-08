@@ -206,17 +206,21 @@ struct ShotListView: View {
                     }
                 }
             }
+            // No lineLimit here on purpose — description/dialogue must always
+            // show in full, with whatever line breaks the person typed
+            // (Text renders literal "\n"s as-is; nothing strips them on the
+            // way in from SceneEditSheet's TextField).
             if let description = scene.description, !description.isEmpty {
                 Text(description)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if let dialogue = scene.dialogue, !dialogue.isEmpty {
                 Label(dialogue, systemImage: "quote.bubble")
                     .font(.footnote.italic())
                     .foregroundStyle(.secondary)
-                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .contentShape(Rectangle())
