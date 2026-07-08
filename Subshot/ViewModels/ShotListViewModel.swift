@@ -90,6 +90,36 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
+    /// "Im Kasten" toggle: flips `completed` and — only when turning it ON —
+    /// moves the scene to the very end of the list. Mutates `scenes` locally
+    /// first (wrapped in `withAnimation`) so the color change and reorder
+    /// animate immediately instead of waiting on the network round-trip;
+    /// the server calls afterward reconcile/persist the same result.
+    func setSceneCompleted(_ scene: Scene, completed: Bool) async {
+        guard let index = scenes.firstIndex(where: { $0.id == scene.id }) else { return }
+        #if canImport(UIKit)
+        UINotificationFeedbackGenerator().notificationOccurred(completed ? .success : .warning)
+        #endif
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.75)) {
+            scenes[index].completed = completed
+            if completed {
+                let moved = scenes.remove(at: index)
+                scenes.append(moved)
+            }
+        }
+        do {
+            let updated = try await APIClient.shared.patchScene(scene.id, completed: completed)
+            if let i = scenes.firstIndex(where: { $0.id == updated.id }) {
+                scenes[i] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        if completed {
+            await reorderScene(scene.id, before: nil)
+        }
+    }
+
     #if canImport(UIKit)
     func uploadSceneImage(_ scene: Scene, image: UIImage) async {
         do {

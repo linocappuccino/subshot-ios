@@ -140,7 +140,8 @@ struct ShotListView: View {
             addRow(sceneId: scene.id)
         }
         .padding(12)
-        .background(Color(.secondarySystemGroupedBackground))
+        .background(scene.completed ? Color.green.opacity(0.18) : Color(.secondarySystemGroupedBackground))
+        .animation(.easeInOut(duration: 0.3), value: scene.completed)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .padding(.horizontal, 16)
         .dropDestination(for: String.self) { ids, _ in
@@ -203,7 +204,32 @@ struct ShotListView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             Spacer()
+            imKastenButton(scene: scene)
         }
+    }
+
+    /// "Im Kasten" ("it's a wrap" — scene fully shot): tapping it toggles
+    /// `completed`, which tints the whole card green and (when turning it on)
+    /// slides it to the bottom of the scene list — see
+    /// `ShotListViewModel.setSceneCompleted` for the animation/reorder.
+    /// A plain Button nested here so its tap takes priority over the
+    /// surrounding tile's own onTapGesture/draggable.
+    @ViewBuilder
+    private func imKastenButton(scene: Scene) -> some View {
+        Button {
+            Task { await viewModel.setSceneCompleted(scene, completed: !scene.completed) }
+        } label: {
+            Label("Im Kasten", systemImage: scene.completed ? "checkmark.seal.fill" : "checkmark.seal")
+                .font(.caption.weight(.semibold))
+                .labelStyle(.titleAndIcon)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(scene.completed ? Color.green.opacity(0.25) : Color(.tertiarySystemGroupedBackground))
+                .foregroundStyle(scene.completed ? .green : .secondary)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: scene.completed)
     }
 
     @ViewBuilder
