@@ -156,10 +156,13 @@ struct ShotListView: View {
         }
     }
 
-    /// Image + header + description grouped as one draggable/tappable unit —
-    /// tap anywhere on it to edit the scene, press-and-drag anywhere on it to
-    /// reorder (same gesture language as ShotCard below: tap = detail, drag =
-    /// reorder, both work on the whole card, not just a small handle).
+    /// Image + header + description grouped as one tappable unit — tap
+    /// anywhere on it to edit the scene. Dragging to reorder lives on the
+    /// dedicated handle in the header, NOT here: `.draggable()` on a view
+    /// this big inside a ScrollView/LazyVStack fights the ScrollView's own
+    /// pan gesture for touches and can make the whole list stop scrolling
+    /// (confirmed — a `List` doesn't have this problem since it has native
+    /// drag/scroll coexistence, but a plain ScrollView does).
     @ViewBuilder
     private func sceneTile(scene: Scene) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -189,12 +192,12 @@ struct ShotListView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { editingScene = .some(scene) }
-        .draggable(scene.id)
     }
 
     @ViewBuilder
     private func sceneHeader(scene: Scene) -> some View {
         HStack(spacing: 8) {
+            dragHandle(scene: scene)
             Circle()
                 .fill(Color(hex: scene.color))
                 .frame(width: 14, height: 14)
@@ -206,6 +209,18 @@ struct ShotListView: View {
             Spacer()
             imKastenButton(scene: scene)
         }
+    }
+
+    /// Generous (44x44pt min, per HIG touch-target guidance) dedicated drag
+    /// source — press and hold anywhere on this specific icon, then move to
+    /// reorder. Scoped small on purpose (see sceneTile's doc comment).
+    @ViewBuilder
+    private func dragHandle(scene: Scene) -> some View {
+        Image(systemName: "line.3.horizontal")
+            .foregroundStyle(.secondary)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+            .draggable(scene.id)
     }
 
     /// "Im Kasten" ("it's a wrap" — scene fully shot): tapping it toggles
