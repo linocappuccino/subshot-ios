@@ -106,16 +106,24 @@ final class APIClient {
 
     // MARK: - Projects
 
-    func listProjects() async throws -> [Project] {
-        let req = try await authorizedRequest("projects")
+    /// nil = root level (folder_id IS NULL on the backend), a folder's id =
+    /// that folder's contents.
+    func listProjects(folderId: String? = nil) async throws -> [Project] {
+        let path = folderId.map { "projects?folder_id=\($0)" } ?? "projects"
+        let req = try await authorizedRequest(path)
         return try await send(req)
     }
 
-    func createProject(name: String, color: String) async throws -> Project {
+    func createProject(name: String, color: String, folderId: String? = nil) async throws -> Project {
         var req = try await authorizedRequest("projects", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try encoder.encode(["name": name, "color": color])
-        return try await send(req)
+        let project: Project = try await send(req)
+        // Creation has no folder_id param server-side (ProjectCreate doesn't
+        // carry one) — a second patch is the simplest way to land a new
+        // project directly inside the folder it was created from.
+        guard let folderId else { return project }
+        return try await patchProject(project.id, folderId: folderId)
     }
 
     func getProject(_ id: String) async throws -> ProjectDetail {
@@ -126,23 +134,54 @@ final class APIClient {
     func patchProject(
         _ id: String, name: String? = nil, color: String? = nil,
         shootDate: Date? = nil, locationAddress: String? = nil,
-        locationLat: Double? = nil, locationLng: Double? = nil
+        locationLat: Double? = nil, locationLng: Double? = nil,
+        folderId: String? = nil, clearFolder: Bool = false
     ) async throws -> Project {
         var req = try await authorizedRequest("projects/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         struct Body: Encodable {
             let name: String?; let color: String?; let shoot_date: Date?
             let location_address: String?; let location_lat: Double?; let location_lng: Double?
+            let folder_id: String?; let clear_folder: Bool
         }
         req.httpBody = try encoder.encode(Body(
             name: name, color: color, shoot_date: shootDate,
-            location_address: locationAddress, location_lat: locationLat, location_lng: locationLng
+            location_address: locationAddress, location_lat: locationLat, location_lng: locationLng,
+            folder_id: folderId, clear_folder: clearFolder
         ))
         return try await send(req)
     }
 
     func deleteProject(_ id: String) async throws {
         let req = try await authorizedRequest("projects/\(id)", method: "DELETE")
+        try await sendNoContent(req)
+    }
+
+    // MARK: - Folders
+
+    func listFolders() async throws -> [ProjectFolder] {
+        let req = try await authorizedRequest("folders")
+        return try await send(req)
+    }
+
+    func createFolder(name: String, sortOrder: Int) async throws -> ProjectFolder {
+        var req = try await authorizedRequest("folders", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let name: String; let sort_order: Int }
+        req.httpBody = try encoder.encode(Body(name: name, sort_order: sortOrder))
+        return try await send(req)
+    }
+
+    func patchFolder(_ id: String, name: String? = nil, sortOrder: Int? = nil) async throws -> ProjectFolder {
+        var req = try await authorizedRequest("folders/\(id)", method: "PATCH")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let name: String?; let sort_order: Int? }
+        req.httpBody = try encoder.encode(Body(name: name, sort_order: sortOrder))
+        return try await send(req)
+    }
+
+    func deleteFolder(_ id: String) async throws {
+        let req = try await authorizedRequest("folders/\(id)", method: "DELETE")
         try await sendNoContent(req)
     }
 

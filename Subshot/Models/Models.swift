@@ -23,6 +23,8 @@ struct Project: Codable, Identifiable, Hashable {
     var locationAddress: String?
     var locationLat: Double?
     var locationLng: Double?
+    var folderId: String?
+    var thumbnailUrl: String?
     let lastOpenedAt: Date
     let createdAt: Date
 
@@ -32,7 +34,31 @@ struct Project: Codable, Identifiable, Hashable {
         case locationAddress = "location_address"
         case locationLat = "location_lat"
         case locationLng = "location_lng"
+        case folderId = "folder_id"
+        case thumbnailUrl = "thumbnail_url"
         case lastOpenedAt = "last_opened_at"
+        case createdAt = "created_at"
+    }
+
+    /// Deletion cron (scripts/deletion_job.py) warns at day 25, deletes at
+    /// day 30 of inactivity — purely a function of lastOpenedAt, no separate
+    /// backend field needed.
+    var daysUntilDeletion: Int {
+        let deletesAt = lastOpenedAt.addingTimeInterval(30 * 24 * 3600)
+        return max(0, Calendar.current.dateComponents([.day], from: .now, to: deletesAt).day ?? 0)
+    }
+}
+
+struct ProjectFolder: Codable, Identifiable, Hashable {
+    let id: String
+    var name: String
+    var color: String
+    var sortOrder: Int
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, color
+        case sortOrder = "sort_order"
         case createdAt = "created_at"
     }
 }
@@ -45,6 +71,7 @@ struct ProjectDetail: Codable {
     var locationAddress: String?
     var locationLat: Double?
     var locationLng: Double?
+    var folderId: String?
     let lastOpenedAt: Date
     let createdAt: Date
     var scenes: [Scene]
@@ -58,6 +85,7 @@ struct ProjectDetail: Codable {
         case locationAddress = "location_address"
         case locationLat = "location_lat"
         case locationLng = "location_lng"
+        case folderId = "folder_id"
         case lastOpenedAt = "last_opened_at"
         case createdAt = "created_at"
         case todoLists = "todo_lists"

@@ -1,74 +1,73 @@
 import SwiftUI
 import ClerkKit
 
+/// Root project screen AND every folder's contents use this same view —
+/// `folderId`/`folderName` nil means the root (all top-level projects +
+/// folder tiles), non-nil means we're inside a folder (its projects only,
+/// no nested folders). Grid of tiles throughout: a project tile shows a
+/// thumbnail pulled from one of its scenes, a folder tile looks identical
+/// (no folder chrome) so the two read as one consistent tile system.
 struct ProjectListView: View {
-    @StateObject private var viewModel = ProjectListViewModel()
+    let folderId: String?
+    let folderName: String?
+
+    @StateObject private var viewModel: ProjectListViewModel
     @Environment(Clerk.self) private var clerk
-    @State private var isAddingNew = false
-    @State private var newProjectName = ""
-    @State private var path: [Project] = []
+    @State private var creatingProject = false
+    @State private var creatingFolder = false
+    @State private var newItemName = ""
+    @State private var path = NavigationPath()
     @State private var editingProject: Project?
+    @State private var editingFolder: ProjectFolder?
     @State private var showingNotifications = false
-    @FocusState private var newRowFocused: Bool
+    @FocusState private var newNameFocused: Bool
+
+    private let columns = [GridItem(.adaptive(minimum: 150), spacing: 16)]
+
+    init(folderId: String? = nil, folderName: String? = nil) {
+        self.folderId = folderId
+        self.folderName = folderName
+        _viewModel = StateObject(wrappedValue: ProjectListViewModel(folderId: folderId))
+    }
 
     var body: some View {
-        NavigationStack(path: $path) {
-            List {
-                if isAddingNew {
-                    TextField("Projektname", text: $newProjectName)
-                        .focused($newRowFocused)
-                        .submitLabel(.done)
-                        .onSubmit { Task { await commitNewProject() } }
+        // Only the root level owns a NavigationStack — a folder pushes onto
+        // it the same way ShotListView already does, so drilling into a
+        // folder and then into one of its projects is one continuous stack.
+        if folderId == nil {
+            NavigationStack(path: $path) {
+                gridScreen
+                    .navigationDestination(for: Project.self) { project in
+                        ShotListView(projectId: project.id, projectName: project.name)
+                    }
+                    .navigationDestination(for: ProjectFolder.self) { folder in
+                        ProjectListView(folderId: folder.id, folderName: folder.name)
+                    }
+            }
+        } else {
+            gridScreen
+        }
+    }
+
+    private var gridScreen: some View {
+        ScrollView {
+            LazyVGrid(columns: columns, spacing: 16) {
+                if folderId == nil {
+                    ForEach(viewModel.folders) { folder in
+                        folderTile(folder)
+                    }
                 }
                 ForEach(viewModel.projects) { project in
-                    NavigationLink(value: project) {
-                        HStack(spacing: 12) {
-                            Circle()
-                                .fill(Color(hex: project.color))
-                                .frame(width: 32, height: 32)
-                                .overlay {
-                                    Image(systemName: "film.stack")
-                                        .font(.caption)
-                                        .foregroundStyle(.white)
-                                }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(project.name).font(.body)
-                                Text(project.lastOpenedAt, style: .relative)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                    .swipeActions(edge: .leading) {
-                        Button {
-                            editingProject = project
-                        } label: {
-                            Label("Bearbeiten", systemImage: "pencil")
-                        }
-                        .tint(.blue)
-                    }
+                    projectTile(project)
                 }
-                .onDelete { indexSet in
-                    Task {
-                        for index in indexSet { await viewModel.delete(viewModel.projects[index]) }
-                    }
-                }
-
-                // Reminders-style: the empty area below the list is itself the
-                // "add new" affordance, not just a small toolbar button.
-                Color.clear
-                    .frame(height: 80)
-                    .contentShape(Rectangle())
-                    .onTapGesture { startAddingNew() }
-                    .listRowSeparator(.hidden)
             }
-            .listStyle(.plain)
-            .navigationTitle("Subshot")
-            .navigationDestination(for: Project.self) { project in
-                ShotListView(projectId: project.id, projectName: project.name)
-            }
-            .toolbar {
+            .padding(16)
+        }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle(folderName ?? "Subshot")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if folderId == nil {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button { showingNotifications = true } label: {
                         ZStack(alignment: .topTrailing) {
@@ -85,55 +84,201 @@ struct ProjectListView: View {
                         }
                     }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { startAddingNew() } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title2)
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if folderId == nil {
+                    Menu {
+                        Button {
+                            newItemName = ""
+                            creatingProject = true
+                        } label: {
+                            Label("Neues Projekt", systemImage: "film.stack")
+                        }
+                        Button {
+                            newItemName = ""
+                            creatingFolder = true
+                        } label: {
+                            Label("Neuer Ordner", systemImage: "folder.badge.plus")
+                        }
+                    } label: {
+                        Image(systemName: "plus.circle.fill").font(.title2)
+                    }
+                } else {
+                    Button {
+                        newItemName = ""
+                        creatingProject = true
+                    } label: {
+                        Image(systemName: "plus.circle.fill").font(.title2)
                     }
                 }
             }
-            .overlay {
-                if viewModel.isLoading && viewModel.projects.isEmpty {
-                    ProgressView()
-                } else if viewModel.projects.isEmpty && !isAddingNew {
-                    ContentUnavailableView(
-                        "Noch keine Projekte",
-                        systemImage: "film.stack",
-                        description: Text("Tippe auf + um dein erstes Projekt anzulegen.")
-                    )
-                }
+        }
+        .overlay {
+            if viewModel.isLoading && viewModel.projects.isEmpty && viewModel.folders.isEmpty {
+                ProgressView()
+            } else if viewModel.projects.isEmpty && viewModel.folders.isEmpty {
+                ContentUnavailableView(
+                    "Noch keine Projekte",
+                    systemImage: "film.stack",
+                    description: Text("Tippe auf + um dein erstes Projekt anzulegen.")
+                )
             }
-            .task { await viewModel.load() }
-            .task { await viewModel.loadNotifications() }
-            .refreshable {
-                await viewModel.load()
-                await viewModel.loadNotifications()
+        }
+        .task { await viewModel.load() }
+        .task { if folderId == nil { await viewModel.loadNotifications() } }
+        .refreshable {
+            await viewModel.load()
+            if folderId == nil { await viewModel.loadNotifications() }
+        }
+        .sheet(isPresented: $creatingProject) { nameSheet(title: "Neues Projekt") { name in
+            if let project = await viewModel.create(name: name) { path.append(project) }
+        } }
+        .sheet(isPresented: $creatingFolder) { nameSheet(title: "Neuer Ordner") { name in
+            await viewModel.createFolder(name: name)
+        } }
+        .sheet(item: $editingProject) { project in
+            ProjectEditSheet(project: project) { name, color in
+                await viewModel.update(project, name: name, color: color)
             }
-            .sheet(item: $editingProject) { project in
-                ProjectEditSheet(project: project) { name, color in
-                    await viewModel.update(project, name: name, color: color)
-                }
+        }
+        .sheet(item: $editingFolder) { folder in
+            nameSheet(title: "Ordner umbenennen", initialValue: folder.name) { name in
+                await viewModel.renameFolder(folder, name: name)
             }
-            .sheet(isPresented: $showingNotifications) {
-                NotificationsSheet(viewModel: viewModel) { project in
-                    path.append(project)
-                }
+        }
+        .sheet(isPresented: $showingNotifications) {
+            NotificationsSheet(viewModel: viewModel) { project in
+                path.append(project)
             }
         }
     }
 
-    private func startAddingNew() {
-        newProjectName = ""
-        isAddingNew = true
-        // Focus needs a beat after the row appears in the list.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            newRowFocused = true
+    // MARK: - Tiles
+
+    @ViewBuilder
+    private func projectTile(_ project: Project) -> some View {
+        NavigationLink(value: project) {
+            tileBody(
+                title: project.name,
+                subtitle: project.lastOpenedAt.formatted(.relative(presentation: .named)),
+                color: project.color,
+                thumbnailPath: project.thumbnailUrl,
+                fallbackIcon: "film.stack"
+            )
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button { editingProject = project } label: {
+                Label("Bearbeiten", systemImage: "pencil")
+            }
+            Button(role: .destructive) {
+                Task { await viewModel.delete(project) }
+            } label: {
+                Label("Löschen", systemImage: "trash")
+            }
+        }
+        // Long-press-and-hold picks the tile up (standard iOS drag haptic) —
+        // dropping it on a folder tile files it there.
+        .draggable(project.id)
+    }
+
+    @ViewBuilder
+    private func folderTile(_ folder: ProjectFolder) -> some View {
+        NavigationLink(value: folder) {
+            tileBody(
+                title: folder.name,
+                subtitle: nil,
+                color: folder.color,
+                thumbnailPath: nil,
+                fallbackIcon: "folder.fill"
+            )
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button { editingFolder = folder } label: {
+                Label("Umbenennen", systemImage: "pencil")
+            }
+            Button(role: .destructive) {
+                Task { await viewModel.deleteFolder(folder) }
+            } label: {
+                Label("Löschen", systemImage: "trash")
+            }
+        }
+        .dropDestination(for: String.self) { ids, _ in
+            guard let projectId = ids.first, let project = viewModel.projects.first(where: { $0.id == projectId }) else { return }
+            Task { await viewModel.moveProject(project, toFolder: folder.id) }
         }
     }
 
-    private func commitNewProject() async {
-        isAddingNew = false
-        guard let project = await viewModel.create(name: newProjectName) else { return }
-        path.append(project)
+    private func tileBody(title: String, subtitle: String?, color: String, thumbnailPath: String?, fallbackIcon: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Color(hex: color).opacity(0.25))
+                if let thumbnailPath {
+                    AsyncShotThumbnail(path: thumbnailPath, size: nil, lockAspectRatio: false)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                } else {
+                    Image(systemName: fallbackIcon)
+                        .font(.system(size: 32))
+                        .foregroundStyle(Color(hex: color))
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .aspectRatio(1, contentMode: .fit)
+
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            if let subtitle {
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    // MARK: - Creation sheet
+
+    @ViewBuilder
+    private func nameSheet(title: String, initialValue: String = "", onSave: @escaping (String) async -> Void) -> some View {
+        NavigationStack {
+            Form {
+                Section("Name") {
+                    TextField("Name", text: $newItemName)
+                        .focused($newNameFocused)
+                        .onAppear {
+                            newItemName = initialValue
+                            newNameFocused = true
+                        }
+                }
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Abbrechen") { dismissSheets() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Fertig") {
+                        let trimmed = newItemName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !trimmed.isEmpty else { return }
+                        Task {
+                            await onSave(trimmed)
+                            dismissSheets()
+                        }
+                    }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private func dismissSheets() {
+        creatingProject = false
+        creatingFolder = false
+        editingFolder = nil
     }
 }

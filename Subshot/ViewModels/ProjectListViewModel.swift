@@ -4,18 +4,84 @@ import Combine
 
 @MainActor
 final class ProjectListViewModel: ObservableObject {
+    /// nil = root screen. One ViewModel instance per screen level (root and
+    /// each opened folder push a fresh ProjectListView / VM), same pattern
+    /// as ShotListViewModel being per-project.
+    let folderId: String?
+
     @Published var projects: [Project] = []
+    /// Only populated at the root level — folders don't nest.
+    @Published var folders: [ProjectFolder] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
     /// Batched notifications (currently just todo-item assignments — see the
     /// backend Notification model docstring for the collapsing logic).
     @Published var notifications: [AppNotification] = []
 
+    init(folderId: String? = nil) {
+        self.folderId = folderId
+    }
+
     func load() async {
         isLoading = true
         defer { isLoading = false }
         do {
-            projects = try await APIClient.shared.listProjects()
+            projects = try await APIClient.shared.listProjects(folderId: folderId)
+            if folderId == nil {
+                folders = try await APIClient.shared.listFolders()
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    @discardableResult
+    func createFolder(name: String) async -> ProjectFolder? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        do {
+            let sortOrder = (folders.map(\.sortOrder).max() ?? -1) + 1
+            let folder = try await APIClient.shared.createFolder(name: trimmed, sortOrder: sortOrder)
+            folders.append(folder)
+            return folder
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    func renameFolder(_ folder: ProjectFolder, name: String) async {
+        do {
+            let updated = try await APIClient.shared.patchFolder(folder.id, name: name)
+            if let index = folders.firstIndex(where: { $0.id == updated.id }) {
+                folders[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func deleteFolder(_ folder: ProjectFolder) async {
+        folders.removeAll { $0.id == folder.id }
+        do {
+            try await APIClient.shared.deleteFolder(folder.id)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Drag & drop: moves a project tile onto a folder tile.
+    func moveProject(_ project: Project, toFolder targetFolderId: String?) async {
+        do {
+            let updated: Project
+            if let targetFolderId {
+                updated = try await APIClient.shared.patchProject(project.id, folderId: targetFolderId)
+            } else {
+                updated = try await APIClient.shared.patchProject(project.id, clearFolder: true)
+            }
+            // Moved out of this screen's scope (into/out of a folder) — drop
+            // it from the visible list instead of leaving a stale entry.
+            projects.removeAll { $0.id == updated.id }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -57,7 +123,7 @@ final class ProjectListViewModel: ObservableObject {
         guard !trimmed.isEmpty else { return nil }
         let color = Color.subshotPalette[projects.count % Color.subshotPalette.count]
         do {
-            let project = try await APIClient.shared.createProject(name: trimmed, color: color)
+            let project = try await APIClient.shared.createProject(name: trimmed, color: color, folderId: folderId)
             projects.insert(project, at: 0)
             return project
         } catch {
