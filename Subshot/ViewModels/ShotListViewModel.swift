@@ -23,6 +23,15 @@ final class ShotListViewModel: ObservableObject {
     @Published var locationLng: Double?
     @Published var members: [Member] = []
 
+    /// Owned here, not as a @StateObject inside LocationSection — that view
+    /// lives inside the scrolling LazyVStack and gets torn down/rebuilt
+    /// constantly while scrolling, which was recreating the underlying
+    /// MKLocalSearchCompleter (and tearing it down) on every pass. That
+    /// churn was the actual cause of the CPU-pegged freeze (confirmed via
+    /// a paused stack sitting in swift_bridgeObjectRelease with an active
+    /// NSURLConnection thread). One instance for the whole screen visit fixes it.
+    let locationCompleter = LocationSearchCompleter()
+
     /// Holds a just-deleted shot for the 5s undo window (spec §7, ShotListView).
     @Published var pendingUndoShot: Shot?
     private var undoTask: Task<Void, Never>?

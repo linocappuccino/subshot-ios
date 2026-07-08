@@ -21,7 +21,7 @@ struct ProjectInfoBox: View {
                     Divider()
                     ShootDateSection(viewModel: viewModel)
                     Divider()
-                    LocationSection(viewModel: viewModel)
+                    LocationSection(viewModel: viewModel, completer: viewModel.locationCompleter)
                     Divider()
                     peopleSection
                 }
@@ -140,7 +140,7 @@ private struct ShootDateSection: View {
 
 private struct LocationSection: View {
     @ObservedObject var viewModel: ShotListViewModel
-    @StateObject private var completer = LocationSearchCompleter()
+    @ObservedObject var completer: LocationSearchCompleter
     @State private var query = ""
     @State private var isEditing = false
 
