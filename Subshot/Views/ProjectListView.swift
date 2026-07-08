@@ -15,12 +15,10 @@ struct ProjectListView: View {
     @Environment(Clerk.self) private var clerk
     @State private var creatingProject = false
     @State private var creatingFolder = false
-    @State private var newItemName = ""
     @State private var path = NavigationPath()
     @State private var editingProject: Project?
     @State private var editingFolder: ProjectFolder?
     @State private var showingNotifications = false
-    @FocusState private var newNameFocused: Bool
 
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 16)]
 
@@ -49,7 +47,29 @@ struct ProjectListView: View {
         }
     }
 
+    // Broken into grid + toolbar + sheets as separate pieces (rather than
+    // one long chained expression) after Xcode's type checker gave up on
+    // this view entirely ("unable to type-check in reasonable time") — the
+    // combination of nested conditionals in .toolbar plus five .sheet
+    // modifiers in a single chain was too much for it to solve at once.
     private var gridScreen: some View {
+        gridContent
+            .toolbar { toolbarContent }
+            .task { await viewModel.load() }
+            .task { if folderId == nil { await viewModel.loadNotifications() } }
+            .refreshable {
+                await viewModel.load()
+                if folderId == nil { await viewModel.loadNotifications() }
+            }
+            .modifier(GridSheets(
+                viewModel: viewModel, path: $path,
+                creatingProject: $creatingProject, creatingFolder: $creatingFolder,
+                editingProject: $editingProject, editingFolder: $editingFolder,
+                showingNotifications: $showingNotifications
+            ))
+    }
+
+    private var gridContent: some View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 16) {
                 if folderId == nil {
@@ -66,52 +86,6 @@ struct ProjectListView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle(folderName ?? "Subshot")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if folderId == nil {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button { showingNotifications = true } label: {
-                        ZStack(alignment: .topTrailing) {
-                            Image(systemName: "bell")
-                            if !viewModel.notifications.isEmpty {
-                                Text("\(viewModel.notifications.count)")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .padding(4)
-                                    .background(Color.red)
-                                    .clipShape(Circle())
-                                    .offset(x: 9, y: -9)
-                            }
-                        }
-                    }
-                }
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                if folderId == nil {
-                    Menu {
-                        Button {
-                            newItemName = ""
-                            creatingProject = true
-                        } label: {
-                            Label("Neues Projekt", systemImage: "film.stack")
-                        }
-                        Button {
-                            creatingFolder = true
-                        } label: {
-                            Label("Neuer Ordner", systemImage: "folder.badge.plus")
-                        }
-                    } label: {
-                        Image(systemName: "plus.circle.fill").font(.title2)
-                    }
-                } else {
-                    Button {
-                        newItemName = ""
-                        creatingProject = true
-                    } label: {
-                        Image(systemName: "plus.circle.fill").font(.title2)
-                    }
-                }
-            }
-        }
         .overlay {
             if viewModel.isLoading && viewModel.projects.isEmpty && viewModel.folders.isEmpty {
                 ProgressView()
@@ -123,33 +97,50 @@ struct ProjectListView: View {
                 )
             }
         }
-        .task { await viewModel.load() }
-        .task { if folderId == nil { await viewModel.loadNotifications() } }
-        .refreshable {
-            await viewModel.load()
-            if folderId == nil { await viewModel.loadNotifications() }
-        }
-        .sheet(isPresented: $creatingProject) { nameSheet(title: "Neues Projekt") { name in
-            if let project = await viewModel.create(name: name) { path.append(project) }
-        } }
-        .sheet(isPresented: $creatingFolder) {
-            FolderEditSheet(existing: nil) { name, color, emoji in
-                await viewModel.createFolder(name: name, color: color, emoji: emoji)
+    }
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        if folderId == nil {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button { showingNotifications = true } label: {
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: "bell")
+                        if !viewModel.notifications.isEmpty {
+                            Text("\(viewModel.notifications.count)")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(4)
+                                .background(Color.red)
+                                .clipShape(Circle())
+                                .offset(x: 9, y: -9)
+                        }
+                    }
+                }
             }
         }
-        .sheet(item: $editingProject) { project in
-            ProjectEditSheet(project: project) { name, color in
-                await viewModel.update(project, name: name, color: color)
-            }
-        }
-        .sheet(item: $editingFolder) { folder in
-            FolderEditSheet(existing: folder) { name, color, emoji in
-                await viewModel.updateFolder(folder, name: name, color: color, emoji: emoji)
-            }
-        }
-        .sheet(isPresented: $showingNotifications) {
-            NotificationsSheet(viewModel: viewModel) { project in
-                path.append(project)
+        ToolbarItem(placement: .navigationBarTrailing) {
+            if folderId == nil {
+                Menu {
+                    Button {
+                        creatingProject = true
+                    } label: {
+                        Label("Neues Projekt", systemImage: "film.stack")
+                    }
+                    Button {
+                        creatingFolder = true
+                    } label: {
+                        Label("Neuer Ordner", systemImage: "folder.badge.plus")
+                    }
+                } label: {
+                    Image(systemName: "plus.circle.fill").font(.title2)
+                }
+            } else {
+                Button {
+                    creatingProject = true
+                } label: {
+                    Image(systemName: "plus.circle.fill").font(.title2)
+                }
             }
         }
     }
@@ -245,17 +236,61 @@ struct ProjectListView: View {
         }
     }
 
-    // MARK: - Creation sheet
+}
+
+/// All five .sheet(...) modifiers for the grid screen, split out into their
+/// own ViewModifier — see gridScreen's comment for why (Xcode's type checker
+/// couldn't solve the combined chain).
+private struct GridSheets: ViewModifier {
+    @ObservedObject var viewModel: ProjectListViewModel
+    @Binding var path: NavigationPath
+    @Binding var creatingProject: Bool
+    @Binding var creatingFolder: Bool
+    @Binding var editingProject: Project?
+    @Binding var editingFolder: ProjectFolder?
+    @Binding var showingNotifications: Bool
+
+    @State private var newItemName = ""
+    @FocusState private var newNameFocused: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $creatingProject) {
+                nameSheet(title: "Neues Projekt") { name in
+                    if let project = await viewModel.create(name: name) { path.append(project) }
+                }
+            }
+            .sheet(isPresented: $creatingFolder) {
+                FolderEditSheet(existing: nil) { name, color, emoji in
+                    await viewModel.createFolder(name: name, color: color, emoji: emoji)
+                }
+            }
+            .sheet(item: $editingProject) { project in
+                ProjectEditSheet(project: project) { name, color in
+                    await viewModel.update(project, name: name, color: color)
+                }
+            }
+            .sheet(item: $editingFolder) { folder in
+                FolderEditSheet(existing: folder) { name, color, emoji in
+                    await viewModel.updateFolder(folder, name: name, color: color, emoji: emoji)
+                }
+            }
+            .sheet(isPresented: $showingNotifications) {
+                NotificationsSheet(viewModel: viewModel) { project in
+                    path.append(project)
+                }
+            }
+    }
 
     @ViewBuilder
-    private func nameSheet(title: String, initialValue: String = "", onSave: @escaping (String) async -> Void) -> some View {
+    private func nameSheet(title: String, onSave: @escaping (String) async -> Void) -> some View {
         NavigationStack {
             Form {
                 Section("Name") {
                     TextField("Name", text: $newItemName)
                         .focused($newNameFocused)
                         .onAppear {
-                            newItemName = initialValue
+                            newItemName = ""
                             newNameFocused = true
                         }
                 }
@@ -264,7 +299,7 @@ struct ProjectListView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Abbrechen") { dismissSheets() }
+                    Button("Abbrechen") { creatingProject = false }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Fertig") {
@@ -272,18 +307,12 @@ struct ProjectListView: View {
                         guard !trimmed.isEmpty else { return }
                         Task {
                             await onSave(trimmed)
-                            dismissSheets()
+                            creatingProject = false
                         }
                     }
                 }
             }
         }
         .preferredColorScheme(.dark)
-    }
-
-    private func dismissSheets() {
-        creatingProject = false
-        creatingFolder = false
-        editingFolder = nil
     }
 }
