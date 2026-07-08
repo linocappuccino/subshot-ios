@@ -71,18 +71,6 @@ struct ShotListView: View {
             }
         }
         .task { await viewModel.load() }
-        // TEMPORARY debugging aid for the scroll-freeze investigation — a
-        // heartbeat that prints once a second. If this keeps printing while
-        // the UI is visibly frozen, the main thread/UI is specifically
-        // stuck (something blocking rendering) even though background work
-        // continues; if it STOPS printing too, the whole process is
-        // wedged. Remove once the cause is confirmed.
-        .task {
-            while !Task.isCancelled {
-                print("❤️ heartbeat scenes=\(viewModel.scenes.count) shots=\(viewModel.shots.count)")
-                try? await Task.sleep(for: .seconds(1))
-            }
-        }
         .refreshable { await viewModel.load() }
         .sheet(item: $selectedShot) { shot in
             ShotDetailSheet(shot: shot, viewModel: viewModel)
