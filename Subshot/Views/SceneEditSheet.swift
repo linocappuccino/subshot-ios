@@ -174,6 +174,12 @@ struct SceneEditSheet: View {
                     }
                 }
 
+                if let existing {
+                    Section("Priorität") {
+                        ScenePrioritySection(scene: existing, viewModel: viewModel)
+                    }
+                }
+
                 // Managing shots (like the cover photo below) only makes sense
                 // for an existing scene — a not-yet-created one has no id to
                 // attach a shot to. Not offered for Zwischenschritt scenes at
@@ -302,5 +308,27 @@ private struct SceneLocationSection: View {
         isEditing = false
         completer.clear()
         query = ""
+    }
+}
+
+/// Same segmented-picker pattern as ShotDetailSheet's priority field, colored
+/// per option (must=red, should=orange, optional=gray — matches ShotCard's
+/// priorityColor) so the picker itself previews what the scene tile's badge
+/// will look like.
+private struct ScenePrioritySection: View {
+    let scene: Scene
+    @ObservedObject var viewModel: ShotListViewModel
+
+    var body: some View {
+        Picker("Priorität", selection: Binding(
+            get: { scene.priority },
+            set: { newValue in Task { await viewModel.updateScenePriority(scene, priority: newValue) } }
+        )) {
+            Text("Keine").tag(ShotPriority?.none)
+            ForEach(ShotPriority.allCases) { p in
+                Text(p.label).tag(ShotPriority?.some(p))
+            }
+        }
+        .pickerStyle(.segmented)
     }
 }

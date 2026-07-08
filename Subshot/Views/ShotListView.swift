@@ -1,5 +1,15 @@
 import SwiftUI
 
+/// Shared between the scene number badge's priority ring and ShotCard's own
+/// priority dot — must=red, should=orange, optional=gray.
+private func priorityColor(_ priority: ShotPriority) -> Color {
+    switch priority {
+    case .must: return .red
+    case .should: return .orange
+    case .optional: return .gray
+    }
+}
+
 struct ShotListView: View {
     @StateObject private var viewModel: ShotListViewModel
     let projectName: String
@@ -405,6 +415,11 @@ struct ShotListView: View {
                     .padding(.vertical, 3)
                     .background(Color(hex: scene.color))
                     .clipShape(Capsule())
+                if let priority = scene.priority {
+                    Circle()
+                        .fill(priorityColor(priority))
+                        .frame(width: 9, height: 9)
+                }
                 Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
                     .font(.headline)
                     .lineLimit(2)

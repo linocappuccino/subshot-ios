@@ -250,6 +250,23 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
+    /// Same "own dedicated call, existing scenes only" reasoning as location.
+    func updateScenePriority(_ scene: Scene, priority: ShotPriority?) async {
+        do {
+            let updated: Scene
+            if let priority {
+                updated = try await APIClient.shared.patchScene(scene.id, priority: priority)
+            } else {
+                updated = try await APIClient.shared.patchScene(scene.id, clearPriority: true)
+            }
+            if let index = scenes.firstIndex(where: { $0.id == updated.id }) {
+                scenes[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func renameScene(_ scene: Scene, name: String, color: String, description: String, dialogue: String, focalLengthMm: Int?, scheduledAt: Date?, durationMinutes: Int?) async {
         do {
             let updated = try await APIClient.shared.patchScene(

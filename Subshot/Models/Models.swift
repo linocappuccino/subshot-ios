@@ -113,9 +113,10 @@ struct Scene: Codable, Identifiable, Hashable {
     var locationLng: Double?
     let number: Int
     let letter: String?
+    var priority: ShotPriority?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, color, description, dialogue, completed, number, letter
+        case id, name, color, description, dialogue, completed, number, letter, priority
         case projectId = "project_id"
         case focalLengthMm = "focal_length_mm"
         case scheduledAt = "scheduled_at"
