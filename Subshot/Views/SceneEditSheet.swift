@@ -7,20 +7,27 @@ import PhotosUI
 /// more silently-created "Unbenannte Szene" with no way to name it) and to
 /// rename/re-color/re-describe an existing one (tap a scene header).
 struct SceneEditSheet: View {
+    /// Common cinema/photo lens reference stops — a wheel with every integer
+    /// from 10-400 would be 391 entries to scroll through for no real benefit,
+    /// nobody dials in "247mm". `nil` (front of the list) means "not set".
+    static let focalLengths: [Int?] = [nil, 10, 12, 14, 16, 18, 20, 24, 28, 35, 40, 50, 65, 85, 100, 135, 150, 200, 300, 400]
+
     let existing: Scene?
-    var onSave: (String, String, String) async -> Void
+    var onSave: (String, String, String, String, Int?) async -> Void
     var onImagePicked: ((UIImage) async -> Void)?
 
     @State private var name: String
     @State private var color: String
     @State private var description: String
+    @State private var dialogue: String
+    @State private var focalLength: Int?
     @State private var photoItem: PhotosPickerItem?
     @State private var uploadedImage: UIImage?
     @Environment(\.dismiss) private var dismiss
 
     init(
         existing: Scene?,
-        onSave: @escaping (String, String, String) async -> Void,
+        onSave: @escaping (String, String, String, String, Int?) async -> Void,
         onImagePicked: ((UIImage) async -> Void)? = nil
     ) {
         self.existing = existing
@@ -29,6 +36,8 @@ struct SceneEditSheet: View {
         _name = State(initialValue: existing?.name ?? "")
         _color = State(initialValue: existing?.color ?? Color.subshotPalette[0])
         _description = State(initialValue: existing?.description ?? "")
+        _dialogue = State(initialValue: existing?.dialogue ?? "")
+        _focalLength = State(initialValue: existing?.focalLengthMm)
     }
 
     var body: some View {
@@ -56,8 +65,22 @@ struct SceneEditSheet: View {
                     .padding(.vertical, 4)
                 }
                 Section("Beschreibung") {
-                    TextField("z.B. Sprechertext, Handlung, Notizen", text: $description, axis: .vertical)
+                    TextField("z.B. Handlung, Notizen", text: $description, axis: .vertical)
                         .lineLimit(3...6)
+                }
+
+                Section("Dialog") {
+                    TextField("Gesprochener Text", text: $dialogue, axis: .vertical)
+                        .lineLimit(3...6)
+                }
+
+                Section("Brennweite") {
+                    Picker("Brennweite", selection: $focalLength) {
+                        ForEach(Self.focalLengths, id: \.self) { mm in
+                            Text(mm.map { "\($0)mm" } ?? "–").tag(mm)
+                        }
+                    }
+                    .pickerStyle(.wheel)
                 }
 
                 // Cover photo only for an existing scene — same reasoning as
@@ -103,7 +126,9 @@ struct SceneEditSheet: View {
                             await onSave(
                                 name.trimmingCharacters(in: .whitespacesAndNewlines),
                                 color,
-                                description.trimmingCharacters(in: .whitespacesAndNewlines)
+                                description.trimmingCharacters(in: .whitespacesAndNewlines),
+                                dialogue.trimmingCharacters(in: .whitespacesAndNewlines),
+                                focalLength
                             )
                             dismiss()
                         }

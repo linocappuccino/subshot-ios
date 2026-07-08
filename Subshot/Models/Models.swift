@@ -51,12 +51,15 @@ struct Scene: Codable, Identifiable, Hashable {
     var name: String?
     var color: String
     var description: String?
+    var dialogue: String?
+    var focalLengthMm: Int?
     var imageUrl: String?
     var sortOrder: Int
 
     enum CodingKeys: String, CodingKey {
-        case id, name, color, description
+        case id, name, color, description, dialogue
         case projectId = "project_id"
+        case focalLengthMm = "focal_length_mm"
         case imageUrl = "image_url"
         case sortOrder = "sort_order"
     }

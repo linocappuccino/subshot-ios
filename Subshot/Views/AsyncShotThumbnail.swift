@@ -12,26 +12,48 @@ struct AsyncShotThumbnail: View {
     /// where the caller applies its own (non-square) `.frame(...)` instead.
     var size: CGFloat? = 44
 
+    /// When true, ignores `size` and instead forces the frame itself to a
+    /// clean 16:9 (landscape source) or 9:16 (portrait source) box, filling
+    /// and cropping the photo to match — used for scene cover images so
+    /// mixed photo orientations don't produce inconsistent card heights.
+    var lockAspectRatio: Bool = false
+
     @State private var image: UIImage?
     @State private var failed = false
 
     var body: some View {
         Group {
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else if failed {
-                Image(systemName: "photo")
-                    .foregroundStyle(.secondary)
+            if lockAspectRatio {
+                let ratio: CGFloat = {
+                    guard let image, image.size.height > 0 else { return 16.0 / 9.0 }
+                    return image.size.width >= image.size.height ? 16.0 / 9.0 : 9.0 / 16.0
+                }()
+                Color.clear
+                    .aspectRatio(ratio, contentMode: .fit)
+                    .overlay { thumbnailContent }
+                    .clipped()
             } else {
-                ProgressView()
+                thumbnailContent
+                    .modifier(OptionalSquareFrame(size: size))
             }
         }
-        .modifier(OptionalSquareFrame(size: size))
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .task(id: path) {
             await load()
+        }
+    }
+
+    @ViewBuilder
+    private var thumbnailContent: some View {
+        if let image {
+            Image(uiImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+        } else if failed {
+            Image(systemName: "photo")
+                .foregroundStyle(.secondary)
+        } else {
+            ProgressView()
         }
     }
 

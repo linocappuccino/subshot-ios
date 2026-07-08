@@ -87,11 +87,16 @@ struct ShotListView: View {
             set: { if !$0 { editingScene = nil } }
         )) {
             if case .some(let existing) = editingScene {
-                SceneEditSheet(existing: existing) { name, color, description in
+                SceneEditSheet(existing: existing) { name, color, description, dialogue, focalLength in
                     if let existing {
-                        await viewModel.renameScene(existing, name: name, color: color, description: description)
+                        await viewModel.renameScene(existing, name: name, color: color, description: description, dialogue: dialogue, focalLengthMm: focalLength)
                     } else {
-                        await viewModel.createScene(name: name.isEmpty ? "Unbenannte Szene" : name, color: color, description: description.isEmpty ? nil : description)
+                        await viewModel.createScene(
+                            name: name.isEmpty ? "Unbenannte Szene" : name, color: color,
+                            description: description.isEmpty ? nil : description,
+                            dialogue: dialogue.isEmpty ? nil : dialogue,
+                            focalLengthMm: focalLength
+                        )
                     }
                 } onImagePicked: { image in
                     if let existing {
@@ -127,21 +132,7 @@ struct ShotListView: View {
     @ViewBuilder
     private func sceneCard(scene: Scene) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let imageUrl = scene.imageUrl {
-                AsyncShotThumbnail(path: imageUrl, size: nil)
-                    .frame(height: 140)
-                    .frame(maxWidth: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .contentShape(Rectangle())
-                    .onTapGesture { editingScene = .some(scene) }
-            }
-            sceneHeader(scene: scene)
-            if let description = scene.description, !description.isEmpty {
-                Text(description)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(3)
-            }
+            sceneTile(scene: scene)
             ForEach(viewModel.shots(in: scene)) { shot in
                 shotCardView(shot: shot, sceneId: scene.id)
             }
@@ -163,34 +154,47 @@ struct ShotListView: View {
         }
     }
 
+    /// Image + header + description grouped as one draggable/tappable unit —
+    /// tap anywhere on it to edit the scene, press-and-drag anywhere on it to
+    /// reorder (same gesture language as ShotCard below: tap = detail, drag =
+    /// reorder, both work on the whole card, not just a small handle).
+    @ViewBuilder
+    private func sceneTile(scene: Scene) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let imageUrl = scene.imageUrl {
+                AsyncShotThumbnail(path: imageUrl, size: nil, lockAspectRatio: true)
+                    .frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            sceneHeader(scene: scene)
+            if let description = scene.description, !description.isEmpty {
+                Text(description)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { editingScene = .some(scene) }
+        .draggable(scene.id)
+    }
+
     @ViewBuilder
     private func sceneHeader(scene: Scene) -> some View {
         HStack(spacing: 8) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(Color(hex: scene.color))
-                    .frame(width: 14, height: 14)
-                Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
-                    .font(.headline)
-                Text("\(viewModel.shots(in: scene).count)")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .contentShape(Rectangle())
-            .onTapGesture { editingScene = .some(scene) }
+            Circle()
+                .fill(Color(hex: scene.color))
+                .frame(width: 14, height: 14)
+            Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
+                .font(.headline)
+            Text("\(viewModel.shots(in: scene).count)")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
 
             Spacer()
 
-            // Drag handle — dragging this card's header onto another scene
-            // reorders scenes (inserts before the drop target); dropping
-            // below the last scene, on the "Szene hinzufügen" row, moves it
-            // to the end. Replaces the old up/down menu.
             Image(systemName: "line.3.horizontal")
                 .foregroundStyle(.secondary)
-                .padding(.leading, 4)
-                .padding(.vertical, 6)
-                .contentShape(Rectangle())
-                .draggable(scene.id)
         }
     }
 
