@@ -386,6 +386,11 @@ private struct TodoItemRow: View {
     let item: TodoItem
     @ObservedObject var viewModel: ShotListViewModel
 
+    private var assignee: Member? {
+        guard let id = item.assigneeId else { return nil }
+        return viewModel.members.first { $0.userId == id }
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             Button {
@@ -403,6 +408,8 @@ private struct TodoItemRow: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             Spacer(minLength: 0)
+
+            assigneeMenu
         }
         .animation(.easeInOut(duration: 0.2), value: item.done)
         .contextMenu {
@@ -412,5 +419,45 @@ private struct TodoItemRow: View {
                 Label("Löschen", systemImage: "trash")
             }
         }
+    }
+
+    /// Tap the avatar (or the placeholder person icon) to assign — same
+    /// people list as the project's Team sheet, no separate invite flow here.
+    private var assigneeMenu: some View {
+        Menu {
+            if assignee != nil {
+                Button {
+                    Task { await viewModel.assignTodoItem(item, to: nil) }
+                } label: {
+                    Label("Niemand zugewiesen", systemImage: "xmark.circle")
+                }
+            }
+            ForEach(viewModel.members) { member in
+                Button {
+                    Task { await viewModel.assignTodoItem(item, to: member.userId) }
+                } label: {
+                    Text(member.name?.isEmpty == false ? member.name! : member.email)
+                }
+            }
+        } label: {
+            if let assignee {
+                initialsBadge(assignee)
+            } else {
+                Image(systemName: "person.crop.circle.badge.plus")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func initialsBadge(_ member: Member) -> some View {
+        let source = member.name?.isEmpty == false ? member.name! : member.email
+        let initials = String(source.prefix(2)).uppercased()
+        return Text(initials)
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: 18, height: 18)
+            .background(Color.stableColor(for: member.userId))
+            .clipShape(Circle())
     }
 }

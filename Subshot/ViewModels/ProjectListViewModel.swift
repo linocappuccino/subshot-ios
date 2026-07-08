@@ -7,6 +7,9 @@ final class ProjectListViewModel: ObservableObject {
     @Published var projects: [Project] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
+    /// Batched notifications (currently just todo-item assignments — see the
+    /// backend Notification model docstring for the collapsing logic).
+    @Published var notifications: [AppNotification] = []
 
     func load() async {
         isLoading = true
@@ -14,6 +17,32 @@ final class ProjectListViewModel: ObservableObject {
         do {
             projects = try await APIClient.shared.listProjects()
         } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func loadNotifications() async {
+        // Best-effort — a failed fetch just means no bell badge, not worth
+        // surfacing as an error banner over the whole project list.
+        notifications = (try? await APIClient.shared.notifications(unreadOnly: true)) ?? notifications
+    }
+
+    func markNotificationRead(_ notification: AppNotification) async {
+        notifications.removeAll { $0.id == notification.id }
+        do {
+            _ = try await APIClient.shared.markNotificationRead(notification.id)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func markAllNotificationsRead() async {
+        let previous = notifications
+        notifications = []
+        do {
+            try await APIClient.shared.markAllNotificationsRead()
+        } catch {
+            notifications = previous
             errorMessage = error.localizedDescription
         }
     }

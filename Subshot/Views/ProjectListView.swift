@@ -8,6 +8,7 @@ struct ProjectListView: View {
     @State private var newProjectName = ""
     @State private var path: [Project] = []
     @State private var editingProject: Project?
+    @State private var showingNotifications = false
     @FocusState private var newRowFocused: Bool
 
     var body: some View {
@@ -68,6 +69,22 @@ struct ProjectListView: View {
                 ShotListView(projectId: project.id, projectName: project.name)
             }
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { showingNotifications = true } label: {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: "bell")
+                            if !viewModel.notifications.isEmpty {
+                                Text("\(viewModel.notifications.count)")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(4)
+                                    .background(Color.red)
+                                    .clipShape(Circle())
+                                    .offset(x: 9, y: -9)
+                            }
+                        }
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { startAddingNew() } label: {
                         Image(systemName: "plus.circle.fill")
@@ -87,10 +104,19 @@ struct ProjectListView: View {
                 }
             }
             .task { await viewModel.load() }
-            .refreshable { await viewModel.load() }
+            .task { await viewModel.loadNotifications() }
+            .refreshable {
+                await viewModel.load()
+                await viewModel.loadNotifications()
+            }
             .sheet(item: $editingProject) { project in
                 ProjectEditSheet(project: project) { name, color in
                     await viewModel.update(project, name: name, color: color)
+                }
+            }
+            .sheet(isPresented: $showingNotifications) {
+                NotificationsSheet(viewModel: viewModel) { project in
+                    path.append(project)
                 }
             }
         }
