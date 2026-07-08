@@ -158,16 +158,18 @@ private struct LocationSection: View {
                         // ways (mapInteractionModes + allowsHitTesting) so it
                         // stays purely decorative and can't steal the
                         // surrounding ScrollView's pan gesture either.
-                        Map(initialPosition: .region(
-                            MKCoordinateRegion(
-                                center: CLLocationCoordinate2D(latitude: lat, longitude: lng),
-                                latitudinalMeters: 500, longitudinalMeters: 500
-                            )
-                        )) {
+                        Map(
+                            initialPosition: .region(
+                                MKCoordinateRegion(
+                                    center: CLLocationCoordinate2D(latitude: lat, longitude: lng),
+                                    latitudinalMeters: 500, longitudinalMeters: 500
+                                )
+                            ),
+                            interactionModes: []
+                        ) {
                             Marker("", coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lng))
                                 .tint(.red)
                         }
-                        .mapInteractionModes([])
                         .allowsHitTesting(false)
                         .frame(width: 64, height: 64)
                         .clipShape(RoundedRectangle(cornerRadius: 10))
