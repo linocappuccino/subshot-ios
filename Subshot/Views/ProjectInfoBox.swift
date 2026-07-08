@@ -1,10 +1,11 @@
 import SwiftUI
 import MapKit
 
-/// Collapsible info panel pinned to the top of the scene overview: shoot
-/// date, location (MapKit address autocomplete + square map thumbnail that
-/// opens Google Maps), and the people on the project. Reminders/Notes-style
-/// disclosure — tap the header to expand/collapse with a spring animation.
+/// Collapsible info panel at the top of the scene overview: shoot date,
+/// location (MapKit address autocomplete + a plain icon tile — deliberately
+/// no rendered map, see LocationSection — tapping it opens Google Maps), and
+/// the people on the project. Reminders/Notes-style disclosure — tap the
+/// header to expand/collapse with a spring animation.
 struct ProjectInfoBox: View {
     @ObservedObject var viewModel: ShotListViewModel
     let projectId: String
