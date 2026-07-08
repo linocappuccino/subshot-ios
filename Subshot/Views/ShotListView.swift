@@ -26,6 +26,11 @@ struct ShotListView: View {
     @State private var creatingIntermediateStep = false
     @State private var editingSection: SceneSection??  // same nesting convention as editingScene
     @State private var collapsedSections: Set<String> = []
+    /// Which scene tile is currently hovered by an in-flight drag — drives
+    /// the thin accent-color landing indicator above that tile (see
+    /// sceneCard). Not "which scene is being dragged": .draggable() doesn't
+    /// expose a drag-started callback, only drop-target hover does.
+    @State private var dropTargetSceneId: String?
     @State private var isExportingPdf = false
     @State private var exportedPdfURL: URL?
     @FocusState private var newRowFocused: Bool
@@ -311,6 +316,17 @@ struct ShotListView: View {
     @ViewBuilder
     private func sceneCard(scene: Scene) -> some View {
         VStack(alignment: .leading, spacing: 10) {
+            // Landing indicator: shows exactly where a dragged scene will
+            // insert if dropped right now (always "before this tile" — see
+            // sceneTile's dropDestination) — a plain highlighted background
+            // is ambiguous about above/below, a line at the top edge isn't.
+            if dropTargetSceneId == scene.id {
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(height: 3)
+                    .padding(.horizontal, 4)
+                    .transition(.opacity)
+            }
             sceneTile(scene: scene)
             ForEach(viewModel.shots(in: scene)) { shot in
                 shotCardView(shot: shot, sceneId: scene.id)
@@ -386,7 +402,9 @@ struct ShotListView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { editingScene = .some(scene) }
-        .draggable("scene:\(scene.id)")
+        .draggable("scene:\(scene.id)") {
+            sceneDragPreview(scene: scene)
+        }
         .dropDestination(for: String.self) { ids, _ in
             guard let raw = ids.first, raw.hasPrefix("scene:") else { return }
             let draggedId = String(raw.dropFirst("scene:".count))
@@ -397,7 +415,36 @@ struct ShotListView: View {
                 }
                 await viewModel.reorderScene(draggedId, before: scene.id)
             }
+        } isTargeted: { targeted in
+            withAnimation(.easeOut(duration: 0.15)) {
+                dropTargetSceneId = targeted ? scene.id : (dropTargetSceneId == scene.id ? nil : dropTargetSceneId)
+            }
         }
+    }
+
+    /// Custom drag preview instead of the system's plain view snapshot — a
+    /// compact "lifted" card (shadow, slight rotation) so picking a scene up
+    /// reads as a deliberate, physical action instead of just a ghost of
+    /// the full tile following the finger.
+    private func sceneDragPreview(scene: Scene) -> some View {
+        HStack(spacing: 8) {
+            Text(scene.displayNumber)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(Color(hex: scene.color))
+                .clipShape(Capsule())
+            Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
+        .rotationEffect(.degrees(-2))
     }
 
     /// Two rows, not one: the title used to be squeezed between a drag handle
