@@ -101,9 +101,9 @@ struct ProjectInfoBox: View {
                     showingTeamSheet = true
                 } label: {
                     Image(systemName: "plus")
-                        .font(.subheadline.weight(.bold))
+                        .font(.title3.weight(.bold))
                         .foregroundStyle(.secondary)
-                        .frame(width: 32, height: 32)
+                        .frame(width: 44, height: 44)
                         .background(Color(.tertiarySystemGroupedBackground))
                         .clipShape(Circle())
                         .overlay(Circle().stroke(Color(.secondarySystemGroupedBackground), lineWidth: 2))
@@ -114,13 +114,15 @@ struct ProjectInfoBox: View {
         }
     }
 
+    /// 44pt — Apple's own minimum recommended tap target, was 32pt (too
+    /// small/fiddly to tap reliably).
     private func initialsCircle(_ member: Member) -> some View {
         let source = member.name?.isEmpty == false ? member.name! : member.email
         let initials = String(source.prefix(2)).uppercased()
         return Text(initials)
-            .font(.caption.weight(.bold))
+            .font(.subheadline.weight(.bold))
             .foregroundStyle(.white)
-            .frame(width: 32, height: 32)
+            .frame(width: 44, height: 44)
             .background(Color.stableColor(for: member.userId))
             .clipShape(Circle())
             .overlay(Circle().stroke(Color(.secondarySystemGroupedBackground), lineWidth: 2))
@@ -283,9 +285,12 @@ private struct TodoListsSection: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { newListFocused = true }
                 } label: {
                     Label("Liste hinzufügen", systemImage: "plus")
-                        .font(.footnote)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .frame(minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -326,6 +331,7 @@ private struct TodoListCard: View {
                 } else {
                     Text(list.name)
                         .font(.headline)
+                        .frame(minHeight: 44, alignment: .leading)
                         .contentShape(Rectangle())
                         .onTapGesture { startRenaming() }
                 }
@@ -334,8 +340,10 @@ private struct TodoListCard: View {
                     Task { await viewModel.deleteTodoList(list) }
                 } label: {
                     Image(systemName: "trash")
-                        .font(.footnote)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -357,9 +365,12 @@ private struct TodoListCard: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { newItemFocused = true }
                 } label: {
                     Label("Punkt hinzufügen", systemImage: "plus")
-                        .font(.footnote)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .frame(minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
             }
         }
         .padding(10)
@@ -401,7 +412,10 @@ private struct TodoItemRow: View {
                 Task { await viewModel.toggleTodoItemDone(item) }
             } label: {
                 Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
                     .foregroundStyle(item.done ? .green : .secondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
@@ -448,8 +462,10 @@ private struct TodoItemRow: View {
                 initialsBadge(assignee)
             } else {
                 Image(systemName: "person.crop.circle.badge.plus")
-                    .font(.footnote)
+                    .font(.title3)
                     .foregroundStyle(.secondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
         }
     }
@@ -460,8 +476,10 @@ private struct TodoItemRow: View {
         return Text(initials)
             .font(.system(size: 11, weight: .bold))
             .foregroundStyle(.white)
-            .frame(width: 22, height: 22)
+            .frame(width: 26, height: 26)
             .background(Color.stableColor(for: member.userId))
             .clipShape(Circle())
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
     }
 }

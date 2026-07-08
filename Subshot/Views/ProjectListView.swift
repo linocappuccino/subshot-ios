@@ -205,41 +205,47 @@ struct ProjectListView: View {
 
     private func tileBody(title: String, subtitle: String?, color: String, thumbnailPath: String?, fallbackIcon: String, emoji: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color(hex: color).opacity(0.25))
-                if let thumbnailPath {
-                    AsyncShotThumbnail(path: thumbnailPath, size: nil, lockAspectRatio: false)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                } else if let emoji, !emoji.isEmpty {
-                    Text(emoji)
-                        .font(.system(size: 48))
-                } else {
-                    Image(systemName: fallbackIcon)
-                        .font(.system(size: 32))
-                        .foregroundStyle(Color(hex: color))
-                }
-                // Subtle glossy light sweep from the top-left, like an app
-                // icon — a plain flat-color tile read as a placeholder
-                // rather than a finished surface.
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(
+            // Color.clear + .aspectRatio + .overlay, not relying on the
+            // ZStack sizing itself from its content — the same bulletproof
+            // pattern AsyncShotThumbnail's lockAspectRatio mode already
+            // uses, here fixed at 4:3 regardless of whether there's a real
+            // photo, an emoji, or a fallback SF Symbol inside. Guarantees
+            // every tile (project or folder, at root or inside a folder —
+            // same tileBody either way) is exactly the same size.
+            Color.clear
+                .aspectRatio(4.0 / 3.0, contentMode: .fit)
+                .frame(maxWidth: .infinity)
+                .overlay {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color(hex: color).opacity(0.25))
+                        if let thumbnailPath {
+                            AsyncShotThumbnail(path: thumbnailPath, size: nil, lockAspectRatio: false)
+                        } else if let emoji, !emoji.isEmpty {
+                            Text(emoji)
+                                .font(.system(size: 48))
+                        } else {
+                            Image(systemName: fallbackIcon)
+                                .font(.system(size: 32))
+                                .foregroundStyle(Color(hex: color))
+                        }
+                        // Subtle glossy light sweep from the top-left, like
+                        // an app icon — a plain flat-color tile read as a
+                        // placeholder rather than a finished surface.
                         LinearGradient(
                             colors: [.white.opacity(0.22), .white.opacity(0)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
-                    )
-                    .allowsHitTesting(false)
-            }
-            .frame(maxWidth: .infinity)
-            .aspectRatio(4.0 / 3.0, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .overlay {
-                RoundedRectangle(cornerRadius: 14)
-                    .strokeBorder(Color.white.opacity(0.15), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
+                        .allowsHitTesting(false)
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14)
+                        .strokeBorder(Color.white.opacity(0.15), lineWidth: 1)
+                }
+                .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
 
             Text(title)
                 .font(.subheadline.weight(.semibold))
