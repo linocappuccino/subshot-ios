@@ -21,34 +21,41 @@ struct ShotListView: View {
     }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 24) {
-                ProjectInfoBox(viewModel: viewModel, projectId: projectId)
+        VStack(spacing: 0) {
+            // Fixed above the ScrollView on purpose — it used to live inside
+            // the LazyVStack, which tears down and rebuilds it (MapKit
+            // content included) every time it scrolls out of and back into
+            // the render window, and repeating that a few times is what was
+            // hanging the Simulator. Living outside the scroll content means
+            // it's built once per screen visit, full stop.
+            ProjectInfoBox(viewModel: viewModel, projectId: projectId)
+                .padding(.top, 16)
 
-                unassignedSection()
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 24) {
+                    unassignedSection()
 
-                ForEach(viewModel.scenes) { scene in
-                    sceneCard(scene: scene)
-                }
+                    ForEach(viewModel.scenes) { scene in
+                        sceneCard(scene: scene)
+                    }
 
-                Button {
-                    editingScene = .some(nil)
-                } label: {
-                    Label("Szene hinzufügen", systemImage: "plus.rectangle.on.rectangle")
-                        .font(.subheadline.weight(.medium))
+                    // Invisible drop target — dragging a scene past the last
+                    // one still moves it to the end. The visible "add scene"
+                    // affordance is the floating + button now.
+                    Color.clear
+                        .frame(height: 40)
+                        .dropDestination(for: String.self) { ids, _ in
+                            guard let dragged = ids.first, viewModel.scenes.contains(where: { $0.id == dragged }) else { return }
+                            Task { await viewModel.reorderScene(dragged, before: nil) }
+                        }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                .dropDestination(for: String.self) { ids, _ in
-                    guard let dragged = ids.first, viewModel.scenes.contains(where: { $0.id == dragged }) else { return }
-                    Task { await viewModel.reorderScene(dragged, before: nil) }
-                }
+                .padding(.vertical, 16)
             }
-            .padding(.vertical, 16)
         }
         .background(Color(.systemGroupedBackground))
+        .overlay(alignment: .bottomTrailing) {
+            addSceneButton
+        }
         .navigationTitle(projectName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -113,6 +120,25 @@ struct ShotListView: View {
                 undoToast(for: pending)
             }
         }
+    }
+
+    /// Always-visible floating "add scene" button, bottom-trailing — replaces
+    /// the old inline "Szene hinzufügen" row at the end of the list, which
+    /// meant scrolling all the way down every time.
+    private var addSceneButton: some View {
+        Button {
+            editingScene = .some(nil)
+        } label: {
+            Image(systemName: "plus")
+                .font(.title2.weight(.bold))
+                .foregroundStyle(.white)
+                .frame(width: 58, height: 58)
+                .background(Circle().fill(Color.accentColor))
+                .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 20)
+        .padding(.bottom, 20)
     }
 
     // MARK: - Sections
