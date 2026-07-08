@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import MapKit
 
 /// Wraps MKLocalSearchCompleter (Apple's own address-autocomplete, no API
