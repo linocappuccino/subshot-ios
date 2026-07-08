@@ -107,14 +107,16 @@ struct SceneEditSheet: View {
                 Section("Name") {
                     TextField("z.B. Küche, Aussen Tag 1", text: $name)
                 }
-                Section("Priorität") {
-                    Picker("Priorität", selection: $priority) {
-                        Text("Keine").tag(ShotPriority?.none)
-                        ForEach(ShotPriority.allCases) { p in
-                            Text(p.label).tag(ShotPriority?.some(p))
+                if !isIntermediateStep {
+                    Section("Priorität") {
+                        Picker("Priorität", selection: $priority) {
+                            Text("Keine").tag(ShotPriority?.none)
+                            ForEach(ShotPriority.allCases) { p in
+                                Text(p.label).tag(ShotPriority?.some(p))
+                            }
                         }
+                        .pickerStyle(.segmented)
                     }
-                    .pickerStyle(.segmented)
                 }
                 Section("Beschreibung") {
                     TextField("z.B. Handlung, Notizen", text: $description, axis: .vertical)

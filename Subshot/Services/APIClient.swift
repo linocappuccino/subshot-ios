@@ -234,7 +234,7 @@ final class APIClient {
         scheduledAt: Date? = nil, durationMinutes: Int? = nil,
         assigneeId: String? = nil, sectionId: String? = nil, sortOrder: Int = 0,
         locationAddress: String? = nil, locationLat: Double? = nil, locationLng: Double? = nil,
-        priority: ShotPriority? = nil
+        priority: ShotPriority? = nil, isIntermediateStep: Bool = false
     ) async throws -> Scene {
         var req = try await authorizedRequest("projects/\(projectId)/scenes", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -245,6 +245,7 @@ final class APIClient {
             let sort_order: Int
             let location_address: String?; let location_lat: Double?; let location_lng: Double?
             let priority: String?
+            let is_intermediate_step: Bool
         }
         req.httpBody = try encoder.encode(Body(
             name: name, color: color, description: description,
@@ -252,7 +253,7 @@ final class APIClient {
             duration_minutes: durationMinutes, assignee_id: assigneeId, section_id: sectionId,
             sort_order: sortOrder,
             location_address: locationAddress, location_lat: locationLat, location_lng: locationLng,
-            priority: priority?.rawValue
+            priority: priority?.rawValue, is_intermediate_step: isIntermediateStep
         ))
         return try await send(req)
     }

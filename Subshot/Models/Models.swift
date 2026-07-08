@@ -117,6 +117,10 @@ struct Scene: Codable, Identifiable, Hashable {
     let number: Int
     let letter: String?
     var priority: ShotPriority?
+    /// Set once at creation (which FAB menu option was tapped), never
+    /// changes after. Lighter-weight scenes for connective beats: no shot
+    /// list, no priority shown on their tile — see ShotListView.sceneTile.
+    var isIntermediateStep: Bool
 
     enum CodingKeys: String, CodingKey {
         case id, name, color, description, dialogue, completed, number, letter, priority
@@ -131,6 +135,7 @@ struct Scene: Codable, Identifiable, Hashable {
         case locationAddress = "location_address"
         case locationLat = "location_lat"
         case locationLng = "location_lng"
+        case isIntermediateStep = "is_intermediate_step"
     }
 
     /// "3A" / "12" — the display label shown on the scene tile.

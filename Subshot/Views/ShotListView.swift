@@ -144,7 +144,8 @@ struct ShotListView: View {
                             focalLengthMm: focalLength,
                             scheduledAt: scheduledAt,
                             durationMinutes: durationMinutes,
-                            priority: priority
+                            priority: priority,
+                            isIntermediateStep: creatingIntermediateStep
                         )
                     }
                 } onImagePicked: { scene, image in
@@ -367,10 +368,14 @@ struct ShotListView: View {
                     .transition(.opacity)
             }
             sceneTile(scene: scene)
-            ForEach(viewModel.shots(in: scene)) { shot in
-                shotCardView(shot: shot, sceneId: scene.id)
+            // Zwischenschritt: no shot list at all, not even the add-row —
+            // it's a lightweight connective beat, not a shootable scene.
+            if !scene.isIntermediateStep {
+                ForEach(viewModel.shots(in: scene)) { shot in
+                    shotCardView(shot: shot, sceneId: scene.id)
+                }
+                addRow(sceneId: scene.id)
             }
-            addRow(sceneId: scene.id)
         }
         .padding(12)
         .background(scene.completed ? Color.green.opacity(0.18) : Color(.secondarySystemGroupedBackground))
@@ -510,17 +515,19 @@ struct ShotListView: View {
                     .lineLimit(2)
             }
             HStack(spacing: 8) {
-                Text("\(viewModel.shots(in: scene).count) Einstellungen")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                if let priority = scene.priority {
-                    Text(priority.label)
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
-                        .background(sceneAccentColor(priority))
-                        .clipShape(Capsule())
+                if !scene.isIntermediateStep {
+                    Text("\(viewModel.shots(in: scene).count) Einstellungen")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    if let priority = scene.priority {
+                        Text(priority.label)
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(sceneAccentColor(priority))
+                            .clipShape(Capsule())
+                    }
                 }
                 Spacer()
                 sceneAssigneeMenu(scene: scene)

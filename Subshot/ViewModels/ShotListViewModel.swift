@@ -206,14 +206,15 @@ final class ShotListViewModel: ObservableObject {
     }
 
     @discardableResult
-    func createScene(name: String, color: String, description: String? = nil, dialogue: String? = nil, focalLengthMm: Int? = nil, scheduledAt: Date? = nil, durationMinutes: Int? = nil, sectionId: String? = nil, priority: ShotPriority? = nil) async -> Scene? {
+    func createScene(name: String, color: String, description: String? = nil, dialogue: String? = nil, focalLengthMm: Int? = nil, scheduledAt: Date? = nil, durationMinutes: Int? = nil, sectionId: String? = nil, priority: ShotPriority? = nil, isIntermediateStep: Bool = false) async -> Scene? {
         do {
             let sortOrder = (scenes.map(\.sortOrder).max() ?? -1) + 1
             let scene = try await APIClient.shared.createScene(
                 projectId: projectId, name: name, color: color,
                 description: description, dialogue: dialogue, focalLengthMm: focalLengthMm,
                 scheduledAt: scheduledAt, durationMinutes: durationMinutes,
-                sectionId: sectionId, sortOrder: sortOrder, priority: priority
+                sectionId: sectionId, sortOrder: sortOrder, priority: priority,
+                isIntermediateStep: isIntermediateStep
             )
             scenes.append(scene)
             return scene
