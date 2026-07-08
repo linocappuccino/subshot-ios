@@ -13,6 +13,7 @@ struct SceneEditSheet: View {
     static let focalLengths: [Int?] = [nil, 10, 12, 14, 16, 18, 20, 24, 28, 35, 40, 50, 65, 85, 100, 135, 150, 200, 300, 400]
 
     let existing: Scene?
+    @ObservedObject var viewModel: ShotListViewModel
     var onSave: (String, String, String, String, Int?, Date?) async -> Void
     var onImagePicked: ((UIImage) async -> Void)?
 
@@ -25,14 +26,19 @@ struct SceneEditSheet: View {
     @State private var scheduledDate: Date
     @State private var photoItem: PhotosPickerItem?
     @State private var uploadedImage: UIImage?
+    @State private var isAddingShot = false
+    @State private var newShotText = ""
+    @FocusState private var newShotFocused: Bool
     @Environment(\.dismiss) private var dismiss
 
     init(
         existing: Scene?,
+        viewModel: ShotListViewModel,
         onSave: @escaping (String, String, String, String, Int?, Date?) async -> Void,
         onImagePicked: ((UIImage) async -> Void)? = nil
     ) {
         self.existing = existing
+        self.viewModel = viewModel
         self.onSave = onSave
         self.onImagePicked = onImagePicked
         _name = State(initialValue: existing?.name ?? "")
@@ -94,6 +100,35 @@ struct SceneEditSheet: View {
                         }
                     }
                     .pickerStyle(.wheel)
+                }
+
+                // Managing shots (like the cover photo below) only makes sense
+                // for an existing scene — a not-yet-created one has no id to
+                // attach a shot to.
+                if let existing {
+                    Section("Einstellungen") {
+                        ForEach(viewModel.shots(in: existing)) { shot in
+                            Text(shot.description?.isEmpty == false ? shot.description! : "Ohne Beschreibung")
+                                .strikethrough(shot.status == .done)
+                                .foregroundStyle(shot.status == .done ? .secondary : .primary)
+                        }
+                        if isAddingShot {
+                            TextField("Neue Einstellung", text: $newShotText)
+                                .focused($newShotFocused)
+                                .submitLabel(.done)
+                                .onSubmit { Task { await addShot(to: existing) } }
+                        } else {
+                            Button {
+                                isAddingShot = true
+                                newShotText = ""
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                    newShotFocused = true
+                                }
+                            } label: {
+                                Label("Einstellung hinzufügen", systemImage: "plus")
+                            }
+                        }
+                    }
                 }
 
                 // Cover photo only for an existing scene — same reasoning as
@@ -158,5 +193,11 @@ struct SceneEditSheet: View {
               let image = UIImage(data: data) else { return }
         uploadedImage = image
         await onImagePicked?(image)
+    }
+
+    private func addShot(to scene: Scene) async {
+        isAddingShot = false
+        await viewModel.createShot(description: newShotText, sceneId: scene.id)
+        newShotText = ""
     }
 }

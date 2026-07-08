@@ -87,7 +87,7 @@ struct ShotListView: View {
             set: { if !$0 { editingScene = nil } }
         )) {
             if case .some(let existing) = editingScene {
-                SceneEditSheet(existing: existing) { name, color, description, dialogue, focalLength, scheduledAt in
+                SceneEditSheet(existing: existing, viewModel: viewModel) { name, color, description, dialogue, focalLength, scheduledAt in
                     if let existing {
                         await viewModel.renameScene(existing, name: name, color: color, description: description, dialogue: dialogue, focalLengthMm: focalLength, scheduledAt: scheduledAt)
                     } else {
@@ -179,6 +179,12 @@ struct ShotListView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
             }
+            if let dialogue = scene.dialogue, !dialogue.isEmpty {
+                Label(dialogue, systemImage: "quote.bubble")
+                    .font(.footnote.italic())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+            }
         }
         .contentShape(Rectangle())
         .onTapGesture { editingScene = .some(scene) }
@@ -196,11 +202,7 @@ struct ShotListView: View {
             Text("\(viewModel.shots(in: scene).count)")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-
             Spacer()
-
-            Image(systemName: "line.3.horizontal")
-                .foregroundStyle(.secondary)
         }
     }
 
