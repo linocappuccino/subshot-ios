@@ -51,7 +51,31 @@ final class APIClient {
         // Some paths come from the backend already prefixed with "/" (e.g.
         // shot.imageUrl); strip it so appendingPathComponent never double-slashes.
         let cleanPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        var req = URLRequest(url: baseURL.appendingPathComponent(cleanPath))
+        // Split off any query string ourselves — appendingPathComponent
+        // percent-encodes "?"/"=" as literal path characters instead of
+        // treating them as a query string, which 404s every call site that
+        // passes one (found via /projects?folder_id=... always 404ing: the
+        // folder move itself succeeded server-side, the project just never
+        // showed up because listing its new folder's contents always failed
+        // — same root cause silently broke /me/notifications?unread_only=
+        // too, from the very first version of this client).
+        let pathOnly: String
+        let query: String?
+        if let qIndex = cleanPath.firstIndex(of: "?") {
+            pathOnly = String(cleanPath[cleanPath.startIndex..<qIndex])
+            query = String(cleanPath[cleanPath.index(after: qIndex)...])
+        } else {
+            pathOnly = cleanPath
+            query = nil
+        }
+        var components = URLComponents(url: baseURL.appendingPathComponent(pathOnly), resolvingAgainstBaseURL: false)
+        if let query {
+            components?.percentEncodedQuery = query
+        }
+        guard let url = components?.url else {
+            throw APIError.network(URLError(.badURL))
+        }
+        var req = URLRequest(url: url)
         req.httpMethod = method
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         return req
