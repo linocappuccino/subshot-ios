@@ -25,10 +25,10 @@ enum APIError: Error, LocalizedError {
 final class APIClient {
     static let shared = APIClient()
 
-    // TODO: point this at the real production domain once Subshot has its own
-    // (subshot.app / subshot.ch, see project spec §1). Using the temporary
-    // dev.subli.ch path-proxy for now, same one used for backend validation.
-    var baseURL = URL(string: "https://dev.subli.ch/subshot-test")!
+    // subshot.ch, live since 2026-07-08 (nginx + certbot on the same server
+    // as subli.ch, proxying straight to the backend on :8010 — no more
+    // /subshot-test/ path prefix now that it has its own domain).
+    var baseURL = URL(string: "https://subshot.ch")!
 
     /// Set by the app at launch to `{ try await Clerk.shared.session?.getToken() }`.
     var tokenProvider: (() async throws -> String?)?
