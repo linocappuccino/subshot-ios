@@ -265,9 +265,13 @@ private struct TodoListsSection: View {
             }
 
             if isAddingList {
-                HStack {
+                HStack(spacing: 10) {
                     TextField("Listenname", text: $newListName)
-                        .font(.subheadline)
+                        .font(.body)
+                        .padding(.horizontal, 14)
+                        .frame(height: 46)
+                        .background(Color(.tertiarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
                         .focused($newListFocused)
                         .submitLabel(.done)
                         .onSubmit { Task { await commitNewList() } }
@@ -275,6 +279,7 @@ private struct TodoListsSection: View {
                         Task { await commitNewList() }
                     } label: {
                         Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 30))
                     }
                     .buttonStyle(.plain)
                 }
@@ -285,12 +290,12 @@ private struct TodoListsSection: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { newListFocused = true }
                 } label: {
                     Label("Liste hinzufügen", systemImage: "plus")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .frame(minHeight: 44, alignment: .leading)
-                        .contentShape(Rectangle())
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 46)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderedProminent)
+                .tint(Color(.tertiarySystemGroupedBackground))
+                .foregroundStyle(Color.accentColor)
             }
         }
     }
@@ -320,17 +325,17 @@ private struct TodoListCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
                 if isRenaming {
                     TextField("Listenname", text: $renameText)
-                        .font(.headline)
+                        .font(.title3.weight(.semibold))
                         .focused($renameFocused)
                         .submitLabel(.done)
                         .onSubmit { Task { await commitRename() } }
                 } else {
                     Text(list.name)
-                        .font(.headline)
+                        .font(.title3.weight(.semibold))
                         .frame(minHeight: 44, alignment: .leading)
                         .contentShape(Rectangle())
                         .onTapGesture { startRenaming() }
@@ -340,7 +345,7 @@ private struct TodoListCard: View {
                     Task { await viewModel.deleteTodoList(list) }
                 } label: {
                     Image(systemName: "trash")
-                        .font(.subheadline)
+                        .font(.title3)
                         .foregroundStyle(.secondary)
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
@@ -348,16 +353,31 @@ private struct TodoListCard: View {
                 .buttonStyle(.plain)
             }
 
-            ForEach(sortedItems) { item in
-                TodoItemRow(item: item, viewModel: viewModel)
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(sortedItems) { item in
+                    TodoItemRow(item: item, viewModel: viewModel)
+                }
             }
 
             if isAddingItem {
-                TextField("Neuer Punkt", text: $newItemText)
-                    .font(.subheadline)
-                    .focused($newItemFocused)
-                    .submitLabel(.done)
-                    .onSubmit { Task { await commitNewItem() } }
+                HStack(spacing: 10) {
+                    TextField("Neuer Punkt", text: $newItemText)
+                        .font(.body)
+                        .padding(.horizontal, 14)
+                        .frame(height: 46)
+                        .background(Color(.quaternarySystemFill))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .focused($newItemFocused)
+                        .submitLabel(.done)
+                        .onSubmit { Task { await commitNewItem() } }
+                    Button {
+                        Task { await commitNewItem() }
+                    } label: {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 28))
+                    }
+                    .buttonStyle(.plain)
+                }
             } else {
                 Button {
                     newItemText = ""
@@ -365,17 +385,17 @@ private struct TodoListCard: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { newItemFocused = true }
                 } label: {
                     Label("Punkt hinzufügen", systemImage: "plus")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .frame(minHeight: 44, alignment: .leading)
-                        .contentShape(Rectangle())
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderedProminent)
+                .tint(Color(.quaternarySystemFill))
+                .foregroundStyle(Color.accentColor)
             }
         }
-        .padding(10)
+        .padding(16)
         .background(Color(.tertiarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
     private func startRenaming() {
@@ -407,12 +427,12 @@ private struct TodoItemRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             Button {
                 Task { await viewModel.toggleTodoItemDone(item) }
             } label: {
                 Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
+                    .font(.system(size: 26))
                     .foregroundStyle(item.done ? .green : .secondary)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
@@ -420,7 +440,7 @@ private struct TodoItemRow: View {
             .buttonStyle(.plain)
 
             Text(item.text)
-                .font(.subheadline)
+                .font(.body)
                 .strikethrough(item.done)
                 .foregroundStyle(item.done ? .secondary : .primary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -429,6 +449,7 @@ private struct TodoItemRow: View {
 
             assigneeMenu
         }
+        .padding(.vertical, 4)
         .animation(.easeInOut(duration: 0.2), value: item.done)
         .contextMenu {
             Button(role: .destructive) {
@@ -474,9 +495,9 @@ private struct TodoItemRow: View {
         let source = member.name?.isEmpty == false ? member.name! : member.email
         let initials = String(source.prefix(2)).uppercased()
         return Text(initials)
-            .font(.system(size: 11, weight: .bold))
+            .font(.system(size: 13, weight: .bold))
             .foregroundStyle(.white)
-            .frame(width: 26, height: 26)
+            .frame(width: 32, height: 32)
             .background(Color.stableColor(for: member.userId))
             .clipShape(Circle())
             .frame(width: 44, height: 44)
