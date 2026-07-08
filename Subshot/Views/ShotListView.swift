@@ -21,36 +21,33 @@ struct ShotListView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Fixed above the ScrollView on purpose — it used to live inside
-            // the LazyVStack, which tears down and rebuilds it (MapKit
-            // content included) every time it scrolls out of and back into
-            // the render window, and repeating that a few times is what was
-            // hanging the Simulator. Living outside the scroll content means
-            // it's built once per screen visit, full stop.
-            ProjectInfoBox(viewModel: viewModel, projectId: projectId)
-                .padding(.top, 16)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 24) {
+                // Scrolls with the rest of the content again — the earlier
+                // hang/crash was MapKit's rendering itself (Map AND
+                // MKMapSnapshotter both crashed the Simulator), not the fact
+                // that it lived in a LazyVStack. Now that the location
+                // thumbnail is a plain icon tile with no MapKit rendering at
+                // all, there's nothing left for scrolling to repeatedly stress.
+                ProjectInfoBox(viewModel: viewModel, projectId: projectId)
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 24) {
-                    unassignedSection()
+                unassignedSection()
 
-                    ForEach(viewModel.scenes) { scene in
-                        sceneCard(scene: scene)
-                    }
-
-                    // Invisible drop target — dragging a scene past the last
-                    // one still moves it to the end. The visible "add scene"
-                    // affordance is the floating + button now.
-                    Color.clear
-                        .frame(height: 40)
-                        .dropDestination(for: String.self) { ids, _ in
-                            guard let dragged = ids.first, viewModel.scenes.contains(where: { $0.id == dragged }) else { return }
-                            Task { await viewModel.reorderScene(dragged, before: nil) }
-                        }
+                ForEach(viewModel.scenes) { scene in
+                    sceneCard(scene: scene)
                 }
-                .padding(.vertical, 16)
+
+                // Invisible drop target — dragging a scene past the last
+                // one still moves it to the end. The visible "add scene"
+                // affordance is the floating + button now.
+                Color.clear
+                    .frame(height: 40)
+                    .dropDestination(for: String.self) { ids, _ in
+                        guard let dragged = ids.first, viewModel.scenes.contains(where: { $0.id == dragged }) else { return }
+                        Task { await viewModel.reorderScene(dragged, before: nil) }
+                    }
             }
+            .padding(.vertical, 16)
         }
         .background(Color(.systemGroupedBackground))
         .overlay(alignment: .bottomTrailing) {

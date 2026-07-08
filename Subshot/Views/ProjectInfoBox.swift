@@ -152,32 +152,21 @@ private struct LocationSection: View {
             if let address = viewModel.locationAddress, !isEditing {
                 HStack(alignment: .top, spacing: 10) {
                     if let lat = viewModel.locationLat, let lng = viewModel.locationLng {
-                        // A live SwiftUI Map, not MKMapSnapshotter — the
-                        // snapshotter is notorious for hanging the iOS
-                        // Simulator outright. Interaction fully disabled two
-                        // ways (mapInteractionModes + allowsHitTesting) so it
-                        // stays purely decorative and can't steal the
-                        // surrounding ScrollView's pan gesture either.
-                        Map(
-                            initialPosition: .region(
-                                MKCoordinateRegion(
-                                    center: CLLocationCoordinate2D(latitude: lat, longitude: lng),
-                                    latitudinalMeters: 500, longitudinalMeters: 500
-                                )
-                            ),
-                            interactionModes: []
-                        ) {
-                            Marker("", coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lng))
-                                .tint(.red)
-                        }
-                        .allowsHitTesting(false)
-                        .frame(width: 64, height: 64)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                        .overlay {
-                            Color.clear
-                                .contentShape(Rectangle())
-                                .onTapGesture { LocationSearch.openInGoogleMaps(lat: lat, lng: lng) }
-                        }
+                        // Deliberately NOT a Map/MKMapSnapshotter — both
+                        // reliably crashed the whole Simulator (a known
+                        // MapKit-rendering/Metal issue, not specific to
+                        // either API). A plain icon tile has zero rendering
+                        // risk; tapping it still opens Google Maps.
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.accentColor.opacity(0.2))
+                            .frame(width: 64, height: 64)
+                            .overlay {
+                                Image(systemName: "mappin.and.ellipse")
+                                    .font(.title2)
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture { LocationSearch.openInGoogleMaps(lat: lat, lng: lng) }
                     }
                     VStack(alignment: .leading, spacing: 4) {
                         Text(address)
