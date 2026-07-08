@@ -5,12 +5,20 @@ struct TeamSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var members: [Member] = []
+    @State private var knownCollaborators: [Member] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
 
     @State private var newEmail = ""
     @State private var newRole = "editor"
     @State private var lastInviteLink: String?
+
+    /// People the caller has worked with on other projects, minus anyone
+    /// already a member here — no point suggesting someone who's already in.
+    private var collaboratorSuggestions: [Member] {
+        let existingEmails = Set(members.map(\.email))
+        return knownCollaborators.filter { !existingEmails.contains($0.email) }
+    }
 
     var body: some View {
         NavigationStack {
@@ -36,6 +44,23 @@ struct TeamSheet: View {
                 }
 
                 Section("Person einladen") {
+                    if !collaboratorSuggestions.isEmpty {
+                        Menu {
+                            ForEach(collaboratorSuggestions) { person in
+                                Button {
+                                    newEmail = person.email
+                                } label: {
+                                    if person.name?.isEmpty == false {
+                                        Text("\(person.name!) (\(person.email))")
+                                    } else {
+                                        Text(person.email)
+                                    }
+                                }
+                            }
+                        } label: {
+                            Label("Person auswählen", systemImage: "person.crop.circle.badge.checkmark")
+                        }
+                    }
                     TextField("E-Mail-Adresse", text: $newEmail)
                         .keyboardType(.emailAddress)
                         .textInputAutocapitalization(.never)
@@ -49,8 +74,8 @@ struct TeamSheet: View {
                         .disabled(newEmail.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
 
-                // No transactional email is sent yet (see backend TODO) — the
-                // invite link has to be shared manually until that's wired up.
+                // The invited person also gets a real email now (Resend) — this
+                // link is just a manual-share fallback (e.g. sharing over Slack).
                 if let lastInviteLink {
                     Section("Einladungslink (manuell teilen)") {
                         Text(lastInviteLink)
@@ -92,6 +117,9 @@ struct TeamSheet: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+        // Best-effort, separate from the main load — no suggestions dropdown
+        // is a minor inconvenience, not worth failing the whole sheet over.
+        knownCollaborators = (try? await APIClient.shared.knownCollaborators()) ?? []
     }
 
     private func sendInvite() async {
