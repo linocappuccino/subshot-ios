@@ -16,6 +16,12 @@ struct SceneEditSheet: View {
     static let durations: [Int?] = [nil] + stride(from: 5, through: 240, by: 5).map { $0 }
 
     let existing: Scene?
+    /// "Zwischenschritt" — a lighter-weight scene variant for connective
+    /// beats that don't need the full treatment: same core fields (name,
+    /// color, description, date/duration, location) but no cover image,
+    /// dialogue, focal length, or shot list. Not a separate backend concept,
+    /// purely which Form sections this sheet shows.
+    let isIntermediateStep: Bool
     @ObservedObject var viewModel: ShotListViewModel
     /// Returns the created/renamed scene so a picked-but-not-yet-uploaded
     /// image can be attached right after — matters for brand-new scenes,
@@ -39,11 +45,13 @@ struct SceneEditSheet: View {
 
     init(
         existing: Scene?,
+        isIntermediateStep: Bool = false,
         viewModel: ShotListViewModel,
         onSave: @escaping (String, String, String, String, Int?, Date?, Int?) async -> Scene?,
         onImagePicked: ((Scene, UIImage) async -> Void)? = nil
     ) {
         self.existing = existing
+        self.isIntermediateStep = isIntermediateStep
         self.viewModel = viewModel
         self.onSave = onSave
         self.onImagePicked = onImagePicked
@@ -66,25 +74,27 @@ struct SceneEditSheet: View {
                 // it uploads once "Fertig" actually creates/saves the scene
                 // (see the toolbar button below), since uploading needs a
                 // scene id a new scene doesn't have yet.
-                Section("Bild") {
-                    ImageSourceButton(onImagePicked: { uploadedImage = $0 }) {
-                        HStack {
-                            if let uploadedImage {
-                                Image(uiImage: uploadedImage)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .frame(width: 60, height: 60)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                            } else if let imageUrl = existing?.imageUrl {
-                                AsyncShotThumbnail(path: imageUrl, size: 60)
-                            } else {
-                                Image(systemName: "photo.fill")
-                                    .frame(width: 60, height: 60)
-                                    .background(Color(.systemGray5))
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                if !isIntermediateStep {
+                    Section("Bild") {
+                        ImageSourceButton(onImagePicked: { uploadedImage = $0 }) {
+                            HStack {
+                                if let uploadedImage {
+                                    Image(uiImage: uploadedImage)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(width: 60, height: 60)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                } else if let imageUrl = existing?.imageUrl {
+                                    AsyncShotThumbnail(path: imageUrl, size: 60)
+                                } else {
+                                    Image(systemName: "photo.fill")
+                                        .frame(width: 60, height: 60)
+                                        .background(Color(.systemGray5))
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                }
+                                Text((uploadedImage == nil && existing?.imageUrl == nil) ? "Bild hinzufügen" : "Bild ändern")
+                                    .foregroundStyle(.primary)
                             }
-                            Text((uploadedImage == nil && existing?.imageUrl == nil) ? "Bild hinzufügen" : "Bild ändern")
-                                .foregroundStyle(.primary)
                         }
                     }
                 }
@@ -115,9 +125,11 @@ struct SceneEditSheet: View {
                         .lineLimit(3...6)
                 }
 
-                Section("Dialog") {
-                    TextField("Gesprochener Text", text: $dialogue, axis: .vertical)
-                        .lineLimit(3...6)
+                if !isIntermediateStep {
+                    Section("Dialog") {
+                        TextField("Gesprochener Text", text: $dialogue, axis: .vertical)
+                            .lineLimit(3...6)
+                    }
                 }
 
                 Section("Datum & Uhrzeit") {
@@ -142,13 +154,15 @@ struct SceneEditSheet: View {
                     }
                 }
 
-                Section("Brennweite") {
-                    Picker("Brennweite", selection: $focalLength) {
-                        ForEach(Self.focalLengths, id: \.self) { mm in
-                            Text(mm.map { "\($0)mm" } ?? "–").tag(mm)
+                if !isIntermediateStep {
+                    Section("Brennweite") {
+                        Picker("Brennweite", selection: $focalLength) {
+                            ForEach(Self.focalLengths, id: \.self) { mm in
+                                Text(mm.map { "\($0)mm" } ?? "–").tag(mm)
+                            }
                         }
+                        .pickerStyle(.wheel)
                     }
-                    .pickerStyle(.wheel)
                 }
 
                 // Same reasoning as "Einstellungen" below: location is patched
@@ -162,8 +176,9 @@ struct SceneEditSheet: View {
 
                 // Managing shots (like the cover photo below) only makes sense
                 // for an existing scene — a not-yet-created one has no id to
-                // attach a shot to.
-                if let existing {
+                // attach a shot to. Not offered for Zwischenschritt scenes at
+                // all (they're connective beats, not shot lists).
+                if let existing, !isIntermediateStep {
                     Section("Einstellungen") {
                         ForEach(viewModel.shots(in: existing)) { shot in
                             Text(shot.description?.isEmpty == false ? shot.description! : "Ohne Beschreibung")
@@ -190,7 +205,7 @@ struct SceneEditSheet: View {
                 }
 
             }
-            .navigationTitle(existing == nil ? "Neue Szene" : "Szene bearbeiten")
+            .navigationTitle(existing != nil ? "Szene bearbeiten" : (isIntermediateStep ? "Neuer Zwischenschritt" : "Neue Szene"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

@@ -9,7 +9,13 @@ struct ShotListView: View {
     @State private var selectedShot: Shot?
     @State private var showingTeamSheet = false
     @State private var editingScene: Scene??      // nil = sheet closed; .some(nil) = creating; .some(scene) = renaming
+    /// Only meaningful while editingScene == .some(nil) (creating) — which
+    /// FAB menu option was tapped. Not persisted anywhere; a reduced-field
+    /// SceneEditSheet is purely a creation-time UI choice, see its own doc
+    /// comment.
+    @State private var creatingIntermediateStep = false
     @State private var editingSection: SceneSection??  // same nesting convention as editingScene
+    @State private var collapsedSections: Set<String> = []
     @State private var isExportingPdf = false
     @State private var exportedPdfURL: URL?
     @FocusState private var newRowFocused: Bool
@@ -98,7 +104,7 @@ struct ShotListView: View {
             set: { if !$0 { editingScene = nil } }
         )) {
             if case .some(let existing) = editingScene {
-                SceneEditSheet(existing: existing, viewModel: viewModel) { name, color, description, dialogue, focalLength, scheduledAt, durationMinutes in
+                SceneEditSheet(existing: existing, isIntermediateStep: creatingIntermediateStep, viewModel: viewModel) { name, color, description, dialogue, focalLength, scheduledAt, durationMinutes in
                     if let existing {
                         await viewModel.renameScene(existing, name: name, color: color, description: description, dialogue: dialogue, focalLengthMm: focalLength, scheduledAt: scheduledAt, durationMinutes: durationMinutes)
                         return existing
@@ -145,9 +151,16 @@ struct ShotListView: View {
     private var addSceneButton: some View {
         Menu {
             Button {
+                creatingIntermediateStep = false
                 editingScene = .some(nil)
             } label: {
                 Label("Neue Szene", systemImage: "film")
+            }
+            Button {
+                creatingIntermediateStep = true
+                editingScene = .some(nil)
+            } label: {
+                Label("Zwischenschritt", systemImage: "arrow.triangle.branch")
             }
             Button {
                 editingSection = .some(nil)
@@ -169,28 +182,84 @@ struct ShotListView: View {
     // MARK: - Sections
 
     /// `section == nil` renders the "Ohne Abschnitt" bucket — only shown at
-    /// all once at least one real section exists (see body above).
+    /// all once at least one real section exists (see body above), and
+    /// always expanded (no collapse toggle) since it has no identity of its
+    /// own to persist a collapsed state against.
     @ViewBuilder
     private func sectionGroup(section: SceneSection?) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionHeader(section: section)
-            ForEach(viewModel.scenes(in: section)) { scene in
-                sceneCard(scene: scene)
+            if section == nil || !collapsedSections.contains(section!.id) {
+                ForEach(viewModel.scenes(in: section)) { scene in
+                    sceneCard(scene: scene)
+                }
             }
+        }
+        // Section-level drop target: dropping a scene tile onto empty space
+        // in this group (not onto another scene specifically) just files it
+        // into this section, keeping its current global sort_order — see
+        // sceneCard's own dropDestination for the "insert before a specific
+        // scene" case, which also reassigns section.
+        .dropDestination(for: String.self) { ids, _ in
+            guard let raw = ids.first, raw.hasPrefix("scene:") else { return }
+            let sceneId = String(raw.dropFirst("scene:".count))
+            guard let dragged = viewModel.scenes.first(where: { $0.id == sceneId }) else { return }
+            Task { await viewModel.assignSceneToSection(dragged, sectionId: section?.id) }
         }
     }
 
     @ViewBuilder
     private func sectionHeader(section: SceneSection?) -> some View {
+        let row = sectionHeaderRow(section: section)
+        if let section {
+            // Long-press-and-hold the header row to pick the whole section
+            // up and drop it on another section's header to reorder — same
+            // haptic drag idiom as project/scene tiles.
+            row
+                .draggable("section:\(section.id)")
+                .dropDestination(for: String.self) { ids, _ in
+                    guard let raw = ids.first, raw.hasPrefix("section:") else { return }
+                    let draggedId = String(raw.dropFirst("section:".count))
+                    guard draggedId != section.id else { return }
+                    Task { await viewModel.reorderSection(draggedId, before: section.id) }
+                }
+        } else {
+            row
+        }
+    }
+
+    @ViewBuilder
+    private func sectionHeaderRow(section: SceneSection?) -> some View {
         HStack {
             if let section {
-                sectionReorderMenu(section: section)
-            } else {
-                Spacer().frame(width: 44)
+                Button {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        if collapsedSections.contains(section.id) {
+                            collapsedSections.remove(section.id)
+                        } else {
+                            collapsedSections.insert(section.id)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(collapsedSections.contains(section.id) ? 0 : 90))
+                        .frame(width: 30, height: 30)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
             Text(section?.name ?? "Ohne Abschnitt")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
+            if let section {
+                let scenes = viewModel.scenes(in: section)
+                let done = scenes.filter(\.completed).count
+                Text("\(done)/\(scenes.count)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
             Spacer()
             if let section {
                 Menu {
@@ -211,40 +280,7 @@ struct ShotListView: View {
             }
         }
         .padding(.horizontal, 16)
-    }
-
-    @ViewBuilder
-    private func sectionReorderMenu(section: SceneSection) -> some View {
-        Menu {
-            Button {
-                Task { await moveSectionUp(section) }
-            } label: {
-                Label("Nach oben", systemImage: "arrow.up")
-            }
-            Button {
-                Task { await moveSectionDown(section) }
-            } label: {
-                Label("Nach unten", systemImage: "arrow.down")
-            }
-        } label: {
-            Image(systemName: "line.3.horizontal")
-                .foregroundStyle(.secondary)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-        }
-    }
-
-    private func moveSectionUp(_ section: SceneSection) async {
-        guard let idx = viewModel.sections.firstIndex(where: { $0.id == section.id }), idx > 0 else { return }
-        let target = viewModel.sections[idx - 1]
-        await viewModel.reorderSection(section.id, before: target.id)
-    }
-
-    private func moveSectionDown(_ section: SceneSection) async {
-        guard let idx = viewModel.sections.firstIndex(where: { $0.id == section.id }) else { return }
-        let nextIndex = idx + 2
-        let targetId = nextIndex < viewModel.sections.count ? viewModel.sections[nextIndex].id : nil
-        await viewModel.reorderSection(section.id, before: targetId)
+        .contentShape(Rectangle())
     }
 
     @ViewBuilder
@@ -275,22 +311,29 @@ struct ShotListView: View {
         .background(scene.completed ? Color.green.opacity(0.18) : Color(.secondarySystemGroupedBackground))
         .animation(.easeInOut(duration: 0.3), value: scene.completed)
         .clipShape(RoundedRectangle(cornerRadius: 16))
+        .modifier(ScenePulseOnElapse(scene: scene))
         .padding(.horizontal, 16)
         .dropDestination(for: String.self) { ids, _ in
-            guard let dragged = ids.first else { return }
+            guard let dragged = ids.first, !dragged.hasPrefix("scene:") else { return }
             Task { await viewModel.moveShot(dragged, toScene: scene.id) }
         }
     }
 
     /// Image + header + description grouped as one tappable unit — tap
-    /// anywhere on it to edit the scene. Reordering is a plain up/down menu
-    /// (see sceneHeader), not drag & drop: `.draggable()`/`.dropDestination()`
-    /// on scene tiles was tried twice and both times made the whole
-    /// ScrollView hang/lock up while scrolling — not a MapKit issue (that was
-    /// ruled out separately), something about this drag API combination
-    /// itself inside a ScrollView/LazyVStack on this SDK. Shots keep their
-    /// own `.draggable()` below since that predates the scene-drag attempt
-    /// and was never implicated.
+    /// anywhere on it to edit the scene. `.draggable`/`.dropDestination`
+    /// live specifically on this tile (not the whole sceneCard, which also
+    /// hosts shot cards with their own independent `.draggable()`) — dropping
+    /// one scene tile onto another inserts it right before the target and,
+    /// if the target sits in a different section, refiles it there too (see
+    /// the dropDestination closure below).
+    ///
+    /// RE-ATTEMPT NOTE: an earlier version of this exact drag setup on scene
+    /// tiles was tried twice before and both times made the whole ScrollView
+    /// hang/lock up while scrolling (see git history) — that was never
+    /// conclusively explained, only worked around by removing it. Re-added
+    /// now on explicit request. MUST be verified on a real device before
+    /// trusting it; if the same hang reappears, revert to a menu-based
+    /// reorder rather than debugging blind from this server.
     @ViewBuilder
     private func sceneTile(scene: Scene) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -300,29 +343,7 @@ struct ShotListView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             sceneHeader(scene: scene)
-            if let scheduledAt = scene.scheduledAt {
-                // Live-ticking, not just recomputed on the next incidental
-                // re-render — TimelineView keeps this in sync with the wall
-                // clock on its own (every 30s is plenty for a color that
-                // shifts over tens of minutes).
-                TimelineView(.periodic(from: .now, by: 30)) { context in
-                    Label(scheduledAt.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
-                        .font(.caption)
-                        .foregroundStyle(urgencyColor(for: scheduledAt, now: context.date))
-                        .animation(.easeInOut(duration: 0.4), value: urgencyColor(for: scheduledAt, now: context.date))
-                }
-            }
-            if let scheduledAt = scene.scheduledAt, let durationMinutes = scene.durationMinutes {
-                // Separate 1s-ticking timeline (vs. the 30s one above) — this
-                // one drives an actual mm:ss countdown while the scene is
-                // running, so it needs second-level precision.
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    let end = scheduledAt.addingTimeInterval(TimeInterval(durationMinutes) * 60)
-                    if context.date >= scheduledAt && context.date < end {
-                        LiveSceneBadge(remaining: end.timeIntervalSince(context.date))
-                    }
-                }
-            }
+            SceneTimerInfo(scene: scene)
             // No lineLimit here on purpose — description/dialogue must always
             // show in full, with whatever line breaks the person typed
             // (Text renders literal "\n"s as-is; nothing strips them on the
@@ -332,6 +353,10 @@ struct ShotListView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+            if let description = scene.description, !description.isEmpty,
+               let dialogue = scene.dialogue, !dialogue.isEmpty {
+                Divider()
             }
             if let dialogue = scene.dialogue, !dialogue.isEmpty {
                 Label(dialogue, systemImage: "quote.bubble")
@@ -351,30 +376,50 @@ struct ShotListView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { editingScene = .some(scene) }
+        .draggable("scene:\(scene.id)")
+        .dropDestination(for: String.self) { ids, _ in
+            guard let raw = ids.first, raw.hasPrefix("scene:") else { return }
+            let draggedId = String(raw.dropFirst("scene:".count))
+            guard draggedId != scene.id, let dragged = viewModel.scenes.first(where: { $0.id == draggedId }) else { return }
+            Task {
+                if dragged.sectionId != scene.sectionId {
+                    await viewModel.assignSceneToSection(dragged, sectionId: scene.sectionId)
+                }
+                await viewModel.reorderScene(draggedId, before: scene.id)
+            }
+        }
     }
 
+    /// Two rows, not one: the title used to be squeezed between a drag handle
+    /// and a row of action buttons, which left it almost no room. Now that
+    /// scene reordering is drag & drop (no more handle icon), the title gets
+    /// its own full-width row and can wrap to two lines.
     @ViewBuilder
     private func sceneHeader(scene: Scene) -> some View {
-        HStack(spacing: 8) {
-            reorderMenu(scene: scene)
-            Text(scene.displayNumber)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Color(hex: scene.color))
-                .clipShape(Capsule())
-            Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
-                .font(.headline)
-            Text("\(viewModel.shots(in: scene).count)")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Spacer()
-            if !viewModel.sections.isEmpty {
-                sceneSectionMenu(scene: scene)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(scene.displayNumber)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color(hex: scene.color))
+                    .clipShape(Capsule())
+                Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
+                    .font(.headline)
+                    .lineLimit(2)
             }
-            sceneAssigneeMenu(scene: scene)
-            imKastenButton(scene: scene)
+            HStack(spacing: 8) {
+                Text("\(viewModel.shots(in: scene).count) Einstellungen")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if !viewModel.sections.isEmpty {
+                    sceneSectionMenu(scene: scene)
+                }
+                sceneAssigneeMenu(scene: scene)
+                imKastenButton(scene: scene)
+            }
         }
     }
 
@@ -438,42 +483,6 @@ struct ShotListView: View {
                     .foregroundStyle(.secondary)
             }
         }
-    }
-
-    /// Plain up/down reordering — see sceneTile's doc comment for why this
-    /// is a menu and not drag & drop.
-    @ViewBuilder
-    private func reorderMenu(scene: Scene) -> some View {
-        Menu {
-            Button {
-                Task { await moveSceneUp(scene) }
-            } label: {
-                Label("Nach oben", systemImage: "arrow.up")
-            }
-            Button {
-                Task { await moveSceneDown(scene) }
-            } label: {
-                Label("Nach unten", systemImage: "arrow.down")
-            }
-        } label: {
-            Image(systemName: "line.3.horizontal")
-                .foregroundStyle(.secondary)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-        }
-    }
-
-    private func moveSceneUp(_ scene: Scene) async {
-        guard let idx = viewModel.scenes.firstIndex(where: { $0.id == scene.id }), idx > 0 else { return }
-        let target = viewModel.scenes[idx - 1]
-        await viewModel.reorderScene(scene.id, before: target.id)
-    }
-
-    private func moveSceneDown(_ scene: Scene) async {
-        guard let idx = viewModel.scenes.firstIndex(where: { $0.id == scene.id }) else { return }
-        let nextIndex = idx + 2  // "insert before" semantics — see ShotListViewModel.reorderScene
-        let targetId = nextIndex < viewModel.scenes.count ? viewModel.scenes[nextIndex].id : nil
-        await viewModel.reorderScene(scene.id, before: targetId)
     }
 
     /// "Im Kasten" ("it's a wrap" — scene fully shot): tapping it toggles
@@ -592,21 +601,6 @@ struct ShotListView: View {
         }
     }
 
-    /// Grey more than 1h out, fading through yellow at the 30min mark, red
-    /// once the scheduled time has passed — a continuous fade, not a hard
-    /// 3-way switch, so it visibly "warms up" as the deadline approaches.
-    private func urgencyColor(for scheduledAt: Date, now: Date) -> Color {
-        let remaining = scheduledAt.timeIntervalSince(now)
-        if remaining <= 0 {
-            return .red
-        } else if remaining <= 1800 {
-            return .yellow.interpolated(to: .red, fraction: 1 - (remaining / 1800))
-        } else if remaining <= 3600 {
-            return Color(.secondaryLabel).interpolated(to: .yellow, fraction: 1 - ((remaining - 1800) / 1800))
-        } else {
-            return Color(.secondaryLabel)
-        }
-    }
 }
 
 /// Storyboard-style card: big photo (if one's been added) on top, description
@@ -690,9 +684,54 @@ private struct ShotCard: View {
     }
 }
 
-/// Shown on a scene's tile while `now` falls inside [scheduledAt,
-/// scheduledAt + durationMinutes) — a gently pulsing dot + live mm:ss
-/// countdown so it's obvious at a glance which scene is currently rolling.
+/// scheduledAt is the shoot's START time now (not a deadline) — durationMinutes
+/// is how long the shoot is expected to take. Three states, all driven off
+/// one 1s TimelineView in the parent:
+/// - before start: static "Geplante Drehzeit: Xmin"
+/// - during [start, start+duration): live mm:ss countdown, grey more than
+///   15min out, fading through yellow at 15min, red at 10min
+/// - after end: "Drehzeit abgelaufen" — the one-time whole-card pulse on
+///   crossing into this state lives on SceneCard's ScenePulseOnElapse,
+///   not here.
+private struct SceneTimerInfo: View {
+    let scene: Scene
+
+    var body: some View {
+        if let scheduledAt = scene.scheduledAt {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let now = context.date
+                let end = scene.durationMinutes.map { scheduledAt.addingTimeInterval(TimeInterval($0) * 60) }
+                let isRunning = end.map { now >= scheduledAt && now < $0 } ?? false
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(scheduledAt.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
+                        .font(.caption)
+                        .foregroundStyle(isRunning ? Color.yellow : Color(.secondaryLabel))
+                        .animation(.easeInOut(duration: 0.4), value: isRunning)
+
+                    if let end {
+                        if now < scheduledAt {
+                            Label("Geplante Drehzeit: \(scene.durationMinutes.map { "\($0) Min." } ?? "")", systemImage: "timer")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        } else if isRunning {
+                            LiveSceneBadge(remaining: end.timeIntervalSince(now))
+                        } else {
+                            Label("Drehzeit abgelaufen", systemImage: "timer")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Live mm:ss countdown while a scene is rolling — grey more than 15min from
+/// the end, fading through yellow at the 15min mark, red at 10min. The small
+/// white dot pulses continuously the whole time as a "live" indicator (this
+/// is unrelated to the one-time whole-card pulse fired when the timer hits 0).
 private struct LiveSceneBadge: View {
     let remaining: TimeInterval
     @State private var pulse = false
@@ -710,8 +749,9 @@ private struct LiveSceneBadge: View {
         .foregroundStyle(.white)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(Color.red)
+        .background(Self.color(for: remaining))
         .clipShape(Capsule())
+        .animation(.easeInOut(duration: 0.4), value: remaining <= 900)
         .onAppear {
             withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
                 pulse = true
@@ -719,8 +759,50 @@ private struct LiveSceneBadge: View {
         }
     }
 
+    private static func color(for remaining: TimeInterval) -> Color {
+        if remaining <= 0 {
+            return .red
+        } else if remaining <= 600 {
+            return Color.yellow.interpolated(to: .red, fraction: 1 - (remaining / 600))
+        } else if remaining <= 900 {
+            return Color(.secondaryLabel).interpolated(to: .yellow, fraction: 1 - ((remaining - 600) / 300))
+        } else {
+            return Color(.secondaryLabel)
+        }
+    }
+
     private static func format(_ seconds: TimeInterval) -> String {
         let total = max(0, Int(seconds))
         return String(format: "%d:%02d", total / 60, total % 60)
+    }
+}
+
+/// Pulses the whole scene card once, exactly on the tick where `now` crosses
+/// from "running" into "elapsed" (scheduledAt + durationMinutes) — not a
+/// continuous effect. Self-contained ViewModifier (not folded into SceneTile
+/// directly) so it can own its own @State without restructuring the rest of
+/// sceneCard's view-builder-function shape.
+private struct ScenePulseOnElapse: ViewModifier {
+    let scene: Scene
+    @State private var pulse = false
+
+    func body(content: Content) -> some View {
+        guard let scheduledAt = scene.scheduledAt, let duration = scene.durationMinutes else {
+            return AnyView(content)
+        }
+        let end = scheduledAt.addingTimeInterval(TimeInterval(duration) * 60)
+        return AnyView(
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                content
+                    .scaleEffect(pulse ? 1.03 : 1.0)
+                    .animation(.easeInOut(duration: 0.18), value: pulse)
+                    .onChange(of: context.date) { oldDate, newDate in
+                        if oldDate < end && newDate >= end {
+                            pulse = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { pulse = false }
+                        }
+                    }
+            }
+        )
     }
 }
