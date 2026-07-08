@@ -1,6 +1,9 @@
 import Foundation
 import SwiftUI
 import Combine
+#if canImport(UIKit)
+import UIKit
+#endif
 
 @MainActor
 final class ShotListViewModel: ObservableObject {
@@ -56,10 +59,10 @@ final class ShotListViewModel: ObservableObject {
     }
 
     @discardableResult
-    func createScene(name: String, color: String) async -> Scene? {
+    func createScene(name: String, color: String, description: String? = nil) async -> Scene? {
         do {
             let sortOrder = (scenes.map(\.sortOrder).max() ?? -1) + 1
-            let scene = try await APIClient.shared.createScene(projectId: projectId, name: name, color: color, sortOrder: sortOrder)
+            let scene = try await APIClient.shared.createScene(projectId: projectId, name: name, color: color, description: description, sortOrder: sortOrder)
             scenes.append(scene)
             return scene
         } catch {
@@ -68,9 +71,9 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
-    func renameScene(_ scene: Scene, name: String, color: String) async {
+    func renameScene(_ scene: Scene, name: String, color: String, description: String) async {
         do {
-            let updated = try await APIClient.shared.patchScene(scene.id, name: name, color: color)
+            let updated = try await APIClient.shared.patchScene(scene.id, name: name, color: color, description: description)
             if let index = scenes.firstIndex(where: { $0.id == updated.id }) {
                 scenes[index] = updated
             }
@@ -78,6 +81,19 @@ final class ShotListViewModel: ObservableObject {
             errorMessage = error.localizedDescription
         }
     }
+
+    #if canImport(UIKit)
+    func uploadSceneImage(_ scene: Scene, image: UIImage) async {
+        do {
+            let updated = try await APIClient.shared.uploadSceneImage(sceneId: scene.id, image: image)
+            if let index = scenes.firstIndex(where: { $0.id == updated.id }) {
+                scenes[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+    #endif
 
     /// Drag & drop, cross-scene case: moves `shotId` into `sceneId` (nil =
     /// unassigned), inserted right before `targetId` if given, else appended

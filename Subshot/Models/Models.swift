@@ -50,11 +50,14 @@ struct Scene: Codable, Identifiable, Hashable {
     let projectId: String
     var name: String?
     var color: String
+    var description: String?
+    var imageUrl: String?
     var sortOrder: Int
 
     enum CodingKeys: String, CodingKey {
-        case id, name, color
+        case id, name, color, description
         case projectId = "project_id"
+        case imageUrl = "image_url"
         case sortOrder = "sort_order"
     }
 }

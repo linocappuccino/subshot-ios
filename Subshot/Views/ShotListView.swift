@@ -87,11 +87,15 @@ struct ShotListView: View {
             set: { if !$0 { editingScene = nil } }
         )) {
             if case .some(let existing) = editingScene {
-                SceneEditSheet(existing: existing) { name, color in
+                SceneEditSheet(existing: existing) { name, color, description in
                     if let existing {
-                        await viewModel.renameScene(existing, name: name, color: color)
+                        await viewModel.renameScene(existing, name: name, color: color, description: description)
                     } else {
-                        await viewModel.createScene(name: name.isEmpty ? "Unbenannte Szene" : name, color: color)
+                        await viewModel.createScene(name: name.isEmpty ? "Unbenannte Szene" : name, color: color, description: description.isEmpty ? nil : description)
+                    }
+                } onImagePicked: { image in
+                    if let existing {
+                        await viewModel.uploadSceneImage(existing, image: image)
                     }
                 }
             }
@@ -123,7 +127,21 @@ struct ShotListView: View {
     @ViewBuilder
     private func sceneCard(scene: Scene) -> some View {
         VStack(alignment: .leading, spacing: 10) {
+            if let imageUrl = scene.imageUrl {
+                AsyncShotThumbnail(path: imageUrl, size: nil)
+                    .frame(height: 140)
+                    .frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .contentShape(Rectangle())
+                    .onTapGesture { editingScene = .some(scene) }
+            }
             sceneHeader(scene: scene)
+            if let description = scene.description, !description.isEmpty {
+                Text(description)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+            }
             ForEach(viewModel.shots(in: scene)) { shot in
                 shotCardView(shot: shot, sceneId: scene.id)
             }

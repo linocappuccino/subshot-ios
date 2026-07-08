@@ -143,19 +143,19 @@ final class APIClient {
 
     // MARK: - Scenes
 
-    func createScene(projectId: String, name: String?, color: String, sortOrder: Int = 0) async throws -> Scene {
+    func createScene(projectId: String, name: String?, color: String, description: String? = nil, sortOrder: Int = 0) async throws -> Scene {
         var req = try await authorizedRequest("projects/\(projectId)/scenes", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        struct Body: Encodable { let name: String?; let color: String; let sort_order: Int }
-        req.httpBody = try encoder.encode(Body(name: name, color: color, sort_order: sortOrder))
+        struct Body: Encodable { let name: String?; let color: String; let description: String?; let sort_order: Int }
+        req.httpBody = try encoder.encode(Body(name: name, color: color, description: description, sort_order: sortOrder))
         return try await send(req)
     }
 
-    func patchScene(_ id: String, name: String? = nil, color: String? = nil, sortOrder: Int? = nil) async throws -> Scene {
+    func patchScene(_ id: String, name: String? = nil, color: String? = nil, description: String? = nil, sortOrder: Int? = nil) async throws -> Scene {
         var req = try await authorizedRequest("scenes/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        struct Body: Encodable { let name: String?; let color: String?; let sort_order: Int? }
-        req.httpBody = try encoder.encode(Body(name: name, color: color, sort_order: sortOrder))
+        struct Body: Encodable { let name: String?; let color: String?; let description: String?; let sort_order: Int? }
+        req.httpBody = try encoder.encode(Body(name: name, color: color, description: description, sort_order: sortOrder))
         return try await send(req)
     }
 
@@ -163,6 +163,27 @@ final class APIClient {
         let req = try await authorizedRequest("scenes/\(id)", method: "DELETE")
         try await sendNoContent(req)
     }
+
+    #if canImport(UIKit)
+    func uploadSceneImage(sceneId: String, image: UIImage) async throws -> Scene {
+        guard let jpegData = image.jpegData(compressionQuality: 0.85) else {
+            throw APIError.network(URLError(.cannotCreateFile))
+        }
+        var req = try await authorizedRequest("scenes/\(sceneId)/image", method: "POST")
+        let boundary = "Boundary-\(UUID().uuidString)"
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"scene.jpg\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+        body.append(jpegData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        req.httpBody = body
+
+        return try await send(req)
+    }
+    #endif
 
     // MARK: - Shots
 
