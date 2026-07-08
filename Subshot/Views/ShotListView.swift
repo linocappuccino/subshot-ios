@@ -9,6 +9,8 @@ struct ShotListView: View {
     @State private var selectedShot: Shot?
     @State private var showingTeamSheet = false
     @State private var editingScene: Scene??      // nil = sheet closed; .some(nil) = creating; .some(scene) = renaming
+    @State private var isExportingPdf = false
+    @State private var exportedPdfURL: URL?
     @FocusState private var newRowFocused: Bool
     private let projectId: String
 
@@ -48,6 +50,24 @@ struct ShotListView: View {
         .navigationTitle(projectName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if let exportedPdfURL {
+                    ShareLink(item: exportedPdfURL) {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                } else {
+                    Button {
+                        Task { await exportPdf() }
+                    } label: {
+                        if isExportingPdf {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                    }
+                    .disabled(isExportingPdf)
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { showingTeamSheet = true } label: {
                     Image(systemName: "person.2")
@@ -228,6 +248,24 @@ struct ShotListView: View {
     private func commitNewShot(sceneId: String?) async {
         addingToScene = nil
         await viewModel.createShot(description: newShotText, sceneId: sceneId)
+    }
+
+    /// Downloads the project's PDF once and caches it at a temp URL — the
+    /// toolbar swaps to a `ShareLink` for that URL afterward so re-tapping
+    /// doesn't re-download; `.task`/`.onDisappear` isn't used to invalidate
+    /// it since a stale PDF from a few edits ago is harmless to re-share.
+    private func exportPdf() async {
+        isExportingPdf = true
+        defer { isExportingPdf = false }
+        do {
+            let data = try await APIClient.shared.projectPdf(projectId)
+            let safeName = projectName.isEmpty ? "shotlist" : projectName
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeName).pdf")
+            try data.write(to: url, options: .atomic)
+            exportedPdfURL = url
+        } catch {
+            viewModel.errorMessage = error.localizedDescription
+        }
     }
 }
 

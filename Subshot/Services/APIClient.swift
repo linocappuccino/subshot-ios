@@ -131,6 +131,16 @@ final class APIClient {
         try await sendNoContent(req)
     }
 
+    func projectPdf(_ id: String) async throws -> Data {
+        let req = try await authorizedRequest("projects/\(id)/pdf")
+        let (data, response) = try await perform(req)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let message = String(data: data, encoding: .utf8) ?? ""
+            throw APIError.server(status: (response as? HTTPURLResponse)?.statusCode ?? 0, message: message)
+        }
+        return data
+    }
+
     // MARK: - Scenes
 
     func createScene(projectId: String, name: String?, color: String, sortOrder: Int = 0) async throws -> Scene {
