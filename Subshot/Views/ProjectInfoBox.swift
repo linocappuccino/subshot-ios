@@ -450,6 +450,11 @@ private struct TodoItemRow: View {
             assigneeMenu
         }
         .padding(.vertical, 4)
+        // Without this, long-pressing the Spacer's empty space between the
+        // text and the assignee menu didn't register at all — .contextMenu
+        // only picks up presses that land on actually-rendered content,
+        // and an empty Spacer renders nothing to press on.
+        .contentShape(Rectangle())
         .animation(.easeInOut(duration: 0.2), value: item.done)
         .contextMenu {
             Button(role: .destructive) {
