@@ -292,7 +292,7 @@ final class ShotListViewModel: ObservableObject {
         #if canImport(UIKit)
         UINotificationFeedbackGenerator().notificationOccurred(completed ? .success : .warning)
         #endif
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.75)) {
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
             scenes[index].completed = completed
             if completed {
                 let moved = scenes.remove(at: index)
@@ -402,7 +402,7 @@ final class ShotListViewModel: ObservableObject {
         } else {
             list.append(scene)
         }
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
             scenes = list
         }
         do {

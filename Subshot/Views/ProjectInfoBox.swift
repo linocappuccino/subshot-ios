@@ -31,7 +31,14 @@ struct ProjectInfoBox: View {
                     TodoListsSection(viewModel: viewModel)
                 }
                 .padding(.top, 12)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                // No .move(edge:) — sliding content in/out while the
+                // container is ALSO growing/shrinking its own height at the
+                // same time (Divider/DatePicker/TodoList content all
+                // resizing it) compounded into a janky double-motion. A
+                // plain fade + slight scale-from-top reads as one smooth
+                // reveal instead, closer to how Settings/Notes disclosure
+                // sections animate.
+                .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
             }
         }
         .padding(14)
@@ -47,7 +54,7 @@ struct ProjectInfoBox: View {
 
     private var header: some View {
         Button {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
                 isExpanded.toggle()
             }
         } label: {
@@ -136,7 +143,7 @@ private struct ShootDateSection: View {
             // value"), almost certainly from mutating state and kicking off
             // a Task inside a Binding's set closure, which SwiftUI calls
             // synchronously mid-transaction.
-            Toggle("Datum festlegen", isOn: $hasDate.animation(.spring(response: 0.35, dampingFraction: 0.8)))
+            Toggle("Datum festlegen", isOn: $hasDate.animation(.spring(response: 0.35, dampingFraction: 0.86)))
                 .onChange(of: hasDate) { _, newValue in
                     Task { await viewModel.updateShootDate(newValue ? date : nil) }
                 }
@@ -236,7 +243,7 @@ private struct LocationSection: View {
     private func select(_ completion: MKLocalSearchCompletion) async {
         guard let resolved = try? await LocationSearch.resolve(completion) else { return }
         await viewModel.updateLocation(address: resolved.address, lat: resolved.lat, lng: resolved.lng)
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
             isEditing = false
             completer.clear()
             query = ""

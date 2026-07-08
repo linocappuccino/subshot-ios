@@ -243,7 +243,7 @@ struct ShotListView: View {
         HStack {
             if let section {
                 Button {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
                         if collapsedSections.contains(section.id) {
                             collapsedSections.remove(section.id)
                         } else {
@@ -521,7 +521,7 @@ struct ShotListView: View {
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)
-        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: scene.completed)
+        .animation(.spring(response: 0.35, dampingFraction: 0.82), value: scene.completed)
     }
 
     @ViewBuilder

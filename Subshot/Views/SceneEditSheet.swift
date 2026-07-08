@@ -133,7 +133,7 @@ struct SceneEditSheet: View {
                 }
 
                 Section("Datum & Uhrzeit") {
-                    Toggle("Drehtermin festlegen", isOn: $hasDate.animation())
+                    Toggle("Drehtermin festlegen", isOn: $hasDate.animation(.spring(response: 0.35, dampingFraction: 0.86)))
                     if hasDate {
                         // Default (.compact) style in a Form — tap the value to get the
                         // standard system calendar+wheel popover, same as Reminders/Calendar.
