@@ -1,4 +1,4 @@
-Beiimport SwiftUI
+import SwiftUI
 
 /// Same Reminders "New List" pattern as ProjectEditSheet/SceneEditSheet, for
 /// folders: name, an optional single emoji (shown on the tile instead of a
