@@ -334,13 +334,16 @@ struct ShotListView: View {
         .contentShape(Rectangle())
     }
 
+    /// No "Einstellung hinzufügen" row here (unlike sceneCard) — new shots
+    /// only get created inside a scene now. This still shows/holds any
+    /// already-unassigned shots (and stays a drop target for dragging one
+    /// back out of a scene), just doesn't offer to create new ones loose.
     @ViewBuilder
     private func unassignedSection() -> some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(viewModel.shots(in: nil)) { shot in
                 shotCardView(shot: shot, sceneId: nil)
             }
-            addRow(sceneId: nil)
         }
         .padding(.horizontal, 16)
         .dropDestination(for: String.self) { ids, _ in
