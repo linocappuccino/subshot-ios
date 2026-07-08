@@ -59,7 +59,7 @@ enum LocationSearch {
         let response = try await search.start()
         // .placemark is deprecated in iOS 26 in favor of .location — same
         // coordinate, just a plain CLLocation instead of an MKPlacemark.
-        guard let coordinate = response.mapItems.first?.location?.coordinate else {
+        guard let coordinate = response.mapItems.first?.location.coordinate else {
             throw NSError(domain: "LocationSearch", code: 1, userInfo: [NSLocalizedDescriptionKey: "Keine Koordinaten gefunden"])
         }
         let address = [completion.title, completion.subtitle].filter { !$0.isEmpty }.joined(separator: ", ")
