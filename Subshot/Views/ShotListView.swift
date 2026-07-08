@@ -36,16 +36,6 @@ struct ShotListView: View {
                 ForEach(viewModel.scenes) { scene in
                     sceneCard(scene: scene)
                 }
-
-                // Invisible drop target — dragging a scene past the last
-                // one still moves it to the end. The visible "add scene"
-                // affordance is the floating + button now.
-                Color.clear
-                    .frame(height: 40)
-                    .dropDestination(for: String.self) { ids, _ in
-                        guard let dragged = ids.first, viewModel.scenes.contains(where: { $0.id == dragged }) else { return }
-                        Task { await viewModel.reorderScene(dragged, before: nil) }
-                    }
             }
             .padding(.vertical, 16)
         }
@@ -150,7 +140,7 @@ struct ShotListView: View {
         }
         .padding(.horizontal, 16)
         .dropDestination(for: String.self) { ids, _ in
-            guard let dragged = ids.first, !viewModel.scenes.contains(where: { $0.id == dragged }) else { return }
+            guard let dragged = ids.first else { return }
             Task { await viewModel.moveShot(dragged, toScene: nil) }
         }
     }
@@ -170,24 +160,20 @@ struct ShotListView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .padding(.horizontal, 16)
         .dropDestination(for: String.self) { ids, _ in
-            guard let dragged = ids.first, dragged != scene.id else { return }
-            Task {
-                if viewModel.scenes.contains(where: { $0.id == dragged }) {
-                    await viewModel.reorderScene(dragged, before: scene.id)
-                } else {
-                    await viewModel.moveShot(dragged, toScene: scene.id)
-                }
-            }
+            guard let dragged = ids.first else { return }
+            Task { await viewModel.moveShot(dragged, toScene: scene.id) }
         }
     }
 
     /// Image + header + description grouped as one tappable unit — tap
-    /// anywhere on it to edit the scene. Dragging to reorder lives on the
-    /// dedicated handle in the header, NOT here: `.draggable()` on a view
-    /// this big inside a ScrollView/LazyVStack fights the ScrollView's own
-    /// pan gesture for touches and can make the whole list stop scrolling
-    /// (confirmed — a `List` doesn't have this problem since it has native
-    /// drag/scroll coexistence, but a plain ScrollView does).
+    /// anywhere on it to edit the scene. Reordering is a plain up/down menu
+    /// (see sceneHeader), not drag & drop: `.draggable()`/`.dropDestination()`
+    /// on scene tiles was tried twice and both times made the whole
+    /// ScrollView hang/lock up while scrolling — not a MapKit issue (that was
+    /// ruled out separately), something about this drag API combination
+    /// itself inside a ScrollView/LazyVStack on this SDK. Shots keep their
+    /// own `.draggable()` below since that predates the scene-drag attempt
+    /// and was never implicated.
     @ViewBuilder
     private func sceneTile(scene: Scene) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -222,7 +208,7 @@ struct ShotListView: View {
     @ViewBuilder
     private func sceneHeader(scene: Scene) -> some View {
         HStack(spacing: 8) {
-            dragHandle(scene: scene)
+            reorderMenu(scene: scene)
             Circle()
                 .fill(Color(hex: scene.color))
                 .frame(width: 14, height: 14)
@@ -236,16 +222,40 @@ struct ShotListView: View {
         }
     }
 
-    /// Generous (44x44pt min, per HIG touch-target guidance) dedicated drag
-    /// source — press and hold anywhere on this specific icon, then move to
-    /// reorder. Scoped small on purpose (see sceneTile's doc comment).
+    /// Plain up/down reordering — see sceneTile's doc comment for why this
+    /// is a menu and not drag & drop.
     @ViewBuilder
-    private func dragHandle(scene: Scene) -> some View {
-        Image(systemName: "line.3.horizontal")
-            .foregroundStyle(.secondary)
-            .frame(width: 44, height: 44)
-            .contentShape(Rectangle())
-            .draggable(scene.id)
+    private func reorderMenu(scene: Scene) -> some View {
+        Menu {
+            Button {
+                Task { await moveSceneUp(scene) }
+            } label: {
+                Label("Nach oben", systemImage: "arrow.up")
+            }
+            Button {
+                Task { await moveSceneDown(scene) }
+            } label: {
+                Label("Nach unten", systemImage: "arrow.down")
+            }
+        } label: {
+            Image(systemName: "line.3.horizontal")
+                .foregroundStyle(.secondary)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+    }
+
+    private func moveSceneUp(_ scene: Scene) async {
+        guard let idx = viewModel.scenes.firstIndex(where: { $0.id == scene.id }), idx > 0 else { return }
+        let target = viewModel.scenes[idx - 1]
+        await viewModel.reorderScene(scene.id, before: target.id)
+    }
+
+    private func moveSceneDown(_ scene: Scene) async {
+        guard let idx = viewModel.scenes.firstIndex(where: { $0.id == scene.id }) else { return }
+        let nextIndex = idx + 2  // "insert before" semantics — see ShotListViewModel.reorderScene
+        let targetId = nextIndex < viewModel.scenes.count ? viewModel.scenes[nextIndex].id : nil
+        await viewModel.reorderScene(scene.id, before: targetId)
     }
 
     /// "Im Kasten" ("it's a wrap" — scene fully shot): tapping it toggles

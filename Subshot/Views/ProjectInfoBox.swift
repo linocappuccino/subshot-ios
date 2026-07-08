@@ -111,22 +111,22 @@ private struct ShootDateSection: View {
             Label("Drehdatum", systemImage: "calendar")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            Toggle("Datum festlegen", isOn: Binding(
-                get: { hasDate },
-                set: { newValue in
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { hasDate = newValue }
+            // Plain $bindings + .onChange, not a custom Binding(get:set:) with
+            // side effects in the setter — the latter caused a real
+            // AttributeGraph crash ("attribute failed to set an initial
+            // value"), almost certainly from mutating state and kicking off
+            // a Task inside a Binding's set closure, which SwiftUI calls
+            // synchronously mid-transaction.
+            Toggle("Datum festlegen", isOn: $hasDate.animation(.spring(response: 0.35, dampingFraction: 0.8)))
+                .onChange(of: hasDate) { _, newValue in
                     Task { await viewModel.updateShootDate(newValue ? date : nil) }
                 }
-            ))
             if hasDate {
-                DatePicker("Termin", selection: Binding(
-                    get: { date },
-                    set: { newValue in
-                        date = newValue
+                DatePicker("Termin", selection: $date, displayedComponents: [.date, .hourAndMinute])
+                    .onChange(of: date) { _, newValue in
                         Task { await viewModel.updateShootDate(newValue) }
                     }
-                ), displayedComponents: [.date, .hourAndMinute])
-                .transition(.opacity)
+                    .transition(.opacity)
             }
         }
         .task {
