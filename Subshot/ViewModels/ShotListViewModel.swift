@@ -10,7 +10,15 @@ final class ShotListViewModel: ObservableObject {
     let projectId: String
 
     @Published var scenes: [Scene] = []
-    @Published var shots: [Shot] = []
+    // shots(in:) used to re-filter this whole array from scratch on every
+    // call — and it's called twice per scene per render (once for the shot
+    // list, once for the header count) — so a big project re-scanned every
+    // shot for every scene on every single re-render. Grouped once here
+    // instead, whenever the array actually changes.
+    @Published var shots: [Shot] = [] {
+        didSet { shotsBySceneId = Dictionary(grouping: shots, by: \.sceneId) }
+    }
+    private var shotsBySceneId: [String?: [Shot]] = [:]
     @Published var isLoading = false
     @Published var errorMessage: String?
 
@@ -97,7 +105,7 @@ final class ShotListViewModel: ObservableObject {
     }
 
     func shots(in scene: Scene?) -> [Shot] {
-        shots.filter { $0.sceneId == scene?.id }
+        shotsBySceneId[scene?.id] ?? []
     }
 
     @discardableResult
