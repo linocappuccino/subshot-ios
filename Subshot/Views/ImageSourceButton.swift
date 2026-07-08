@@ -22,10 +22,19 @@ struct ImageSourceButton<Label: View>: View {
         }
         .buttonStyle(.plain)
         .confirmationDialog("Bild hinzufügen", isPresented: $showingDialog, titleVisibility: .hidden) {
+            // The half-second delay isn't decorative — setting showingLibrary/
+            // showingCamera in the same runloop tick as the confirmationDialog
+            // dismissing itself is a known SwiftUI race (the new presentation
+            // request gets silently dropped while the dialog is still
+            // mid-dismissal). This was "Bild hinzufügen tut nichts" in practice.
             if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                Button("Foto aufnehmen") { showingCamera = true }
+                Button("Foto aufnehmen") {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showingCamera = true }
+                }
             }
-            Button("Aus Mediathek wählen") { showingLibrary = true }
+            Button("Aus Mediathek wählen") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showingLibrary = true }
+            }
             Button("Abbrechen", role: .cancel) {}
         }
         // .photosPicker(isPresented:) is the programmatic-trigger form —
