@@ -1,12 +1,25 @@
 import SwiftUI
 
-/// Shared between the scene number badge's priority ring and ShotCard's own
-/// priority dot — must=red, should=orange, optional=gray.
+/// ShotCard's own priority dot — must=red, should=orange, optional=gray.
 private func priorityColor(_ priority: ShotPriority) -> Color {
     switch priority {
     case .must: return .red
     case .should: return .orange
     case .optional: return .gray
+    }
+}
+
+/// Scenes no longer have their own manually-picked color (removed —
+/// priority carries the color now instead, see SceneEditSheet) — this is
+/// the scene number badge's fill. Four distinct colors, one per priority
+/// including "none", so every scene reads as visually distinct by
+/// importance without a separate color picker to maintain.
+private func sceneAccentColor(_ priority: ShotPriority?) -> Color {
+    switch priority {
+    case .must: return .red
+    case .should: return .orange
+    case .optional: return .yellow
+    case nil: return Color(.systemGray3)
     }
 }
 
@@ -208,19 +221,41 @@ struct ShotListView: View {
                 ForEach(viewModel.scenes(in: section)) { scene in
                     sceneCard(scene: scene)
                 }
+                // Always-present drop target INSIDE the section, below its
+                // scenes — an empty (or collapsed) section previously had
+                // only its thin header row to drop onto, easy to miss
+                // entirely. This one's always at least 44pt tall and has an
+                // explicit contentShape so the whole area (not just where
+                // something happens to be drawn) accepts the drop.
+                sectionDropZone(section: section)
             }
         }
-        // Section-level drop target: dropping a scene tile onto empty space
-        // in this group (not onto another scene specifically) just files it
-        // into this section, keeping its current global sort_order — see
-        // sceneCard's own dropDestination for the "insert before a specific
-        // scene" case, which also reassigns section.
-        .dropDestination(for: String.self) { ids, _ in
-            guard let raw = ids.first, raw.hasPrefix("scene:") else { return }
-            let sceneId = String(raw.dropFirst("scene:".count))
-            guard let dragged = viewModel.scenes.first(where: { $0.id == sceneId }) else { return }
-            Task { await viewModel.assignSceneToSection(dragged, sectionId: section?.id) }
-        }
+    }
+
+    @ViewBuilder
+    private func sectionDropZone(section: SceneSection?) -> some View {
+        Color.clear
+            .frame(height: 44)
+            .contentShape(Rectangle())
+            .overlay {
+                if dropTargetSceneId == "zone:\(section?.id ?? "none")" {
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
+                }
+            }
+            .padding(.horizontal, 16)
+            .dropDestination(for: String.self) { ids, _ in
+                guard let raw = ids.first, raw.hasPrefix("scene:") else { return false }
+                let sceneId = String(raw.dropFirst("scene:".count))
+                guard let dragged = viewModel.scenes.first(where: { $0.id == sceneId }) else { return false }
+                Task { await viewModel.assignSceneToSection(dragged, sectionId: section?.id) }
+                return true
+            } isTargeted: { targeted in
+                let zoneId = "zone:\(section?.id ?? "none")"
+                withAnimation(.easeOut(duration: 0.15)) {
+                    dropTargetSceneId = targeted ? zoneId : (dropTargetSceneId == zoneId ? nil : dropTargetSceneId)
+                }
+            }
     }
 
     @ViewBuilder
@@ -437,7 +472,7 @@ struct ShotListView: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
-                .background(Color(hex: scene.color))
+                .background(sceneAccentColor(scene.priority))
                 .clipShape(Capsule())
             Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
                 .font(.subheadline.weight(.semibold))
@@ -464,13 +499,8 @@ struct ShotListView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(Color(hex: scene.color))
+                    .background(sceneAccentColor(scene.priority))
                     .clipShape(Capsule())
-                if let priority = scene.priority {
-                    Circle()
-                        .fill(priorityColor(priority))
-                        .frame(width: 9, height: 9)
-                }
                 Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
                     .font(.headline)
                     .lineLimit(2)
@@ -480,37 +510,9 @@ struct ShotListView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
-                if !viewModel.sections.isEmpty {
-                    sceneSectionMenu(scene: scene)
-                }
                 sceneAssigneeMenu(scene: scene)
                 imKastenButton(scene: scene)
             }
-        }
-    }
-
-    /// Only shown once the project actually has sections — no point
-    /// cluttering the header with an empty-state menu.
-    @ViewBuilder
-    private func sceneSectionMenu(scene: Scene) -> some View {
-        Menu {
-            if scene.sectionId != nil {
-                Button {
-                    Task { await viewModel.assignSceneToSection(scene, sectionId: nil) }
-                } label: {
-                    Label("Ohne Abschnitt", systemImage: "xmark.circle")
-                }
-            }
-            ForEach(viewModel.sections) { section in
-                Button {
-                    Task { await viewModel.assignSceneToSection(scene, sectionId: section.id) }
-                } label: {
-                    Text(section.name)
-                }
-            }
-        } label: {
-            Image(systemName: "folder")
-                .foregroundStyle(.secondary)
         }
     }
 

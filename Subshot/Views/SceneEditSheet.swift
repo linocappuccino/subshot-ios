@@ -1,11 +1,14 @@
 import SwiftUI
 import MapKit
 
-/// Reminders' "New List" sheet, adapted for Scenes: a name field + color
-/// swatch grid, plus a description and cover photo. Used both to create a
-/// scene (opens automatically right after tapping "Szene hinzufügen" — no
-/// more silently-created "Unbenannte Szene" with no way to name it) and to
-/// rename/re-color/re-describe an existing one (tap a scene header).
+/// Reminders' "New List" sheet, adapted for Scenes: a name field, description
+/// and cover photo. Used both to create a scene (opens automatically right
+/// after tapping "Szene hinzufügen" — no more silently-created "Unbenannte
+/// Szene" with no way to name it) and to rename/re-describe an existing one
+/// (tap a scene header). No manual color picker anymore — the scene's
+/// accent color now comes from its priority (see ScenePrioritySection
+/// below); `color` is still sent to the backend (required field) but fixed,
+/// never user-edited.
 struct SceneEditSheet: View {
     /// Common cinema/photo lens reference stops — a wheel with every integer
     /// from 10-400 would be 391 entries to scroll through for no real benefit,
@@ -101,24 +104,6 @@ struct SceneEditSheet: View {
 
                 Section("Name") {
                     TextField("z.B. Küche, Aussen Tag 1", text: $name)
-                }
-                Section("Farbe") {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 14) {
-                        ForEach(Color.subshotPalette, id: \.self) { hex in
-                            Circle()
-                                .fill(Color(hex: hex))
-                                .frame(width: 32, height: 32)
-                                .overlay {
-                                    if hex == color {
-                                        Image(systemName: "checkmark")
-                                            .font(.caption.bold())
-                                            .foregroundStyle(.white)
-                                    }
-                                }
-                                .onTapGesture { color = hex }
-                        }
-                    }
-                    .padding(.vertical, 4)
                 }
                 Section("Beschreibung") {
                     TextField("z.B. Handlung, Notizen", text: $description, axis: .vertical)
