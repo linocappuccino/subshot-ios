@@ -146,17 +146,17 @@ final class APIClient {
     func createScene(
         projectId: String, name: String?, color: String,
         description: String? = nil, dialogue: String? = nil, focalLengthMm: Int? = nil,
-        sortOrder: Int = 0
+        scheduledAt: Date? = nil, sortOrder: Int = 0
     ) async throws -> Scene {
         var req = try await authorizedRequest("projects/\(projectId)/scenes", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         struct Body: Encodable {
             let name: String?; let color: String; let description: String?
-            let dialogue: String?; let focal_length_mm: Int?; let sort_order: Int
+            let dialogue: String?; let focal_length_mm: Int?; let scheduled_at: Date?; let sort_order: Int
         }
         req.httpBody = try encoder.encode(Body(
             name: name, color: color, description: description,
-            dialogue: dialogue, focal_length_mm: focalLengthMm, sort_order: sortOrder
+            dialogue: dialogue, focal_length_mm: focalLengthMm, scheduled_at: scheduledAt, sort_order: sortOrder
         ))
         return try await send(req)
     }
@@ -164,17 +164,17 @@ final class APIClient {
     func patchScene(
         _ id: String, name: String? = nil, color: String? = nil,
         description: String? = nil, dialogue: String? = nil, focalLengthMm: Int? = nil,
-        sortOrder: Int? = nil
+        scheduledAt: Date? = nil, sortOrder: Int? = nil
     ) async throws -> Scene {
         var req = try await authorizedRequest("scenes/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         struct Body: Encodable {
             let name: String?; let color: String?; let description: String?
-            let dialogue: String?; let focal_length_mm: Int?; let sort_order: Int?
+            let dialogue: String?; let focal_length_mm: Int?; let scheduled_at: Date?; let sort_order: Int?
         }
         req.httpBody = try encoder.encode(Body(
             name: name, color: color, description: description,
-            dialogue: dialogue, focal_length_mm: focalLengthMm, sort_order: sortOrder
+            dialogue: dialogue, focal_length_mm: focalLengthMm, scheduled_at: scheduledAt, sort_order: sortOrder
         ))
         return try await send(req)
     }

@@ -87,15 +87,16 @@ struct ShotListView: View {
             set: { if !$0 { editingScene = nil } }
         )) {
             if case .some(let existing) = editingScene {
-                SceneEditSheet(existing: existing) { name, color, description, dialogue, focalLength in
+                SceneEditSheet(existing: existing) { name, color, description, dialogue, focalLength, scheduledAt in
                     if let existing {
-                        await viewModel.renameScene(existing, name: name, color: color, description: description, dialogue: dialogue, focalLengthMm: focalLength)
+                        await viewModel.renameScene(existing, name: name, color: color, description: description, dialogue: dialogue, focalLengthMm: focalLength, scheduledAt: scheduledAt)
                     } else {
                         await viewModel.createScene(
                             name: name.isEmpty ? "Unbenannte Szene" : name, color: color,
                             description: description.isEmpty ? nil : description,
                             dialogue: dialogue.isEmpty ? nil : dialogue,
-                            focalLengthMm: focalLength
+                            focalLengthMm: focalLength,
+                            scheduledAt: scheduledAt
                         )
                     }
                 } onImagePicked: { image in
@@ -167,6 +168,11 @@ struct ShotListView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             sceneHeader(scene: scene)
+            if let scheduledAt = scene.scheduledAt {
+                Label(scheduledAt.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             if let description = scene.description, !description.isEmpty {
                 Text(description)
                     .font(.footnote)

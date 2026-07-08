@@ -13,7 +13,7 @@ struct SceneEditSheet: View {
     static let focalLengths: [Int?] = [nil, 10, 12, 14, 16, 18, 20, 24, 28, 35, 40, 50, 65, 85, 100, 135, 150, 200, 300, 400]
 
     let existing: Scene?
-    var onSave: (String, String, String, String, Int?) async -> Void
+    var onSave: (String, String, String, String, Int?, Date?) async -> Void
     var onImagePicked: ((UIImage) async -> Void)?
 
     @State private var name: String
@@ -21,13 +21,15 @@ struct SceneEditSheet: View {
     @State private var description: String
     @State private var dialogue: String
     @State private var focalLength: Int?
+    @State private var hasDate: Bool
+    @State private var scheduledDate: Date
     @State private var photoItem: PhotosPickerItem?
     @State private var uploadedImage: UIImage?
     @Environment(\.dismiss) private var dismiss
 
     init(
         existing: Scene?,
-        onSave: @escaping (String, String, String, String, Int?) async -> Void,
+        onSave: @escaping (String, String, String, String, Int?, Date?) async -> Void,
         onImagePicked: ((UIImage) async -> Void)? = nil
     ) {
         self.existing = existing
@@ -38,6 +40,8 @@ struct SceneEditSheet: View {
         _description = State(initialValue: existing?.description ?? "")
         _dialogue = State(initialValue: existing?.dialogue ?? "")
         _focalLength = State(initialValue: existing?.focalLengthMm)
+        _hasDate = State(initialValue: existing?.scheduledAt != nil)
+        _scheduledDate = State(initialValue: existing?.scheduledAt ?? Date())
     }
 
     var body: some View {
@@ -72,6 +76,15 @@ struct SceneEditSheet: View {
                 Section("Dialog") {
                     TextField("Gesprochener Text", text: $dialogue, axis: .vertical)
                         .lineLimit(3...6)
+                }
+
+                Section("Datum & Uhrzeit") {
+                    Toggle("Drehtermin festlegen", isOn: $hasDate.animation())
+                    if hasDate {
+                        // Default (.compact) style in a Form — tap the value to get the
+                        // standard system calendar+wheel popover, same as Reminders/Calendar.
+                        DatePicker("Termin", selection: $scheduledDate, displayedComponents: [.date, .hourAndMinute])
+                    }
                 }
 
                 Section("Brennweite") {
@@ -128,7 +141,8 @@ struct SceneEditSheet: View {
                                 color,
                                 description.trimmingCharacters(in: .whitespacesAndNewlines),
                                 dialogue.trimmingCharacters(in: .whitespacesAndNewlines),
-                                focalLength
+                                focalLength,
+                                hasDate ? scheduledDate : nil
                             )
                             dismiss()
                         }

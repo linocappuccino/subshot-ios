@@ -59,13 +59,13 @@ final class ShotListViewModel: ObservableObject {
     }
 
     @discardableResult
-    func createScene(name: String, color: String, description: String? = nil, dialogue: String? = nil, focalLengthMm: Int? = nil) async -> Scene? {
+    func createScene(name: String, color: String, description: String? = nil, dialogue: String? = nil, focalLengthMm: Int? = nil, scheduledAt: Date? = nil) async -> Scene? {
         do {
             let sortOrder = (scenes.map(\.sortOrder).max() ?? -1) + 1
             let scene = try await APIClient.shared.createScene(
                 projectId: projectId, name: name, color: color,
                 description: description, dialogue: dialogue, focalLengthMm: focalLengthMm,
-                sortOrder: sortOrder
+                scheduledAt: scheduledAt, sortOrder: sortOrder
             )
             scenes.append(scene)
             return scene
@@ -75,11 +75,12 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
-    func renameScene(_ scene: Scene, name: String, color: String, description: String, dialogue: String, focalLengthMm: Int?) async {
+    func renameScene(_ scene: Scene, name: String, color: String, description: String, dialogue: String, focalLengthMm: Int?, scheduledAt: Date?) async {
         do {
             let updated = try await APIClient.shared.patchScene(
                 scene.id, name: name, color: color,
-                description: description, dialogue: dialogue, focalLengthMm: focalLengthMm
+                description: description, dialogue: dialogue, focalLengthMm: focalLengthMm,
+                scheduledAt: scheduledAt
             )
             if let index = scenes.firstIndex(where: { $0.id == updated.id }) {
                 scenes[index] = updated

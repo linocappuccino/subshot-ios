@@ -53,6 +53,7 @@ struct Scene: Codable, Identifiable, Hashable {
     var description: String?
     var dialogue: String?
     var focalLengthMm: Int?
+    var scheduledAt: Date?
     var imageUrl: String?
     var sortOrder: Int
 
@@ -60,6 +61,7 @@ struct Scene: Codable, Identifiable, Hashable {
         case id, name, color, description, dialogue
         case projectId = "project_id"
         case focalLengthMm = "focal_length_mm"
+        case scheduledAt = "scheduled_at"
         case imageUrl = "image_url"
         case sortOrder = "sort_order"
     }
