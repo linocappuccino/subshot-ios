@@ -36,12 +36,13 @@ final class ProjectListViewModel: ObservableObject {
     }
 
     @discardableResult
-    func createFolder(name: String) async -> ProjectFolder? {
+    @discardableResult
+    func createFolder(name: String, color: String? = nil, emoji: String? = nil) async -> ProjectFolder? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         do {
             let sortOrder = (folders.map(\.sortOrder).max() ?? -1) + 1
-            let folder = try await APIClient.shared.createFolder(name: trimmed, sortOrder: sortOrder)
+            let folder = try await APIClient.shared.createFolder(name: trimmed, color: color, emoji: emoji, sortOrder: sortOrder)
             folders.append(folder)
             return folder
         } catch {
@@ -50,9 +51,12 @@ final class ProjectListViewModel: ObservableObject {
         }
     }
 
-    func renameFolder(_ folder: ProjectFolder, name: String) async {
+    func updateFolder(_ folder: ProjectFolder, name: String, color: String, emoji: String?) async {
         do {
-            let updated = try await APIClient.shared.patchFolder(folder.id, name: name)
+            let updated = try await APIClient.shared.patchFolder(
+                folder.id, name: name, color: color,
+                emoji: emoji, clearEmoji: emoji == nil
+            )
             if let index = folders.firstIndex(where: { $0.id == updated.id }) {
                 folders[index] = updated
             }

@@ -95,7 +95,6 @@ struct ProjectListView: View {
                             Label("Neues Projekt", systemImage: "film.stack")
                         }
                         Button {
-                            newItemName = ""
                             creatingFolder = true
                         } label: {
                             Label("Neuer Ordner", systemImage: "folder.badge.plus")
@@ -133,17 +132,19 @@ struct ProjectListView: View {
         .sheet(isPresented: $creatingProject) { nameSheet(title: "Neues Projekt") { name in
             if let project = await viewModel.create(name: name) { path.append(project) }
         } }
-        .sheet(isPresented: $creatingFolder) { nameSheet(title: "Neuer Ordner") { name in
-            await viewModel.createFolder(name: name)
-        } }
+        .sheet(isPresented: $creatingFolder) {
+            FolderEditSheet(existing: nil) { name, color, emoji in
+                await viewModel.createFolder(name: name, color: color, emoji: emoji)
+            }
+        }
         .sheet(item: $editingProject) { project in
             ProjectEditSheet(project: project) { name, color in
                 await viewModel.update(project, name: name, color: color)
             }
         }
         .sheet(item: $editingFolder) { folder in
-            nameSheet(title: "Ordner umbenennen", initialValue: folder.name) { name in
-                await viewModel.renameFolder(folder, name: name)
+            FolderEditSheet(existing: folder) { name, color, emoji in
+                await viewModel.updateFolder(folder, name: name, color: color, emoji: emoji)
             }
         }
         .sheet(isPresented: $showingNotifications) {
@@ -190,7 +191,8 @@ struct ProjectListView: View {
                 subtitle: nil,
                 color: folder.color,
                 thumbnailPath: nil,
-                fallbackIcon: "folder.fill"
+                fallbackIcon: "folder.fill",
+                emoji: folder.emoji
             )
         }
         .buttonStyle(.plain)
@@ -210,7 +212,7 @@ struct ProjectListView: View {
         }
     }
 
-    private func tileBody(title: String, subtitle: String?, color: String, thumbnailPath: String?, fallbackIcon: String) -> some View {
+    private func tileBody(title: String, subtitle: String?, color: String, thumbnailPath: String?, fallbackIcon: String, emoji: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack {
                 RoundedRectangle(cornerRadius: 14)
@@ -218,6 +220,9 @@ struct ProjectListView: View {
                 if let thumbnailPath {
                     AsyncShotThumbnail(path: thumbnailPath, size: nil, lockAspectRatio: false)
                         .clipShape(RoundedRectangle(cornerRadius: 14))
+                } else if let emoji, !emoji.isEmpty {
+                    Text(emoji)
+                        .font(.system(size: 32))
                 } else {
                     Image(systemName: fallbackIcon)
                         .font(.system(size: 32))
@@ -225,7 +230,7 @@ struct ProjectListView: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .aspectRatio(1, contentMode: .fit)
+            .aspectRatio(4.0 / 3.0, contentMode: .fit)
 
             Text(title)
                 .font(.subheadline.weight(.semibold))

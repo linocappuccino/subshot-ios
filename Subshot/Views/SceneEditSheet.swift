@@ -265,7 +265,11 @@ private struct SceneLocationSection: View {
 
     var body: some View {
         if let address = scene.locationAddress, !isEditing {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
+                if let lat = scene.locationLat, let lng = scene.locationLng {
+                    SceneMapThumbnail(lat: lat, lng: lng, size: 200)
+                        .frame(maxWidth: .infinity)
+                }
                 Text(address).font(.subheadline)
                 HStack {
                     Button("Ändern") {

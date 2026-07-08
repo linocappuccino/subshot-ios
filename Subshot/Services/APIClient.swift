@@ -188,19 +188,26 @@ final class APIClient {
         return try await send(req)
     }
 
-    func createFolder(name: String, sortOrder: Int) async throws -> ProjectFolder {
+    func createFolder(name: String, color: String? = nil, emoji: String? = nil, sortOrder: Int) async throws -> ProjectFolder {
         var req = try await authorizedRequest("folders", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        struct Body: Encodable { let name: String; let sort_order: Int }
-        req.httpBody = try encoder.encode(Body(name: name, sort_order: sortOrder))
+        struct Body: Encodable { let name: String; let color: String?; let emoji: String?; let sort_order: Int }
+        req.httpBody = try encoder.encode(Body(name: name, color: color, emoji: emoji, sort_order: sortOrder))
         return try await send(req)
     }
 
-    func patchFolder(_ id: String, name: String? = nil, sortOrder: Int? = nil) async throws -> ProjectFolder {
+    func patchFolder(
+        _ id: String, name: String? = nil, color: String? = nil,
+        emoji: String? = nil, clearEmoji: Bool = false, sortOrder: Int? = nil
+    ) async throws -> ProjectFolder {
         var req = try await authorizedRequest("folders/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        struct Body: Encodable { let name: String?; let sort_order: Int? }
-        req.httpBody = try encoder.encode(Body(name: name, sort_order: sortOrder))
+        struct Body: Encodable {
+            let name: String?; let color: String?
+            let emoji: String?; let clear_emoji: Bool
+            let sort_order: Int?
+        }
+        req.httpBody = try encoder.encode(Body(name: name, color: color, emoji: emoji, clear_emoji: clearEmoji, sort_order: sortOrder))
         return try await send(req)
     }
 
