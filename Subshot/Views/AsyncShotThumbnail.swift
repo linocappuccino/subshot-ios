@@ -21,6 +21,14 @@ struct AsyncShotThumbnail: View {
     @State private var image: UIImage?
     @State private var failed = false
 
+    /// Shared across every instance, keyed by path — without this, scrolling
+    /// a list of image-bearing cards re-fetches the same image over and over
+    /// as LazyVStack tears down and rebuilds off-screen rows, piling up
+    /// concurrent authenticated network requests until the app becomes
+    /// unresponsive (the reported scroll freeze). NSCache is thread-safe and
+    /// evicts under memory pressure on its own.
+    private static let cache = NSCache<NSString, UIImage>()
+
     var body: some View {
         Group {
             if lockAspectRatio {
@@ -58,8 +66,15 @@ struct AsyncShotThumbnail: View {
     }
 
     private func load() async {
+        let key = path as NSString
+        if let cached = Self.cache.object(forKey: key) {
+            image = cached
+            return
+        }
         do {
-            image = try await APIClient.shared.fetchImage(path: path)
+            let fetched = try await APIClient.shared.fetchImage(path: path)
+            Self.cache.setObject(fetched, forKey: key)
+            image = fetched
         } catch {
             failed = true
         }
