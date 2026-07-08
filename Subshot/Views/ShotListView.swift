@@ -406,15 +406,19 @@ struct ShotListView: View {
             sceneDragPreview(scene: scene)
         }
         .dropDestination(for: String.self) { ids, _ in
-            guard let raw = ids.first, raw.hasPrefix("scene:") else { return }
+            // The isTargeted-overload's action closure returns Bool (did
+            // this view accept the drop), unlike the plain overload used
+            // everywhere else in this file for shots.
+            guard let raw = ids.first, raw.hasPrefix("scene:") else { return false }
             let draggedId = String(raw.dropFirst("scene:".count))
-            guard draggedId != scene.id, let dragged = viewModel.scenes.first(where: { $0.id == draggedId }) else { return }
+            guard draggedId != scene.id, let dragged = viewModel.scenes.first(where: { $0.id == draggedId }) else { return false }
             Task {
                 if dragged.sectionId != scene.sectionId {
                     await viewModel.assignSceneToSection(dragged, sectionId: scene.sectionId)
                 }
                 await viewModel.reorderScene(draggedId, before: scene.id)
             }
+            return true
         } isTargeted: { targeted in
             withAnimation(.easeOut(duration: 0.15)) {
                 dropTargetSceneId = targeted ? scene.id : (dropTargetSceneId == scene.id ? nil : dropTargetSceneId)
