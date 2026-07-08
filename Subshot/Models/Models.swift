@@ -19,11 +19,19 @@ struct Project: Codable, Identifiable, Hashable {
     let id: String
     var name: String
     var color: String
+    var shootDate: Date?
+    var locationAddress: String?
+    var locationLat: Double?
+    var locationLng: Double?
     let lastOpenedAt: Date
     let createdAt: Date
 
     enum CodingKeys: String, CodingKey {
         case id, name, color
+        case shootDate = "shoot_date"
+        case locationAddress = "location_address"
+        case locationLat = "location_lat"
+        case locationLng = "location_lng"
         case lastOpenedAt = "last_opened_at"
         case createdAt = "created_at"
     }
@@ -33,6 +41,10 @@ struct ProjectDetail: Codable {
     let id: String
     var name: String
     var color: String
+    var shootDate: Date?
+    var locationAddress: String?
+    var locationLat: Double?
+    var locationLng: Double?
     let lastOpenedAt: Date
     let createdAt: Date
     var scenes: [Scene]
@@ -40,6 +52,10 @@ struct ProjectDetail: Codable {
 
     enum CodingKeys: String, CodingKey {
         case id, name, color, scenes, shots
+        case shootDate = "shoot_date"
+        case locationAddress = "location_address"
+        case locationLat = "location_lat"
+        case locationLng = "location_lng"
         case lastOpenedAt = "last_opened_at"
         case createdAt = "created_at"
     }

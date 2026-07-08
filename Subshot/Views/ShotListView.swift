@@ -23,6 +23,8 @@ struct ShotListView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 24) {
+                ProjectInfoBox(viewModel: viewModel, projectId: projectId)
+
                 unassignedSection()
 
                 ForEach(viewModel.scenes) { scene in

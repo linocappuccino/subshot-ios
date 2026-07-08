@@ -99,6 +99,11 @@ final class APIClient {
         return try await send(req)
     }
 
+    func knownCollaborators() async throws -> [Member] {
+        let req = try await authorizedRequest("me/known-collaborators")
+        return try await send(req)
+    }
+
     // MARK: - Projects
 
     func listProjects() async throws -> [Project] {
@@ -118,11 +123,21 @@ final class APIClient {
         return try await send(req)
     }
 
-    func patchProject(_ id: String, name: String? = nil, color: String? = nil) async throws -> Project {
+    func patchProject(
+        _ id: String, name: String? = nil, color: String? = nil,
+        shootDate: Date? = nil, locationAddress: String? = nil,
+        locationLat: Double? = nil, locationLng: Double? = nil
+    ) async throws -> Project {
         var req = try await authorizedRequest("projects/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        struct Body: Encodable { let name: String?; let color: String? }
-        req.httpBody = try encoder.encode(Body(name: name, color: color))
+        struct Body: Encodable {
+            let name: String?; let color: String?; let shoot_date: Date?
+            let location_address: String?; let location_lat: Double?; let location_lng: Double?
+        }
+        req.httpBody = try encoder.encode(Body(
+            name: name, color: color, shoot_date: shootDate,
+            location_address: locationAddress, location_lat: locationLat, location_lng: locationLng
+        ))
         return try await send(req)
     }
 

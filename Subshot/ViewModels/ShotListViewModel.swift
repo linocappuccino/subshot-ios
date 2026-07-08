@@ -14,6 +14,15 @@ final class ShotListViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
 
+    // Project-level info shown in the collapsible box at the top of the
+    // scene overview — separate from `scenes`/`shots` since it belongs to
+    // the project, not any single scene.
+    @Published var shootDate: Date?
+    @Published var locationAddress: String?
+    @Published var locationLat: Double?
+    @Published var locationLng: Double?
+    @Published var members: [Member] = []
+
     /// Holds a just-deleted shot for the 5s undo window (spec §7, ShotListView).
     @Published var pendingUndoShot: Shot?
     private var undoTask: Task<Void, Never>?
@@ -31,6 +40,48 @@ final class ShotListViewModel: ObservableObject {
             shots = detail.shots
                 .filter { $0.status != .deleted }
                 .sorted { $0.sortOrder < $1.sortOrder }
+            shootDate = detail.shootDate
+            locationAddress = detail.locationAddress
+            locationLat = detail.locationLat
+            locationLng = detail.locationLng
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        // Independent of the main load — a failure here shouldn't block the
+        // scene/shot list from showing.
+        do {
+            members = try await APIClient.shared.members(projectId: projectId)
+        } catch {
+            // Silent: the info box just shows an empty people list; the user
+            // can still open "Team" from the toolbar, which surfaces errors.
+        }
+    }
+
+    func updateShootDate(_ date: Date?) async {
+        do {
+            let updated = try await APIClient.shared.patchProject(projectId, shootDate: date)
+            shootDate = updated.shootDate
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func updateLocation(address: String, lat: Double, lng: Double) async {
+        do {
+            let updated = try await APIClient.shared.patchProject(
+                projectId, locationAddress: address, locationLat: lat, locationLng: lng
+            )
+            locationAddress = updated.locationAddress
+            locationLat = updated.locationLat
+            locationLng = updated.locationLng
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func refreshMembers() async {
+        do {
+            members = try await APIClient.shared.members(projectId: projectId)
         } catch {
             errorMessage = error.localizedDescription
         }
