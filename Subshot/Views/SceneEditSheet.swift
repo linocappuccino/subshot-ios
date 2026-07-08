@@ -14,8 +14,11 @@ struct SceneEditSheet: View {
 
     let existing: Scene?
     @ObservedObject var viewModel: ShotListViewModel
-    var onSave: (String, String, String, String, Int?, Date?) async -> Void
-    var onImagePicked: ((UIImage) async -> Void)?
+    /// Returns the created/renamed scene so a picked-but-not-yet-uploaded
+    /// image can be attached right after — matters for brand-new scenes,
+    /// which have no id (and thus nowhere to upload to) until this returns.
+    var onSave: (String, String, String, String, Int?, Date?) async -> Scene?
+    var onImagePicked: ((Scene, UIImage) async -> Void)?
 
     @State private var name: String
     @State private var color: String
@@ -34,8 +37,8 @@ struct SceneEditSheet: View {
     init(
         existing: Scene?,
         viewModel: ShotListViewModel,
-        onSave: @escaping (String, String, String, String, Int?, Date?) async -> Void,
-        onImagePicked: ((UIImage) async -> Void)? = nil
+        onSave: @escaping (String, String, String, String, Int?, Date?) async -> Scene?,
+        onImagePicked: ((Scene, UIImage) async -> Void)? = nil
     ) {
         self.existing = existing
         self.viewModel = viewModel
@@ -53,6 +56,38 @@ struct SceneEditSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                // First thing in the sheet, and available immediately even
+                // while creating a brand-new scene — picking a photo just
+                // stages it locally (handlePhotoPicked) and it uploads once
+                // "Fertig" actually creates/saves the scene (see the toolbar
+                // button below), since uploading needs a scene id a new
+                // scene doesn't have yet.
+                Section("Bild") {
+                    PhotosPicker(selection: $photoItem, matching: .images) {
+                        HStack {
+                            if let uploadedImage {
+                                Image(uiImage: uploadedImage)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: 60, height: 60)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            } else if let imageUrl = existing?.imageUrl {
+                                AsyncShotThumbnail(path: imageUrl, size: 60)
+                            } else {
+                                Image(systemName: "photo.fill")
+                                    .frame(width: 60, height: 60)
+                                    .background(Color(.systemGray5))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                            Text((uploadedImage == nil && existing?.imageUrl == nil) ? "Bild hinzufügen" : "Bild ändern")
+                                .foregroundStyle(.primary)
+                        }
+                    }
+                    .onChange(of: photoItem) { _, newItem in
+                        Task { await handlePhotoPicked(newItem) }
+                    }
+                }
+
                 Section("Name") {
                     TextField("z.B. Küche, Aussen Tag 1", text: $name)
                 }
@@ -131,36 +166,6 @@ struct SceneEditSheet: View {
                     }
                 }
 
-                // Cover photo only for an existing scene — same reasoning as
-                // shots: uploading needs a scene id, which a not-yet-created
-                // scene doesn't have.
-                if let existing {
-                    Section("Bild") {
-                        PhotosPicker(selection: $photoItem, matching: .images) {
-                            HStack {
-                                if let uploadedImage {
-                                    Image(uiImage: uploadedImage)
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                        .frame(width: 60, height: 60)
-                                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                                } else if let imageUrl = existing.imageUrl {
-                                    AsyncShotThumbnail(path: imageUrl, size: 60)
-                                } else {
-                                    Image(systemName: "photo.fill")
-                                        .frame(width: 60, height: 60)
-                                        .background(Color(.systemGray5))
-                                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                                }
-                                Text(existing.imageUrl == nil ? "Bild hinzufügen" : "Bild ändern")
-                                    .foregroundStyle(.primary)
-                            }
-                        }
-                        .onChange(of: photoItem) { _, newItem in
-                            Task { await handlePhotoPicked(newItem) }
-                        }
-                    }
-                }
             }
             .navigationTitle(existing == nil ? "Neue Szene" : "Szene bearbeiten")
             .navigationBarTitleDisplayMode(.inline)
@@ -171,7 +176,7 @@ struct SceneEditSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Fertig") {
                         Task {
-                            await onSave(
+                            let saved = await onSave(
                                 name.trimmingCharacters(in: .whitespacesAndNewlines),
                                 color,
                                 description.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -179,6 +184,12 @@ struct SceneEditSheet: View {
                                 focalLength,
                                 hasDate ? scheduledDate : nil
                             )
+                            // existing's id never changes on rename, so prefer it when
+                            // present; `saved` only matters for a brand-new scene, which
+                            // has no id until onSave's createScene call returns one.
+                            if let uploadedImage, let target = existing ?? saved {
+                                await onImagePicked?(target, uploadedImage)
+                            }
                             dismiss()
                         }
                     }
@@ -192,7 +203,6 @@ struct SceneEditSheet: View {
         guard let item, let data = try? await item.loadTransferable(type: Data.self),
               let image = UIImage(data: data) else { return }
         uploadedImage = image
-        await onImagePicked?(image)
     }
 
     private func addShot(to scene: Scene) async {

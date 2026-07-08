@@ -86,8 +86,9 @@ struct ShotListView: View {
                 SceneEditSheet(existing: existing, viewModel: viewModel) { name, color, description, dialogue, focalLength, scheduledAt in
                     if let existing {
                         await viewModel.renameScene(existing, name: name, color: color, description: description, dialogue: dialogue, focalLengthMm: focalLength, scheduledAt: scheduledAt)
+                        return existing
                     } else {
-                        await viewModel.createScene(
+                        return await viewModel.createScene(
                             name: name.isEmpty ? "Unbenannte Szene" : name, color: color,
                             description: description.isEmpty ? nil : description,
                             dialogue: dialogue.isEmpty ? nil : dialogue,
@@ -95,10 +96,8 @@ struct ShotListView: View {
                             scheduledAt: scheduledAt
                         )
                     }
-                } onImagePicked: { image in
-                    if let existing {
-                        await viewModel.uploadSceneImage(existing, image: image)
-                    }
+                } onImagePicked: { scene, image in
+                    await viewModel.uploadSceneImage(scene, image: image)
                 }
             }
         }
