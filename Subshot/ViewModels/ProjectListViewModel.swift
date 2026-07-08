@@ -36,7 +36,6 @@ final class ProjectListViewModel: ObservableObject {
     }
 
     @discardableResult
-    @discardableResult
     func createFolder(name: String, color: String? = nil, emoji: String? = nil) async -> ProjectFolder? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
