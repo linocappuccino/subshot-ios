@@ -142,7 +142,6 @@ private struct LocationSection: View {
     @StateObject private var completer = LocationSearchCompleter()
     @State private var query = ""
     @State private var isEditing = false
-    @State private var snapshot: UIImage?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -153,19 +152,29 @@ private struct LocationSection: View {
             if let address = viewModel.locationAddress, !isEditing {
                 HStack(alignment: .top, spacing: 10) {
                     if let lat = viewModel.locationLat, let lng = viewModel.locationLng {
-                        Group {
-                            if let snapshot {
-                                Image(uiImage: snapshot).resizable()
-                            } else {
-                                Color(.tertiarySystemGroupedBackground).overlay { ProgressView() }
-                            }
+                        // A live SwiftUI Map, not MKMapSnapshotter — the
+                        // snapshotter is notorious for hanging the iOS
+                        // Simulator outright. Interaction fully disabled two
+                        // ways (mapInteractionModes + allowsHitTesting) so it
+                        // stays purely decorative and can't steal the
+                        // surrounding ScrollView's pan gesture either.
+                        Map(initialPosition: .region(
+                            MKCoordinateRegion(
+                                center: CLLocationCoordinate2D(latitude: lat, longitude: lng),
+                                latitudinalMeters: 500, longitudinalMeters: 500
+                            )
+                        )) {
+                            Marker("", coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lng))
+                                .tint(.red)
                         }
+                        .mapInteractionModes([])
+                        .allowsHitTesting(false)
                         .frame(width: 64, height: 64)
                         .clipShape(RoundedRectangle(cornerRadius: 10))
-                        .contentShape(Rectangle())
-                        .onTapGesture { LocationSearch.openInGoogleMaps(lat: lat, lng: lng) }
-                        .task(id: "\(lat),\(lng)") {
-                            snapshot = try? await LocationSearch.squareSnapshot(lat: lat, lng: lng, size: 64)
+                        .overlay {
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .onTapGesture { LocationSearch.openInGoogleMaps(lat: lat, lng: lng) }
                         }
                     }
                     VStack(alignment: .leading, spacing: 4) {
@@ -220,7 +229,6 @@ private struct LocationSection: View {
             isEditing = false
             completer.clear()
             query = ""
-            snapshot = nil
         }
     }
 }

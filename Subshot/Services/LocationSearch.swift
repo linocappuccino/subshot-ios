@@ -64,33 +64,6 @@ enum LocationSearch {
         return ResolvedLocation(address: address, lat: coordinate.latitude, lng: coordinate.longitude)
     }
 
-    #if canImport(UIKit)
-    /// Renders a square map centered on the coordinate with a pin overlay —
-    /// generated fresh on-device each time from lat/lng, nothing to upload
-    /// or store server-side for this (unlike scene/shot photos).
-    static func squareSnapshot(lat: Double, lng: Double, size: CGFloat) async throws -> UIImage {
-        let coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lng)
-        let options = MKMapSnapshotter.Options()
-        options.region = MKCoordinateRegion(center: coordinate, latitudinalMeters: 500, longitudinalMeters: 500)
-        options.size = CGSize(width: size, height: size)
-        // `options.scale` defaults to the device's screen scale already —
-        // no need to set it (and UIScreen.main is main-actor isolated in
-        // newer SDKs, awkward to touch from here).
-
-        let snapshotter = MKMapSnapshotter(options: options)
-        let snapshot = try await snapshotter.start()
-
-        let renderer = UIGraphicsImageRenderer(size: options.size)
-        return renderer.image { _ in
-            snapshot.image.draw(at: .zero)
-            let point = snapshot.point(for: coordinate)
-            let pin = UIImage(systemName: "mappin.circle.fill")?
-                .withTintColor(.systemRed, renderingMode: .alwaysOriginal)
-            pin?.draw(at: CGPoint(x: point.x - 12, y: point.y - 24))
-        }
-    }
-    #endif
-
     /// Opens Google Maps for the coordinate — a plain universal link, so it
     /// opens the native Google Maps app if installed (iOS upgrades
     /// google.com/maps links automatically) and falls back to the website
