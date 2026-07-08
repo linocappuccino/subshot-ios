@@ -101,10 +101,14 @@ struct TeamSheet: View {
                 email: newEmail.trimmingCharacters(in: .whitespaces),
                 role: newRole
             )
-            // TODO: replace with the real production domain once it exists
-            // (see APIClient.baseURL comment) — this link format needs a
-            // corresponding "accept invite" deep link / web page to land on.
-            lastInviteLink = "https://dev.subli.ch/subshot-test/invites/\(invite.token)/accept"
+            // Derived from APIClient.baseURL (single source of truth for the
+            // domain — see its TODO) instead of a second hardcoded string, so
+            // switching to Subshot's own domain later is a one-line change.
+            // Still needs a corresponding "accept invite" deep link / web page
+            // to land on — the backend endpoint alone isn't clickable.
+            lastInviteLink = APIClient.shared.baseURL
+                .appendingPathComponent("invites/\(invite.token)/accept")
+                .absoluteString
             newEmail = ""
         } catch {
             errorMessage = error.localizedDescription
