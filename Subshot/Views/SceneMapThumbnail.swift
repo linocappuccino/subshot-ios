@@ -60,7 +60,10 @@ struct SceneMapThumbnail: View {
             latitudinalMeters: 400, longitudinalMeters: 400
         )
         options.size = CGSize(width: size * 2, height: size * 2)
-        options.scale = await UIScreen.main.scale
+        // UIScreen.main is deprecated in iOS 26 — UITraitCollection.current
+        // is Apple's replacement for a screen-independent scale lookup, and
+        // (unlike UIScreen.main.scale) isn't async, hence no `await` here.
+        options.scale = UITraitCollection.current.displayScale
         options.showsBuildings = false
         do {
             let snapshot = try await MKMapSnapshotter(options: options).start()
