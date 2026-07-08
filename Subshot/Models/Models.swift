@@ -196,10 +196,14 @@ struct Member: Codable, Identifiable, Hashable {
     let email: String
     let name: String?
     let role: String
+    /// Google/Apple OAuth profile picture, synced from Clerk at first login
+    /// — nil for email/password accounts.
+    let avatarUrl: String?
 
     enum CodingKeys: String, CodingKey {
         case email, name, role
         case userId = "user_id"
+        case avatarUrl = "avatar_url"
     }
 }
 

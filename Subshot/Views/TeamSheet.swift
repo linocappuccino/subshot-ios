@@ -28,7 +28,8 @@ struct TeamSheet: View {
                         ProgressView()
                     }
                     ForEach(members) { member in
-                        HStack {
+                        HStack(spacing: 12) {
+                            MemberAvatar(member: member, size: 36)
                             VStack(alignment: .leading) {
                                 Text(member.name?.isEmpty == false ? member.name! : member.email)
                                 if member.name?.isEmpty == false {

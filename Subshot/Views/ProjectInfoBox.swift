@@ -117,14 +117,7 @@ struct ProjectInfoBox: View {
     /// 44pt — Apple's own minimum recommended tap target, was 32pt (too
     /// small/fiddly to tap reliably).
     private func initialsCircle(_ member: Member) -> some View {
-        let source = member.name?.isEmpty == false ? member.name! : member.email
-        let initials = String(source.prefix(2)).uppercased()
-        return Text(initials)
-            .font(.subheadline.weight(.bold))
-            .foregroundStyle(.white)
-            .frame(width: 44, height: 44)
-            .background(Color.stableColor(for: member.userId))
-            .clipShape(Circle())
+        MemberAvatar(member: member, size: 44)
             .overlay(Circle().stroke(Color(.secondarySystemGroupedBackground), lineWidth: 2))
     }
 }
@@ -497,14 +490,7 @@ private struct TodoItemRow: View {
     }
 
     private func initialsBadge(_ member: Member) -> some View {
-        let source = member.name?.isEmpty == false ? member.name! : member.email
-        let initials = String(source.prefix(2)).uppercased()
-        return Text(initials)
-            .font(.system(size: 13, weight: .bold))
-            .foregroundStyle(.white)
-            .frame(width: 32, height: 32)
-            .background(Color.stableColor(for: member.userId))
-            .clipShape(Circle())
+        MemberAvatar(member: member, size: 32)
             .frame(width: 44, height: 44)
             .contentShape(Rectangle())
     }

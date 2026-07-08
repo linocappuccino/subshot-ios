@@ -559,13 +559,7 @@ struct ShotListView: View {
             }
         } label: {
             if let assignee {
-                let source = assignee.name?.isEmpty == false ? assignee.name! : assignee.email
-                Text(String(source.prefix(2)).uppercased())
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 22, height: 22)
-                    .background(Color.stableColor(for: assignee.userId))
-                    .clipShape(Circle())
+                MemberAvatar(member: assignee, size: 22)
             } else {
                 Image(systemName: "person.crop.circle")
                     .foregroundStyle(.secondary)
