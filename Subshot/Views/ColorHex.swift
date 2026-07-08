@@ -45,4 +45,14 @@ extension Color {
         return f < 0.5 ? self : other
         #endif
     }
+
+    /// Deterministic per-person color for initials avatars (todo item
+    /// assignee, scene assignee, project people row) — no color field on
+    /// User, so hash the id the same way projects used to before they got a
+    /// real color field.
+    static func stableColor(for id: String) -> Color {
+        let hash = id.unicodeScalars.reduce(into: 0) { $0 = $0 &* 31 &+ Int($1.value) }
+        let hex = Color.subshotPalette[abs(hash) % Color.subshotPalette.count]
+        return Color(hex: hex)
+    }
 }

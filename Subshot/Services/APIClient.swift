@@ -161,39 +161,53 @@ final class APIClient {
     func createScene(
         projectId: String, name: String?, color: String,
         description: String? = nil, dialogue: String? = nil, focalLengthMm: Int? = nil,
-        scheduledAt: Date? = nil, durationMinutes: Int? = nil, sortOrder: Int = 0
+        scheduledAt: Date? = nil, durationMinutes: Int? = nil,
+        assigneeId: String? = nil, sectionId: String? = nil, sortOrder: Int = 0
     ) async throws -> Scene {
         var req = try await authorizedRequest("projects/\(projectId)/scenes", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         struct Body: Encodable {
             let name: String?; let color: String; let description: String?
             let dialogue: String?; let focal_length_mm: Int?; let scheduled_at: Date?
-            let duration_minutes: Int?; let sort_order: Int
+            let duration_minutes: Int?; let assignee_id: String?; let section_id: String?
+            let sort_order: Int
         }
         req.httpBody = try encoder.encode(Body(
             name: name, color: color, description: description,
             dialogue: dialogue, focal_length_mm: focalLengthMm, scheduled_at: scheduledAt,
-            duration_minutes: durationMinutes, sort_order: sortOrder
+            duration_minutes: durationMinutes, assignee_id: assigneeId, section_id: sectionId,
+            sort_order: sortOrder
         ))
         return try await send(req)
     }
 
+    /// `clearAssignee`/`clearSection` mirror the backend's ScenePatch escape
+    /// hatches — a plain nil assigneeId/sectionId here means "don't touch it",
+    /// not "remove it" (same convention as patchTodoItem).
     func patchScene(
         _ id: String, name: String? = nil, color: String? = nil,
         description: String? = nil, dialogue: String? = nil, focalLengthMm: Int? = nil,
-        scheduledAt: Date? = nil, durationMinutes: Int? = nil, completed: Bool? = nil, sortOrder: Int? = nil
+        scheduledAt: Date? = nil, durationMinutes: Int? = nil, completed: Bool? = nil,
+        assigneeId: String? = nil, clearAssignee: Bool = false,
+        sectionId: String? = nil, clearSection: Bool = false, sortOrder: Int? = nil
     ) async throws -> Scene {
         var req = try await authorizedRequest("scenes/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         struct Body: Encodable {
             let name: String?; let color: String?; let description: String?
             let dialogue: String?; let focal_length_mm: Int?; let scheduled_at: Date?
-            let duration_minutes: Int?; let completed: Bool?; let sort_order: Int?
+            let duration_minutes: Int?; let completed: Bool?
+            let assignee_id: String?; let clear_assignee: Bool
+            let section_id: String?; let clear_section: Bool
+            let sort_order: Int?
         }
         req.httpBody = try encoder.encode(Body(
             name: name, color: color, description: description,
             dialogue: dialogue, focal_length_mm: focalLengthMm, scheduled_at: scheduledAt,
-            duration_minutes: durationMinutes, completed: completed, sort_order: sortOrder
+            duration_minutes: durationMinutes, completed: completed,
+            assignee_id: assigneeId, clear_assignee: clearAssignee,
+            section_id: sectionId, clear_section: clearSection,
+            sort_order: sortOrder
         ))
         return try await send(req)
     }

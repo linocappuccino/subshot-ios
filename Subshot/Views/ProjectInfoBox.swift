@@ -227,17 +227,6 @@ private struct LocationSection: View {
     }
 }
 
-private extension Color {
-    /// Deterministic per-person color for the initials avatars — no color
-    /// field on User, so hash the id the same way projects used to (before
-    /// they got a real color field).
-    static func stableColor(for id: String) -> Color {
-        let hash = id.unicodeScalars.reduce(into: 0) { $0 = $0 &* 31 &+ Int($1.value) }
-        let hex = Color.subshotPalette[abs(hash) % Color.subshotPalette.count]
-        return Color(hex: hex)
-    }
-}
-
 /// Up to 5 lists per project (spec limit, enforced by both the backend and
 /// `ShotListViewModel.maxTodoLists` here). Renaming and adding items are
 /// inline (tap-to-edit / tap-to-add-row), matching the rest of this screen's

@@ -190,6 +190,25 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
+    /// Quick assignment straight from the scene tile's header menu — same
+    /// "responsible person" idea as todo item assignment, no need to open the
+    /// full edit sheet just to set/clear this one field.
+    func assignScene(_ scene: Scene, to userId: String?) async {
+        do {
+            let updated: Scene
+            if let userId {
+                updated = try await APIClient.shared.patchScene(scene.id, assigneeId: userId)
+            } else {
+                updated = try await APIClient.shared.patchScene(scene.id, clearAssignee: true)
+            }
+            if let index = scenes.firstIndex(where: { $0.id == updated.id }) {
+                scenes[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     #if canImport(UIKit)
     func uploadSceneImage(_ scene: Scene, image: UIImage) async {
         do {

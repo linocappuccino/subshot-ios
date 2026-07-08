@@ -236,7 +236,45 @@ struct ShotListView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             Spacer()
+            sceneAssigneeMenu(scene: scene)
             imKastenButton(scene: scene)
+        }
+    }
+
+    /// Responsible person for this scene — same quick Menu pattern as todo
+    /// item assignment (ProjectInfoBox.TodoItemRow), not tucked into the full
+    /// edit sheet, so setting/changing it is a one-tap action from the list.
+    @ViewBuilder
+    private func sceneAssigneeMenu(scene: Scene) -> some View {
+        let assignee = viewModel.members.first { $0.userId == scene.assigneeId }
+        Menu {
+            if assignee != nil {
+                Button {
+                    Task { await viewModel.assignScene(scene, to: nil) }
+                } label: {
+                    Label("Niemand zugewiesen", systemImage: "xmark.circle")
+                }
+            }
+            ForEach(viewModel.members) { member in
+                Button {
+                    Task { await viewModel.assignScene(scene, to: member.userId) }
+                } label: {
+                    Text(member.name?.isEmpty == false ? member.name! : member.email)
+                }
+            }
+        } label: {
+            if let assignee {
+                let source = assignee.name?.isEmpty == false ? assignee.name! : assignee.email
+                Text(String(source.prefix(2)).uppercased())
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 22, height: 22)
+                    .background(Color.stableColor(for: assignee.userId))
+                    .clipShape(Circle())
+            } else {
+                Image(systemName: "person.crop.circle")
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
