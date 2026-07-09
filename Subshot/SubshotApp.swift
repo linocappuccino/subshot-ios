@@ -12,6 +12,15 @@ import UserNotifications
 /// .xcodeproj lives here — see also app/push.py's setup notes on the
 /// server-side APNs key that's needed too).
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    /// iPhone stays portrait-only — the whole UI (storyboard cards, tiles)
+    /// is designed around a phone-width column and never adapted for a
+    /// rotated/wide layout, so a stray landscape flip just looked broken.
+    /// iPad keeps rotating freely (it already has an adjustable-column grid
+    /// that's meant to use the extra width either orientation gives it).
+    func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        UIDevice.current.userInterfaceIdiom == .pad ? .all : .portrait
+    }
+
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
