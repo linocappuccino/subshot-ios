@@ -309,8 +309,8 @@ final class APIClient {
             sort_order: sortOrder,
             location_address: locationAddress, location_lat: locationLat, location_lng: locationLng,
             clear_location: clearLocation,
-            good_take_filename: goodTakeFilename, clear_good_take: clearGoodTake,
-            priority: priority?.rawValue, clear_priority: clearPriority
+            priority: priority?.rawValue, clear_priority: clearPriority,
+            good_take_filename: goodTakeFilename, clear_good_take: clearGoodTake
         ))
         return try await send(req)
     }
