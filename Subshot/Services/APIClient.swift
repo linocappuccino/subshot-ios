@@ -216,6 +216,15 @@ final class APIClient {
         try await sendNoContent(req)
     }
 
+    struct ShareLinkResult: Decodable { let url: String; let expires_at: Date }
+
+    /// Idempotent server-side — calling this again just returns/extends the
+    /// same link rather than minting a new URL (see get_or_create_share_link).
+    func projectShareLink(_ id: String) async throws -> ShareLinkResult {
+        let req = try await authorizedRequest("projects/\(id)/share-link", method: "POST")
+        return try await send(req)
+    }
+
     func projectPdf(_ id: String) async throws -> Data {
         let req = try await authorizedRequest("projects/\(id)/pdf")
         let (data, response) = try await perform(req)
@@ -230,7 +239,7 @@ final class APIClient {
 
     func createScene(
         projectId: String, name: String?, color: String,
-        description: String? = nil, dialogue: String? = nil, focalLengthMm: Int? = nil,
+        description: String? = nil, dialogue: String? = nil,
         scheduledAt: Date? = nil, durationMinutes: Int? = nil,
         assigneeId: String? = nil, sectionId: String? = nil, sortOrder: Int = 0,
         locationAddress: String? = nil, locationLat: Double? = nil, locationLng: Double? = nil,
@@ -240,7 +249,7 @@ final class APIClient {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         struct Body: Encodable {
             let name: String?; let color: String; let description: String?
-            let dialogue: String?; let focal_length_mm: Int?; let scheduled_at: Date?
+            let dialogue: String?; let scheduled_at: Date?
             let duration_minutes: Int?; let assignee_id: String?; let section_id: String?
             let sort_order: Int
             let location_address: String?; let location_lat: Double?; let location_lng: Double?
@@ -249,7 +258,7 @@ final class APIClient {
         }
         req.httpBody = try encoder.encode(Body(
             name: name, color: color, description: description,
-            dialogue: dialogue, focal_length_mm: focalLengthMm, scheduled_at: scheduledAt,
+            dialogue: dialogue, scheduled_at: scheduledAt,
             duration_minutes: durationMinutes, assignee_id: assigneeId, section_id: sectionId,
             sort_order: sortOrder,
             location_address: locationAddress, location_lat: locationLat, location_lng: locationLng,
@@ -264,7 +273,7 @@ final class APIClient {
     /// patchTodoItem).
     func patchScene(
         _ id: String, name: String? = nil, color: String? = nil,
-        description: String? = nil, dialogue: String? = nil, focalLengthMm: Int? = nil,
+        description: String? = nil, dialogue: String? = nil,
         scheduledAt: Date? = nil, durationMinutes: Int? = nil, completed: Bool? = nil,
         assigneeId: String? = nil, clearAssignee: Bool = false,
         sectionId: String? = nil, clearSection: Bool = false, sortOrder: Int? = nil,
@@ -276,7 +285,7 @@ final class APIClient {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         struct Body: Encodable {
             let name: String?; let color: String?; let description: String?
-            let dialogue: String?; let focal_length_mm: Int?; let scheduled_at: Date?
+            let dialogue: String?; let scheduled_at: Date?
             let duration_minutes: Int?; let completed: Bool?
             let assignee_id: String?; let clear_assignee: Bool
             let section_id: String?; let clear_section: Bool
@@ -287,7 +296,7 @@ final class APIClient {
         }
         req.httpBody = try encoder.encode(Body(
             name: name, color: color, description: description,
-            dialogue: dialogue, focal_length_mm: focalLengthMm, scheduled_at: scheduledAt,
+            dialogue: dialogue, scheduled_at: scheduledAt,
             duration_minutes: durationMinutes, completed: completed,
             assignee_id: assigneeId, clear_assignee: clearAssignee,
             section_id: sectionId, clear_section: clearSection,
@@ -313,6 +322,29 @@ final class APIClient {
 
     func deleteScene(_ id: String) async throws {
         let req = try await authorizedRequest("scenes/\(id)", method: "DELETE")
+        try await sendNoContent(req)
+    }
+
+    // MARK: - Scene dialogues
+
+    func createSceneDialogue(sceneId: String, text: String, sortOrder: Int = 0) async throws -> SceneDialogue {
+        var req = try await authorizedRequest("scenes/\(sceneId)/dialogues", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let text: String; let sort_order: Int }
+        req.httpBody = try encoder.encode(Body(text: text, sort_order: sortOrder))
+        return try await send(req)
+    }
+
+    func patchSceneDialogue(_ id: String, text: String? = nil, done: Bool? = nil) async throws -> SceneDialogue {
+        var req = try await authorizedRequest("dialogues/\(id)", method: "PATCH")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let text: String?; let done: Bool? }
+        req.httpBody = try encoder.encode(Body(text: text, done: done))
+        return try await send(req)
+    }
+
+    func deleteSceneDialogue(_ id: String) async throws {
+        let req = try await authorizedRequest("dialogues/\(id)", method: "DELETE")
         try await sendNoContent(req)
     }
 
@@ -461,6 +493,45 @@ final class APIClient {
         return image
     }
     #endif
+
+    // MARK: - Push notifications
+
+    /// Called once SubshotApp's AppDelegate gets a device token back from
+    /// didRegisterForRemoteNotificationsWithDeviceToken — see app/push.py for
+    /// what still needs setting up server-side (and the Xcode "Push
+    /// Notifications" capability, without which registration itself never
+    /// succeeds on-device) before APNs actually delivers anything.
+    func registerDeviceToken(_ token: String) async throws {
+        var req = try await authorizedRequest("me/device-token", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let token: String; let platform: String }
+        req.httpBody = try encoder.encode(Body(token: token, platform: "ios"))
+        try await sendNoContent(req)
+    }
+
+    // MARK: - Notion import
+
+    func setNotionToken(_ token: String) async throws {
+        var req = try await authorizedRequest("me/notion-token", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try encoder.encode(["token": token])
+        try await sendNoContent(req)
+    }
+
+    func notionDatabases() async throws -> [NotionDatabase] {
+        let req = try await authorizedRequest("me/notion-databases")
+        return try await send(req)
+    }
+
+    struct NotionImportResult: Decodable { let imported: Int }
+
+    func importNotionScenes(projectId: String, databaseId: String) async throws -> Int {
+        var req = try await authorizedRequest("projects/\(projectId)/import-notion", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try encoder.encode(["database_id": databaseId])
+        let result: NotionImportResult = try await send(req)
+        return result.imported
+    }
 
     // MARK: - Team
 

@@ -71,13 +71,26 @@ struct AsyncShotThumbnail: View {
             image = cached
             return
         }
-        do {
-            let fetched = try await APIClient.shared.fetchImage(path: path)
-            Self.cache.setObject(fetched, forKey: key)
-            image = fetched
-        } catch {
-            failed = true
+        // A single failed attempt used to be permanent — `failed = true` with
+        // no retry meant one dropped connection or auth-token-refresh race
+        // mid-scroll left that card's cover photo blank until the app was
+        // relaunched, reported as the image having "disappeared" even though
+        // it was never actually lost server-side (confirmed via direct DB +
+        // uploads-folder check while debugging that report). Three attempts
+        // with a short backoff absorbs exactly that kind of transient blip.
+        for attempt in 0..<3 {
+            do {
+                let fetched = try await APIClient.shared.fetchImage(path: path)
+                Self.cache.setObject(fetched, forKey: key)
+                image = fetched
+                return
+            } catch {
+                if attempt < 2 {
+                    try? await Task.sleep(nanoseconds: 400_000_000 * UInt64(attempt + 1))
+                }
+            }
         }
+        failed = true
     }
 }
 

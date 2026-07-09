@@ -26,6 +26,12 @@ private func sceneAccentColor(_ priority: ShotPriority?) -> Color {
 struct ShotListView: View {
     @StateObject private var viewModel: ShotListViewModel
     let projectName: String
+    /// .regular (iPad, full-width Split View) gets the adjustable-column
+    /// grid (see ipadColumnCount + columnCountPopover); .compact (iPhone,
+    /// and iPad in narrow Slide Over/multitasking) keeps the simple 1-vs-2
+    /// isGridMode toggle — there's no useful "3 columns" on a phone-width
+    /// screen anyway.
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @State private var addingToScene: String??  // nil = not adding; .some(nil) = "no scene"; .some(id) = that scene
     @State private var newShotText = ""
@@ -46,6 +52,33 @@ struct ShotListView: View {
     @State private var dropTargetSceneId: String?
     @State private var isExportingPdf = false
     @State private var exportedPdfURL: URL?
+    @State private var showingNotionImport = false
+    /// Same "tap to fetch, button swaps into the real share trigger once
+    /// ready" pattern as the PDF export button right next to it.
+    @State private var isCreatingShareLink = false
+    @State private var shareLinkURL: URL?
+    /// List (current, one full-width tile per row) vs. grid (2 columns) —
+    /// per-device preference, not project state, so it doesn't need a
+    /// backend round trip and each person on set can pick what fits their
+    /// phone/how they like to scan the board.
+    @AppStorage("shotListGridMode") private var isGridMode = false
+    /// iPad-only column count, adjustable via a slider (see
+    /// columnCountPopover) — 1...4, stored as Double since Slider needs a
+    /// floating-point binding; always rounded before use as a grid column
+    /// count or an array-repeat argument.
+    @AppStorage("shotListIpadColumnCount") private var ipadColumnCountRaw: Double = 3
+    @State private var showingColumnCountPopover = false
+    private var ipadColumnCount: Int { Int(ipadColumnCountRaw.rounded()) }
+    /// Quick good-take entry straight from a scene's main tile — see
+    /// goodTakeButton. Only offered there for single-shot scenes; multi-shot
+    /// scenes still go through each shot's own detail sheet, one per shot.
+    @State private var editingGoodTakeShot: Shot?
+    @State private var goodTakeText = ""
+    /// Which scene's "+ Dialog" inline text field is currently open — nil
+    /// means none. Same one-at-a-time convention as addingToScene for shots.
+    @State private var addingDialogueToScene: String?
+    @State private var newDialogueText = ""
+    @FocusState private var newDialogueFocused: Bool
     @FocusState private var newRowFocused: Bool
     private let projectId: String
 
@@ -73,9 +106,12 @@ struct ShotListView: View {
                 // Only once at least one section exists does grouping (with
                 // an explicit "Ohne Abschnitt" bucket for the rest) kick in.
                 if viewModel.sections.isEmpty {
-                    ForEach(viewModel.scenes) { scene in
-                        sceneCard(scene: scene)
-                    }
+                    // scenes(in: nil), not the raw array — same "Im Kasten"
+                    // scenes always last" sort applies here too (a project
+                    // with no sections yet still has every scene's sectionId
+                    // == nil, so this is equivalent to the unsectioned bucket
+                    // below, just without its own header).
+                    sceneGrid(viewModel.scenes(in: nil))
                 } else {
                     ForEach(viewModel.sections) { section in
                         sectionGroup(section: section)
@@ -96,6 +132,24 @@ struct ShotListView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
+                if horizontalSizeClass == .regular {
+                    Button {
+                        showingColumnCountPopover = true
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                    }
+                    .popover(isPresented: $showingColumnCountPopover) {
+                        columnCountPopover
+                    }
+                } else {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { isGridMode.toggle() }
+                    } label: {
+                        Image(systemName: isGridMode ? "rectangle.grid.1x2" : "square.grid.2x2")
+                    }
+                }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
                 if let exportedPdfURL {
                     ShareLink(item: exportedPdfURL) {
                         Image(systemName: "square.and.arrow.up")
@@ -114,6 +168,24 @@ struct ShotListView: View {
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
+                if let shareLinkURL {
+                    ShareLink(item: shareLinkURL) {
+                        Image(systemName: "link")
+                    }
+                } else {
+                    Button {
+                        Task { await createShareLink() }
+                    } label: {
+                        if isCreatingShareLink {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "link")
+                        }
+                    }
+                    .disabled(isCreatingShareLink)
+                }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Button { showingTeamSheet = true } label: {
                     Image(systemName: "person.2")
                 }
@@ -127,21 +199,45 @@ struct ShotListView: View {
         .sheet(isPresented: $showingTeamSheet) {
             TeamSheet(projectId: projectId)
         }
+        .sheet(isPresented: $showingNotionImport) {
+            NotionImportSheet(projectId: projectId) {
+                await viewModel.load()
+            }
+        }
+        .alert("Good Take", isPresented: Binding(
+            get: { editingGoodTakeShot != nil },
+            set: { if !$0 { editingGoodTakeShot = nil } }
+        )) {
+            TextField("Dateiname, z.B. A003_C012", text: $goodTakeText)
+            Button("Abbrechen", role: .cancel) {}
+            Button("Speichern") {
+                if let shot = editingGoodTakeShot {
+                    let trimmed = goodTakeText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    Task { await viewModel.setGoodTake(shot, filename: trimmed.isEmpty ? nil : trimmed) }
+                }
+            }
+        } message: {
+            Text("Dateiname der guten Aufnahme für diese Einstellung.")
+        }
+        .alert("Alles im Kasten?", isPresented: $viewModel.showAllTimedScenesDoneConfirmation) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Alle Shots wirklich im Kasten, hast du auch wirklich keine Aussage oder Szene vergessen?")
+        }
         .sheet(isPresented: Binding(
             get: { editingScene != nil },
             set: { if !$0 { editingScene = nil } }
         )) {
             if case .some(let existing) = editingScene {
-                SceneEditSheet(existing: existing, isIntermediateStep: creatingIntermediateStep, viewModel: viewModel) { name, color, description, dialogue, focalLength, scheduledAt, durationMinutes, priority in
+                SceneEditSheet(existing: existing, isIntermediateStep: creatingIntermediateStep, viewModel: viewModel) { name, color, description, dialogue, scheduledAt, durationMinutes, priority in
                     if let existing {
-                        await viewModel.renameScene(existing, name: name, color: color, description: description, dialogue: dialogue, focalLengthMm: focalLength, scheduledAt: scheduledAt, durationMinutes: durationMinutes, priority: priority)
+                        await viewModel.renameScene(existing, name: name, color: color, description: description, dialogue: dialogue, scheduledAt: scheduledAt, durationMinutes: durationMinutes, priority: priority)
                         return existing
                     } else {
                         return await viewModel.createScene(
                             name: name.isEmpty ? "Unbenannte Szene" : name, color: color,
                             description: description.isEmpty ? nil : description,
                             dialogue: dialogue.isEmpty ? nil : dialogue,
-                            focalLengthMm: focalLength,
                             scheduledAt: scheduledAt,
                             durationMinutes: durationMinutes,
                             priority: priority,
@@ -178,6 +274,21 @@ struct ShotListView: View {
     /// inline "Szene hinzufügen" row at the end of the list, which meant
     /// scrolling all the way down every time. A short menu now, so the same
     /// button also creates sections instead of needing a second control.
+    /// iPad-only: lets someone pick how many columns of scene tiles fit
+    /// side by side — more columns naturally means smaller tiles, there's no
+    /// separate "tile size" knob since the two are the same thing once the
+    /// grid is fixed-width.
+    private var columnCountPopover: some View {
+        VStack(spacing: 12) {
+            Text("\(ipadColumnCount) Spalten")
+                .font(.headline)
+            Slider(value: $ipadColumnCountRaw, in: 1...4, step: 1)
+                .frame(width: 220)
+        }
+        .padding()
+        .presentationCompactAdaptation(.popover)
+    }
+
     private var addSceneButton: some View {
         Menu {
             Button {
@@ -197,6 +308,11 @@ struct ShotListView: View {
             } label: {
                 Label("Neuer Abschnitt", systemImage: "folder.badge.plus")
             }
+            Button {
+                showingNotionImport = true
+            } label: {
+                Label("Von Notion importieren", systemImage: "square.and.arrow.down.on.square")
+            }
         } label: {
             Image(systemName: "plus")
                 .font(.title2.weight(.bold))
@@ -211,6 +327,35 @@ struct ShotListView: View {
 
     // MARK: - Sections
 
+    /// Renders a set of scene cards either as today's single full-width
+    /// column, or as a 2-column grid — see isGridMode. Grid mode owns the
+    /// horizontal padding + inter-column gap itself (sceneCard skips its own
+    /// side padding in that mode, see sceneCard's modifier chain) so columns
+    /// and the row spacing above/below read as one consistent gap, not a
+    /// doubled-up one.
+    @ViewBuilder
+    private func sceneGrid(_ scenes: [Scene]) -> some View {
+        if horizontalSizeClass == .regular {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: ipadColumnCount), spacing: 16) {
+                ForEach(scenes) { scene in
+                    sceneCard(scene: scene)
+                }
+            }
+            .padding(.horizontal, 16)
+        } else if isGridMode {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+                ForEach(scenes) { scene in
+                    sceneCard(scene: scene)
+                }
+            }
+            .padding(.horizontal, 16)
+        } else {
+            ForEach(scenes) { scene in
+                sceneCard(scene: scene)
+            }
+        }
+    }
+
     /// `section == nil` renders the "Ohne Abschnitt" bucket — only shown at
     /// all once at least one real section exists (see body above), and
     /// always expanded (no collapse toggle) since it has no identity of its
@@ -220,9 +365,7 @@ struct ShotListView: View {
         VStack(alignment: .leading, spacing: 10) {
             sectionHeader(section: section)
             if section == nil || !collapsedSections.contains(section!.id) {
-                ForEach(viewModel.scenes(in: section)) { scene in
-                    sceneCard(scene: scene)
-                }
+                sceneGrid(viewModel.scenes(in: section))
                 // Always-present drop target INSIDE the section, below its
                 // scenes — an empty (or collapsed) section previously had
                 // only its thin header row to drop onto, easy to miss
@@ -382,7 +525,11 @@ struct ShotListView: View {
         .animation(.easeInOut(duration: 0.3), value: scene.completed)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .modifier(ScenePulseOnElapse(scene: scene))
-        .padding(.horizontal, 16)
+        // Grid mode owns its own outer horizontal padding + inter-column gap
+        // (see sceneGrid) — a card shouldn't also pad itself in that case, or
+        // the gap between the two columns would be twice as wide as the gap
+        // above/below.
+        .padding(.horizontal, (isGridMode || horizontalSizeClass == .regular) ? 0 : 16)
         .dropDestination(for: String.self) { ids, _ in
             guard let dragged = ids.first, !dragged.hasPrefix("scene:") else { return }
             Task { await viewModel.moveShot(dragged, toScene: scene.id) }
@@ -434,6 +581,16 @@ struct ShotListView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            // Individually-checkable dialogue lines, stacked under the
+            // legacy single-dialogue field above — "+ Dialog" appends one at
+            // a time (see addDialogueRow), each independently strikeable off
+            // once actually recorded (see dialogueRow).
+            if !scene.isIntermediateStep {
+                ForEach(scene.dialogues) { dialogue in
+                    dialogueRow(dialogue: dialogue, scene: scene)
+                }
+                addDialogueRow(scene: scene)
+            }
             if let address = scene.locationAddress, let lat = scene.locationLat, let lng = scene.locationLng {
                 HStack(spacing: 10) {
                     SceneMapThumbnail(lat: lat, lng: lng, size: 48)
@@ -442,6 +599,18 @@ struct ShotListView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
+            }
+            // Assignee + "Im Kasten" moved down here (bottom-right of the whole
+            // tile) instead of living in the header row — reads less cluttered
+            // now that the header is just the scene number/name/count/priority.
+            HStack(spacing: 8) {
+                let sceneShots = viewModel.shots(in: scene)
+                if !scene.isIntermediateStep, sceneShots.count == 1 {
+                    goodTakeButton(shot: sceneShots[0])
+                }
+                Spacer()
+                sceneAssigneeMenu(scene: scene)
+                imKastenButton(scene: scene)
             }
         }
         .contentShape(Rectangle())
@@ -514,8 +683,8 @@ struct ShotListView: View {
                     .font(.headline)
                     .lineLimit(2)
             }
-            HStack(spacing: 8) {
-                if !scene.isIntermediateStep {
+            if !scene.isIntermediateStep {
+                HStack(spacing: 8) {
                     Text("\(viewModel.shots(in: scene).count) Einstellungen")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
@@ -529,9 +698,6 @@ struct ShotListView: View {
                             .clipShape(Capsule())
                     }
                 }
-                Spacer()
-                sceneAssigneeMenu(scene: scene)
-                imKastenButton(scene: scene)
             }
         }
     }
@@ -591,9 +757,37 @@ struct ShotListView: View {
         .animation(.spring(response: 0.35, dampingFraction: 0.82), value: scene.completed)
     }
 
+    /// Good-take filename entry, surfaced directly on the scene's main tile —
+    /// previously only reachable via a shot's own detail sheet, which made no
+    /// sense for the very common single-shot scene (drilling into "weitere
+    /// Einstellungen" for the one and only shot just to log a filename).
+    /// Multi-shot scenes still enter it per-shot via ShotDetailSheet — this
+    /// button only appears when the scene has exactly one shot.
+    @ViewBuilder
+    private func goodTakeButton(shot: Shot) -> some View {
+        let hasGoodTake = shot.goodTakeFilename?.isEmpty == false
+        Button {
+            goodTakeText = shot.goodTakeFilename ?? ""
+            editingGoodTakeShot = shot
+        } label: {
+            Label(hasGoodTake ? shot.goodTakeFilename! : "Good Take", systemImage: "checkmark.seal.fill")
+                .font(.caption.weight(.semibold))
+                .labelStyle(.titleAndIcon)
+                .lineLimit(1)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(hasGoodTake ? Color.green.opacity(0.25) : Color(.tertiarySystemGroupedBackground))
+                .foregroundStyle(hasGoodTake ? .green : .secondary)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
     @ViewBuilder
     private func shotCardView(shot: Shot, sceneId: String?) -> some View {
-        ShotCard(shot: shot)
+        ShotCard(shot: shot) {
+            Task { await viewModel.toggleDone(shot) }
+        }
             .contentShape(Rectangle())
             .onTapGesture { selectedShot = shot }
             .contextMenu {
@@ -613,6 +807,64 @@ struct ShotListView: View {
                 guard let dragged = ids.first, dragged != shot.id else { return }
                 Task { await viewModel.moveShot(dragged, toScene: sceneId, before: shot.id) }
             }
+    }
+
+    /// One checkable spoken line — tapping the checkmark marks it recorded
+    /// (strikethrough), long-press to remove it entirely.
+    @ViewBuilder
+    private func dialogueRow(dialogue: SceneDialogue, scene: Scene) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                Task { await viewModel.toggleDialogue(dialogue, in: scene) }
+            } label: {
+                Image(systemName: dialogue.done ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(dialogue.done ? .green : .secondary)
+            }
+            .buttonStyle(.plain)
+            Text(dialogue.text)
+                .font(.footnote.italic())
+                .foregroundStyle(.secondary)
+                .strikethrough(dialogue.done)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .contextMenu {
+            Button(role: .destructive) {
+                Task { await viewModel.deleteDialogue(dialogue, in: scene) }
+            } label: {
+                Label("Löschen", systemImage: "trash")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func addDialogueRow(scene: Scene) -> some View {
+        if addingDialogueToScene == scene.id {
+            TextField("Neuer Dialog", text: $newDialogueText)
+                .focused($newDialogueFocused)
+                .submitLabel(.done)
+                .font(.footnote)
+                .onSubmit { Task { await commitNewDialogue(scene: scene) } }
+                .padding(8)
+                .background(Color(.tertiarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        } else {
+            Button {
+                newDialogueText = ""
+                addingDialogueToScene = scene.id
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    newDialogueFocused = true
+                }
+            } label: {
+                Label("+ Dialog", systemImage: "plus")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func commitNewDialogue(scene: Scene) async {
+        addingDialogueToScene = nil
+        await viewModel.addDialogue(to: scene, text: newDialogueText)
     }
 
     @ViewBuilder
@@ -683,6 +935,22 @@ struct ShotListView: View {
         }
     }
 
+    /// Public, no-login link to this project's storyboard (see GET /share/
+    /// {token} — server-rendered, responsive HTML, 7-day expiry). Server-side
+    /// idempotent, so tapping this again later just extends the same link
+    /// rather than creating a second, different URL to confuse whoever
+    /// already has the first one.
+    private func createShareLink() async {
+        isCreatingShareLink = true
+        defer { isCreatingShareLink = false }
+        do {
+            let result = try await APIClient.shared.projectShareLink(projectId)
+            shareLinkURL = URL(string: result.url)
+        } catch {
+            viewModel.errorMessage = error.localizedDescription
+        }
+    }
+
 }
 
 /// Storyboard-style card: big photo (if one's been added) on top, description
@@ -691,6 +959,13 @@ struct ShotListView: View {
 /// set (glance at the frame, not the text).
 private struct ShotCard: View {
     let shot: Shot
+    /// Lets the checkmark itself toggle done/open directly — previously the
+    /// only way to do that was the long-press context menu ("Erledigt"),
+    /// with this same checkmark shown purely as a static status icon right
+    /// next to it. A nested Button here takes tap priority over the card's
+    /// own onTapGesture (which opens the full detail sheet), same pattern as
+    /// the scene tile's "Im Kasten" button.
+    var onToggleDone: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -712,10 +987,13 @@ private struct ShotCard: View {
                 }
 
                 HStack(spacing: 6) {
-                    Image(systemName: shot.status == .done ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(shot.status == .done ? .green : .white)
-                        .font(.title3)
-                        .shadow(radius: 2)
+                    Button(action: onToggleDone) {
+                        Image(systemName: shot.status == .done ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(shot.status == .done ? .green : .white)
+                            .font(.title3)
+                            .shadow(radius: 2)
+                    }
+                    .buttonStyle(.plain)
 
                     if let priority = shot.priority {
                         Circle()

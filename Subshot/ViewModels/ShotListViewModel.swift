@@ -21,6 +21,11 @@ final class ShotListViewModel: ObservableObject {
     private var shotsBySceneId: [String?: [Shot]] = [:]
     @Published var isLoading = false
     @Published var errorMessage: String?
+    /// Set right after marking a scene "Im Kasten" turns out to have been the
+    /// last still-open scheduled ("getimte") scene in the project — see
+    /// setSceneCompleted. ShotListView shows a one-button confirmation alert
+    /// off this, then resets it to nil.
+    @Published var showAllTimedScenesDoneConfirmation = false
 
     // Project-level info shown in the collapsible box at the top of the
     // scene overview — separate from `scenes`/`shots` since it belongs to
@@ -120,8 +125,19 @@ final class ShotListViewModel: ObservableObject {
     /// Scenes belonging to a section, in order — nil means the "no section"
     /// group. Plain filter (not cached like shotsBySceneId): scene counts
     /// per project are small enough that re-scanning per render is cheap.
+    /// Completed ("Im Kasten") scenes always sort after open ones within their
+    /// section — enforced here on every read rather than relied on purely
+    /// from insertion order, since that broke as soon as a new scene got
+    /// added to the same section afterward: createScene/reorderScene both
+    /// place new items using the *global* max sort_order across every scene
+    /// in the project, so a later-added open scene in a section could end up
+    /// with a higher raw order than a scene marked "Im Kasten" earlier,
+    /// pushing the finished scene back above it. `sorted(by:)` is a stable
+    /// sort in Swift, so scenes on the same side of the completed/open split
+    /// keep their existing relative order.
     func scenes(in section: SceneSection?) -> [Scene] {
         scenes.filter { $0.sectionId == section?.id }
+            .sorted { !$0.completed && $1.completed }
     }
 
     // MARK: - Sections
@@ -206,12 +222,12 @@ final class ShotListViewModel: ObservableObject {
     }
 
     @discardableResult
-    func createScene(name: String, color: String, description: String? = nil, dialogue: String? = nil, focalLengthMm: Int? = nil, scheduledAt: Date? = nil, durationMinutes: Int? = nil, sectionId: String? = nil, priority: ShotPriority? = nil, isIntermediateStep: Bool = false) async -> Scene? {
+    func createScene(name: String, color: String, description: String? = nil, dialogue: String? = nil, scheduledAt: Date? = nil, durationMinutes: Int? = nil, sectionId: String? = nil, priority: ShotPriority? = nil, isIntermediateStep: Bool = false) async -> Scene? {
         do {
             let sortOrder = (scenes.map(\.sortOrder).max() ?? -1) + 1
             let scene = try await APIClient.shared.createScene(
                 projectId: projectId, name: name, color: color,
-                description: description, dialogue: dialogue, focalLengthMm: focalLengthMm,
+                description: description, dialogue: dialogue,
                 scheduledAt: scheduledAt, durationMinutes: durationMinutes,
                 sectionId: sectionId, sortOrder: sortOrder, priority: priority,
                 isIntermediateStep: isIntermediateStep
@@ -251,11 +267,11 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
-    func renameScene(_ scene: Scene, name: String, color: String, description: String, dialogue: String, focalLengthMm: Int?, scheduledAt: Date?, durationMinutes: Int?, priority: ShotPriority?) async {
+    func renameScene(_ scene: Scene, name: String, color: String, description: String, dialogue: String, scheduledAt: Date?, durationMinutes: Int?, priority: ShotPriority?) async {
         do {
             let updated = try await APIClient.shared.patchScene(
                 scene.id, name: name, color: color,
-                description: description, dialogue: dialogue, focalLengthMm: focalLengthMm,
+                description: description, dialogue: dialogue,
                 scheduledAt: scheduledAt, durationMinutes: durationMinutes,
                 priority: priority, clearPriority: priority == nil
             )
@@ -294,6 +310,14 @@ final class ShotListViewModel: ObservableObject {
         }
         if completed {
             await reorderScene(scene.id, before: nil)
+            // Only a scheduled ("getimte") scene finishing off the very last
+            // still-open scheduled scene in the project triggers the
+            // reminder — completing an untimed scene, or one that still
+            // leaves other scheduled scenes open, shouldn't nag.
+            let timedScenes = scenes.filter { $0.scheduledAt != nil }
+            if scene.scheduledAt != nil, !timedScenes.isEmpty, timedScenes.allSatisfy(\.completed) {
+                showAllTimedScenesDoneConfirmation = true
+            }
         }
     }
 
@@ -318,6 +342,53 @@ final class ShotListViewModel: ObservableObject {
 
     /// Same quick-menu idea as assignScene, for putting a scene into a
     /// section from the tile itself rather than needing the full edit sheet.
+    /// "+ Dialog" on the scene tile — appends a new individually-checkable
+    /// line. Optimistic local append first (same reasoning as everywhere
+    /// else in this file: instant feedback, server call reconciles after).
+    func addDialogue(to scene: Scene, text: String) async {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            let created = try await APIClient.shared.createSceneDialogue(sceneId: scene.id, text: trimmed)
+            if let index = scenes.firstIndex(where: { $0.id == scene.id }) {
+                scenes[index].dialogues.append(created)
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Checking a dialogue line off strikes it through on the tile — "this
+    /// line has actually been recorded", same idea as a shot's done status
+    /// but per spoken line instead of per shot.
+    func toggleDialogue(_ dialogue: SceneDialogue, in scene: Scene) async {
+        guard let sceneIndex = scenes.firstIndex(where: { $0.id == scene.id }),
+              let dialogueIndex = scenes[sceneIndex].dialogues.firstIndex(where: { $0.id == dialogue.id }) else { return }
+        let newDone = !dialogue.done
+        withAnimation(.easeInOut(duration: 0.2)) {
+            scenes[sceneIndex].dialogues[dialogueIndex].done = newDone
+        }
+        do {
+            let updated = try await APIClient.shared.patchSceneDialogue(dialogue.id, done: newDone)
+            if let sIndex = scenes.firstIndex(where: { $0.id == scene.id }),
+               let dIndex = scenes[sIndex].dialogues.firstIndex(where: { $0.id == updated.id }) {
+                scenes[sIndex].dialogues[dIndex] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func deleteDialogue(_ dialogue: SceneDialogue, in scene: Scene) async {
+        guard let sceneIndex = scenes.firstIndex(where: { $0.id == scene.id }) else { return }
+        scenes[sceneIndex].dialogues.removeAll { $0.id == dialogue.id }
+        do {
+            try await APIClient.shared.deleteSceneDialogue(dialogue.id)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func assignSceneToSection(_ scene: Scene, sectionId: String?) async {
         do {
             let updated: Scene
@@ -437,6 +508,28 @@ final class ShotListViewModel: ObservableObject {
     func replace(_ shot: Shot) {
         if let index = shots.firstIndex(where: { $0.id == shot.id }) {
             shots[index] = shot
+        }
+    }
+
+    /// Quick good-take entry straight from the scene tile (see
+    /// ShotListView.goodTakeButton) — same idea as assignScene: a single
+    /// field shouldn't require opening the full ShotDetailSheet. patchShotFull
+    /// always overwrites every field (it's a plain dict PATCH, not a partial
+    /// one — see APIClient), so every other field is passed through
+    /// unchanged here to avoid silently wiping them.
+    func setGoodTake(_ shot: Shot, filename: String?) async {
+        do {
+            let updated = try await APIClient.shared.patchShotFull(
+                shot.id,
+                description: shot.description,
+                durationSeconds: shot.durationSeconds,
+                cameraAngle: shot.cameraAngle,
+                priority: shot.priority?.rawValue,
+                goodTakeFilename: filename
+            )
+            replace(updated)
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 

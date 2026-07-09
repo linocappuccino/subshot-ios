@@ -96,6 +96,22 @@ struct ProjectDetail: Codable {
     }
 }
 
+struct SceneDialogue: Codable, Identifiable, Hashable {
+    let id: String
+    let sceneId: String
+    var text: String
+    var done: Bool
+    var sortOrder: Int
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, text, done
+        case sceneId = "scene_id"
+        case sortOrder = "sort_order"
+        case createdAt = "created_at"
+    }
+}
+
 struct Scene: Codable, Identifiable, Hashable {
     let id: String
     let projectId: String
@@ -103,7 +119,6 @@ struct Scene: Codable, Identifiable, Hashable {
     var color: String
     var description: String?
     var dialogue: String?
-    var focalLengthMm: Int?
     var scheduledAt: Date?
     var durationMinutes: Int?
     var imageUrl: String?
@@ -121,11 +136,14 @@ struct Scene: Codable, Identifiable, Hashable {
     /// changes after. Lighter-weight scenes for connective beats: no shot
     /// list, no priority shown on their tile — see ShotListView.sceneTile.
     var isIntermediateStep: Bool
+    /// Individually-checkable dialogue lines ("+ Dialog" on the tile) —
+    /// separate from `dialogue` above, which stays the single free-text
+    /// quick-entry field for a brand-new scene that doesn't have an id yet.
+    var dialogues: [SceneDialogue] = []
 
     enum CodingKeys: String, CodingKey {
-        case id, name, color, description, dialogue, completed, number, letter, priority
+        case id, name, color, description, dialogue, completed, number, letter, priority, dialogues
         case projectId = "project_id"
-        case focalLengthMm = "focal_length_mm"
         case scheduledAt = "scheduled_at"
         case durationMinutes = "duration_minutes"
         case imageUrl = "image_url"
@@ -293,6 +311,11 @@ struct AppNotification: Codable, Identifiable, Hashable {
         case updatedAt = "updated_at"
         case readAt = "read_at"
     }
+}
+
+struct NotionDatabase: Codable, Identifiable, Hashable {
+    let id: String
+    let title: String
 }
 
 // Common camera angles offered in the shot detail picker (spec: "Picker mit

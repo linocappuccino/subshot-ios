@@ -97,6 +97,51 @@ struct ProjectListView: View {
                 )
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            addButton
+        }
+    }
+
+    /// Same floating-FAB pattern as ShotListView's addSceneButton — the
+    /// toolbar "+" up top still works too, this is just a second, easier-to-
+    /// reach spot for the same action (thumb-friendly on a big grid).
+    @ViewBuilder
+    private var addButton: some View {
+        Group {
+            if folderId == nil {
+                Menu {
+                    Button {
+                        creatingProject = true
+                    } label: {
+                        Label("Neues Projekt", systemImage: "film.stack")
+                    }
+                    Button {
+                        creatingFolder = true
+                    } label: {
+                        Label("Neuer Ordner", systemImage: "folder.badge.plus")
+                    }
+                } label: {
+                    fabIcon
+                }
+            } else {
+                Button {
+                    creatingProject = true
+                } label: {
+                    fabIcon
+                }
+            }
+        }
+        .padding(.trailing, 20)
+        .padding(.bottom, 20)
+    }
+
+    private var fabIcon: some View {
+        Image(systemName: "plus")
+            .font(.title2.weight(.bold))
+            .foregroundStyle(.white)
+            .frame(width: 58, height: 58)
+            .background(Circle().fill(Color.accentColor))
+            .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
     }
 
     @ToolbarContentBuilder
@@ -189,7 +234,7 @@ struct ProjectListView: View {
         .buttonStyle(.plain)
         .contextMenu {
             Button { editingFolder = folder } label: {
-                Label("Umbenennen", systemImage: "pencil")
+                Label("Bearbeiten", systemImage: "pencil")
             }
             Button(role: .destructive) {
                 Task { await viewModel.deleteFolder(folder) }
@@ -217,8 +262,15 @@ struct ProjectListView: View {
                 .frame(maxWidth: .infinity)
                 .overlay {
                     ZStack {
+                        // Near-solid fill, not a translucent tint — at the old 0.25
+                        // opacity, this app's pastel palette all washed out to roughly
+                        // the same pale shade against the system background, so picking
+                        // a different color in the edit sheet looked like it did
+                        // nothing. Solid fill makes every palette color unmistakably
+                        // distinct (matters most for folder tiles, which never have a
+                        // thumbnail to look at instead).
                         RoundedRectangle(cornerRadius: 14)
-                            .fill(Color(hex: color).opacity(0.25))
+                            .fill(Color(hex: color).opacity(0.9))
                         if let thumbnailPath {
                             AsyncShotThumbnail(path: thumbnailPath, size: nil, lockAspectRatio: false)
                         } else if let emoji, !emoji.isEmpty {
@@ -227,7 +279,7 @@ struct ProjectListView: View {
                         } else {
                             Image(systemName: fallbackIcon)
                                 .font(.system(size: 32))
-                                .foregroundStyle(Color(hex: color))
+                                .foregroundStyle(.white)
                         }
                         // Subtle glossy light sweep from the top-left, like
                         // an app icon — a plain flat-color tile read as a

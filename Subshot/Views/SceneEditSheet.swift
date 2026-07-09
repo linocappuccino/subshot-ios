@@ -10,10 +10,6 @@ import MapKit
 /// below); `color` is still sent to the backend (required field) but fixed,
 /// never user-edited.
 struct SceneEditSheet: View {
-    /// Common cinema/photo lens reference stops — a wheel with every integer
-    /// from 10-400 would be 391 entries to scroll through for no real benefit,
-    /// nobody dials in "247mm". `nil` (front of the list) means "not set".
-    static let focalLengths: [Int?] = [nil, 10, 12, 14, 16, 18, 20, 24, 28, 35, 40, 50, 65, 85, 100, 135, 150, 200, 300, 400]
     /// Estimated scene length, offered in 5-minute steps — matches how a
     /// shooting schedule is actually blocked out, no one dials in "37 Min.".
     static let durations: [Int?] = [nil] + stride(from: 5, through: 240, by: 5).map { $0 }
@@ -22,21 +18,20 @@ struct SceneEditSheet: View {
     /// "Zwischenschritt" — a lighter-weight scene variant for connective
     /// beats that don't need the full treatment: same core fields (name,
     /// color, description, date/duration, location) but no cover image,
-    /// dialogue, focal length, or shot list. Not a separate backend concept,
-    /// purely which Form sections this sheet shows.
+    /// dialogue, or shot list. Not a separate backend concept, purely which
+    /// Form sections this sheet shows.
     let isIntermediateStep: Bool
     @ObservedObject var viewModel: ShotListViewModel
     /// Returns the created/renamed scene so a picked-but-not-yet-uploaded
     /// image can be attached right after — matters for brand-new scenes,
     /// which have no id (and thus nowhere to upload to) until this returns.
-    var onSave: (String, String, String, String, Int?, Date?, Int?, ShotPriority?) async -> Scene?
+    var onSave: (String, String, String, String, Date?, Int?, ShotPriority?) async -> Scene?
     var onImagePicked: ((Scene, UIImage) async -> Void)?
 
     @State private var name: String
     @State private var color: String
     @State private var description: String
     @State private var dialogue: String
-    @State private var focalLength: Int?
     @State private var hasDate: Bool
     @State private var scheduledDate: Date
     @State private var durationMinutes: Int?
@@ -51,7 +46,7 @@ struct SceneEditSheet: View {
         existing: Scene?,
         isIntermediateStep: Bool = false,
         viewModel: ShotListViewModel,
-        onSave: @escaping (String, String, String, String, Int?, Date?, Int?, ShotPriority?) async -> Scene?,
+        onSave: @escaping (String, String, String, String, Date?, Int?, ShotPriority?) async -> Scene?,
         onImagePicked: ((Scene, UIImage) async -> Void)? = nil
     ) {
         self.existing = existing
@@ -63,7 +58,6 @@ struct SceneEditSheet: View {
         _color = State(initialValue: existing?.color ?? Color.subshotPalette[0])
         _description = State(initialValue: existing?.description ?? "")
         _dialogue = State(initialValue: existing?.dialogue ?? "")
-        _focalLength = State(initialValue: existing?.focalLengthMm)
         _hasDate = State(initialValue: existing?.scheduledAt != nil)
         _scheduledDate = State(initialValue: existing?.scheduledAt ?? Date())
         _durationMinutes = State(initialValue: existing?.durationMinutes)
@@ -152,17 +146,6 @@ struct SceneEditSheet: View {
                     }
                 }
 
-                if !isIntermediateStep {
-                    Section("Brennweite") {
-                        Picker("Brennweite", selection: $focalLength) {
-                            ForEach(Self.focalLengths, id: \.self) { mm in
-                                Text(mm.map { "\($0)mm" } ?? "–").tag(mm)
-                            }
-                        }
-                        .pickerStyle(.wheel)
-                    }
-                }
-
                 // Same reasoning as "Einstellungen" below: location is patched
                 // straight onto the scene via its own dedicated endpoint call,
                 // which needs an id a not-yet-created scene doesn't have.
@@ -217,7 +200,6 @@ struct SceneEditSheet: View {
                                 color,
                                 description.trimmingCharacters(in: .whitespacesAndNewlines),
                                 dialogue.trimmingCharacters(in: .whitespacesAndNewlines),
-                                focalLength,
                                 hasDate ? scheduledDate : nil,
                                 hasDate ? durationMinutes : nil,
                                 priority
