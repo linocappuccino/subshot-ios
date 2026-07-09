@@ -175,7 +175,7 @@ struct SceneEditSheet: View {
                     if hasDate {
                         // Default (.compact) style in a Form — tap the value to get the
                         // standard system calendar+wheel popover, same as Reminders/Calendar.
-                        DatePicker("Termin", selection: $scheduledDate, displayedComponents: [.date, .hourAndMinute])
+                        DatePicker("Start", selection: $scheduledDate, displayedComponents: [.date, .hourAndMinute])
                     }
                 }
 

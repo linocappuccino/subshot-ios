@@ -1084,7 +1084,7 @@ private struct SceneTimerInfo: View {
                 let isRunning = end.map { now >= scheduledAt && now < $0 } ?? false
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Label(scheduledAt.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
+                    Label("Start: \(scheduledAt.formatted(date: .abbreviated, time: .shortened))", systemImage: "calendar")
                         .font(.caption)
                         .foregroundStyle(isRunning ? Color.yellow : Color(.secondaryLabel))
                         .animation(.easeInOut(duration: 0.4), value: isRunning)
@@ -1123,7 +1123,7 @@ private struct LiveSceneBadge: View {
                 .frame(width: 6, height: 6)
                 .scaleEffect(pulse ? 1.5 : 0.85)
                 .opacity(pulse ? 0.35 : 1.0)
-            Text("Läuft · noch \(Self.format(remaining))")
+            Text("Verbleibend: \(Self.format(remaining))")
                 .font(.caption2.weight(.bold))
         }
         .foregroundStyle(.white)

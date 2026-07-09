@@ -143,7 +143,7 @@ private struct ShootDateSection: View {
                     Task { await viewModel.updateShootDate(newValue ? date : nil) }
                 }
             if hasDate {
-                DatePicker("Termin", selection: $date, displayedComponents: [.date, .hourAndMinute])
+                DatePicker("Start", selection: $date, displayedComponents: [.date, .hourAndMinute])
                     .onChange(of: date) { _, newValue in
                         Task { await viewModel.updateShootDate(newValue) }
                     }
