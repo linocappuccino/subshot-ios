@@ -158,7 +158,10 @@ struct SceneEditSheet: View {
                                     newDialogueFocused = true
                                 }
                             } label: {
-                                Label("+ Dialog", systemImage: "plus")
+                                // Just "Dialog", not "+ Dialog" - the SF
+                                // Symbol plus icon already is the "+", a
+                                // literal "+" in the text too doubled it up.
+                                Label("Dialog", systemImage: "plus")
                             }
                         }
                     } header: {
