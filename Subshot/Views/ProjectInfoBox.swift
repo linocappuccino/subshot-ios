@@ -480,10 +480,17 @@ private struct TodoItemRow: View {
             if let assignee {
                 initialsBadge(assignee)
             } else {
-                Image(systemName: "person.crop.circle.badge.plus")
-                    .font(.title3)
+                // A bare icon here read as decorative rather than tappable —
+                // "Zuweisen" makes it unmistakable that this is where you
+                // assign someone to the item, not just a placeholder avatar.
+                Label("Zuweisen", systemImage: "person.crop.circle.badge.plus")
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .frame(width: 44, height: 44)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .frame(minHeight: 44)
+                    .background(Color(.quaternarySystemFill))
+                    .clipShape(Capsule())
                     .contentShape(Rectangle())
             }
         }
