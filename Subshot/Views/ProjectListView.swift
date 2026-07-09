@@ -165,30 +165,6 @@ struct ProjectListView: View {
                 }
             }
         }
-        ToolbarItem(placement: .navigationBarTrailing) {
-            if folderId == nil {
-                Menu {
-                    Button {
-                        creatingProject = true
-                    } label: {
-                        Label("Neues Projekt", systemImage: "film.stack")
-                    }
-                    Button {
-                        creatingFolder = true
-                    } label: {
-                        Label("Neuer Ordner", systemImage: "folder.badge.plus")
-                    }
-                } label: {
-                    Image(systemName: "plus.circle.fill").font(.title2)
-                }
-            } else {
-                Button {
-                    creatingProject = true
-                } label: {
-                    Image(systemName: "plus.circle.fill").font(.title2)
-                }
-            }
-        }
     }
 
     // MARK: - Tiles

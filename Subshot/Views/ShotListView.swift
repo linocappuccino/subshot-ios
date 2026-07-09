@@ -19,7 +19,7 @@ private func sceneAccentColor(_ priority: ShotPriority?) -> Color {
     switch priority {
     case .must: return .red
     case .should: return .orange
-    case .optional: return .yellow
+    case .optional: return Color(red: 0x3d / 255.0, green: 0x84 / 255.0, blue: 0xd8 / 255.0)
     case nil: return Color(.systemGray3)
     }
 }
