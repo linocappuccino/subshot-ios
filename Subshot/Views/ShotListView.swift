@@ -714,21 +714,14 @@ struct ShotListView: View {
                     .font(.title3.weight(.semibold))
                     .lineLimit(2)
             }
-            if !scene.isIntermediateStep {
-                HStack(spacing: 8) {
-                    Text("\(viewModel.shots(in: scene).count) Einstellungen")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    if let priority = scene.priority {
-                        Text(priority.label)
-                            .font(.footnote.weight(.bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 4)
-                            .background(sceneAccentColor(priority))
-                            .clipShape(Capsule())
-                    }
-                }
+            if !scene.isIntermediateStep, let priority = scene.priority {
+                Text(priority.label)
+                    .font(.footnote.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(sceneAccentColor(priority))
+                    .clipShape(Capsule())
             }
         }
     }
