@@ -105,31 +105,38 @@ struct NotionImportSheet: View {
                 }
             }
             Section("Datenbank auswählen") {
-                // Explicit `id:` forces the plain (non-Binding) ForEach
-                // overload — without it, Swift's overload resolution here
-                // picked ForEach(_:content:) for Binding<[NotionDatabase]>
-                // instead, silently treating `db` as Binding<NotionDatabase>
-                // (dynamic member lookup then turns db.title into
-                // Binding<String>, not String) — that's what actually
-                // produced all three "databases"/Binding<String>/'let'
-                // errors Xcode reported, not three separate bugs.
-                ForEach(databases, id: \.id) { db in
-                    Button {
-                        selectedDatabaseId = db.id
-                    } label: {
-                        HStack {
-                            Text(db.title).foregroundStyle(.primary)
-                            Spacer()
-                            if selectedDatabaseId == db.id {
-                                Image(systemName: "checkmark").foregroundStyle(.accent)
-                            }
-                        }
-                    }
+                // Pulled out into its own explicitly-typed function — the
+                // previous inline ForEach{ Button{ HStack{ ... } } } closure
+                // (nested inside List/Section's own ViewBuilders) was too
+                // much for the type checker to solve as one expression, and
+                // it reported that failure as a misleading "databases is
+                // [NotionDatabase], expected Binding<[NotionDatabase]>"
+                // error instead of the real "expression too complex" one.
+                // Adding `id: \.id` alone didn't fix it (verified — same
+                // error, same line, after that change), confirming it
+                // wasn't a ForEach-overload-ambiguity problem after all.
+                ForEach(databases) { db in
+                    databaseRow(db)
                 }
             }
             if let errorMessage {
                 Section {
                     Text(errorMessage).foregroundStyle(.red).font(.footnote)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func databaseRow(_ db: NotionDatabase) -> some View {
+        Button {
+            selectedDatabaseId = db.id
+        } label: {
+            HStack {
+                Text(db.title).foregroundStyle(.primary)
+                Spacer()
+                if selectedDatabaseId == db.id {
+                    Image(systemName: "checkmark").foregroundStyle(.accent)
                 }
             }
         }
