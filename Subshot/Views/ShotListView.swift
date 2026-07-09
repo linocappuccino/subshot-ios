@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// ShotCard's own priority dot — must=red, should=orange, optional=gray.
 private func priorityColor(_ priority: ShotPriority) -> Color {
@@ -27,11 +28,17 @@ struct ShotListView: View {
     @StateObject private var viewModel: ShotListViewModel
     let projectName: String
     /// .regular (iPad, full-width Split View) gets the adjustable-column
-    /// grid (see ipadColumnCount + columnCountPopover); .compact (iPhone,
-    /// and iPad in narrow Slide Over/multitasking) keeps the simple 1-vs-2
-    /// isGridMode toggle — there's no useful "3 columns" on a phone-width
-    /// screen anyway.
+    /// grid (see ipadColumnCount + columnCountPopover); .compact iPad
+    /// (narrow Slide Over/multitasking) keeps the simple 1-vs-2 isGridMode
+    /// toggle. Neither is offered on iPhone at all — a phone-width screen
+    /// has no useful multi-column layout, and the toggle itself was
+    /// reported as confusing clutter there.
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    /// `.compact` alone can't tell an iPhone from an iPad in narrow Slide
+    /// Over/multitasking (both report it) — the grid/column controls below
+    /// need to distinguish those two, so they check the actual device idiom
+    /// instead of just the size class.
+    private var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
 
     @State private var addingToScene: String??  // nil = not adding; .some(nil) = "no scene"; .some(id) = that scene
     @State private var newShotText = ""
@@ -125,20 +132,22 @@ struct ShotListView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                if horizontalSizeClass == .regular {
-                    Button {
-                        showingColumnCountPopover = true
-                    } label: {
-                        Image(systemName: "slider.horizontal.3")
-                    }
-                    .popover(isPresented: $showingColumnCountPopover) {
-                        columnCountPopover
-                    }
-                } else {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) { isGridMode.toggle() }
-                    } label: {
-                        Image(systemName: isGridMode ? "rectangle.grid.1x2" : "square.grid.2x2")
+                if isPad {
+                    if horizontalSizeClass == .regular {
+                        Button {
+                            showingColumnCountPopover = true
+                        } label: {
+                            Image(systemName: "slider.horizontal.3")
+                        }
+                        .popover(isPresented: $showingColumnCountPopover) {
+                            columnCountPopover
+                        }
+                    } else {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) { isGridMode.toggle() }
+                        } label: {
+                            Image(systemName: isGridMode ? "rectangle.grid.1x2" : "square.grid.2x2")
+                        }
                     }
                 }
             }
@@ -361,7 +370,7 @@ struct ShotListView: View {
                 }
             }
             .padding(.horizontal, 16)
-        } else if isGridMode {
+        } else if isPad && isGridMode {
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
                 ForEach(scenes) { scene in
                     sceneCard(scene: scene)
@@ -548,7 +557,7 @@ struct ShotListView: View {
         // (see sceneGrid) — a card shouldn't also pad itself in that case, or
         // the gap between the two columns would be twice as wide as the gap
         // above/below.
-        .padding(.horizontal, (isGridMode || horizontalSizeClass == .regular) ? 0 : 16)
+        .padding(.horizontal, ((isPad && isGridMode) || horizontalSizeClass == .regular) ? 0 : 16)
         .dropDestination(for: String.self) { ids, _ in
             guard let dragged = ids.first, !dragged.hasPrefix("scene:") else { return }
             Task { await viewModel.moveShot(dragged, toScene: scene.id) }
