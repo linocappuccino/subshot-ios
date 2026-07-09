@@ -586,7 +586,7 @@ struct ShotListView: View {
             // way in from SceneEditSheet's TextField).
             if let description = scene.description, !description.isEmpty {
                 Text(description)
-                    .font(.footnote)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -596,7 +596,7 @@ struct ShotListView: View {
             }
             if let dialogue = scene.dialogue, !dialogue.isEmpty {
                 Label(dialogue, systemImage: "quote.bubble")
-                    .font(.footnote.italic())
+                    .font(.subheadline.italic())
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -608,7 +608,7 @@ struct ShotListView: View {
             // so it can be checked off without opening the sheet.
             if !scene.isIntermediateStep, !scene.dialogues.isEmpty {
                 Label("Dialog", systemImage: "quote.bubble")
-                    .font(.caption.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
                 ForEach(scene.dialogues) { dialogue in
                     dialogueRow(dialogue: dialogue, scene: scene)
@@ -616,9 +616,9 @@ struct ShotListView: View {
             }
             if let address = scene.locationAddress, let lat = scene.locationLat, let lng = scene.locationLng {
                 HStack(spacing: 10) {
-                    SceneMapThumbnail(lat: lat, lng: lng, size: 48)
+                    SceneMapThumbnail(lat: lat, lng: lng, size: 56)
                     Text(address)
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
@@ -692,30 +692,30 @@ struct ShotListView: View {
     /// its own full-width row and can wrap to two lines.
     @ViewBuilder
     private func sceneHeader(scene: Scene) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Text(scene.displayNumber)
-                    .font(.caption.weight(.bold))
+                    .font(.subheadline.weight(.bold))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
                     .background(sceneAccentColor(scene.priority))
                     .clipShape(Capsule())
                 Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
-                    .font(.headline)
+                    .font(.title3.weight(.semibold))
                     .lineLimit(2)
             }
             if !scene.isIntermediateStep {
                 HStack(spacing: 8) {
                     Text("\(viewModel.shots(in: scene).count) Einstellungen")
-                        .font(.caption.weight(.semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
                     if let priority = scene.priority {
                         Text(priority.label)
-                            .font(.caption2.weight(.bold))
+                            .font(.footnote.weight(.bold))
                             .foregroundStyle(.white)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 2)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
                             .background(sceneAccentColor(priority))
                             .clipShape(Capsule())
                     }
@@ -747,12 +747,15 @@ struct ShotListView: View {
             }
         } label: {
             if let assignee {
-                MemberAvatar(member: assignee, size: 22)
+                MemberAvatar(member: assignee, size: 32)
             } else {
                 Image(systemName: "person.crop.circle")
+                    .font(.title2)
                     .foregroundStyle(.secondary)
             }
         }
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(Rectangle())
     }
 
     /// "Im Kasten" ("it's a wrap" — scene fully shot): tapping it toggles
@@ -767,10 +770,10 @@ struct ShotListView: View {
             Task { await viewModel.setSceneCompleted(scene, completed: !scene.completed) }
         } label: {
             Label("Im Kasten", systemImage: scene.completed ? "checkmark.seal.fill" : "checkmark.seal")
-                .font(.caption.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
                 .labelStyle(.titleAndIcon)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
                 .background(scene.completed ? Color.green.opacity(0.25) : Color(.tertiarySystemGroupedBackground))
                 .foregroundStyle(scene.completed ? .green : .secondary)
                 .clipShape(Capsule())
@@ -792,11 +795,11 @@ struct ShotListView: View {
             editingGoodTakeScene = scene
         } label: {
             Label(hasGoodTake ? scene.goodTakeFilename! : "Good Take", systemImage: "checkmark.seal.fill")
-                .font(.caption.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
                 .labelStyle(.titleAndIcon)
                 .lineLimit(1)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
                 .background(hasGoodTake ? Color.green.opacity(0.25) : Color(.tertiarySystemGroupedBackground))
                 .foregroundStyle(hasGoodTake ? .green : .secondary)
                 .clipShape(Capsule())
@@ -839,11 +842,14 @@ struct ShotListView: View {
                 Task { await viewModel.toggleDialogue(dialogue, in: scene) }
             } label: {
                 Image(systemName: dialogue.done ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
                     .foregroundStyle(dialogue.done ? .green : .secondary)
             }
             .buttonStyle(.plain)
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
             Text(dialogue.text)
-                .font(.footnote.italic())
+                .font(.subheadline.italic())
                 .foregroundStyle(.secondary)
                 .strikethrough(dialogue.done)
                 .fixedSize(horizontal: false, vertical: true)
