@@ -36,12 +36,15 @@ final class ProjectListViewModel: ObservableObject {
     }
 
     @discardableResult
-    func createFolder(name: String, color: String? = nil, emoji: String? = nil) async -> ProjectFolder? {
+    func createFolder(name: String, color: String? = nil, emoji: String? = nil, image: UIImage? = nil) async -> ProjectFolder? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         do {
             let sortOrder = (folders.map(\.sortOrder).max() ?? -1) + 1
-            let folder = try await APIClient.shared.createFolder(name: trimmed, color: color, emoji: emoji, sortOrder: sortOrder)
+            var folder = try await APIClient.shared.createFolder(name: trimmed, color: color, emoji: emoji, sortOrder: sortOrder)
+            if let image {
+                folder = try await APIClient.shared.uploadFolderImage(folderId: folder.id, image: image)
+            }
             folders.append(folder)
             return folder
         } catch {
@@ -50,12 +53,16 @@ final class ProjectListViewModel: ObservableObject {
         }
     }
 
-    func updateFolder(_ folder: ProjectFolder, name: String, color: String, emoji: String?) async {
+    func updateFolder(_ folder: ProjectFolder, name: String, color: String, emoji: String?, image: UIImage? = nil, clearImage: Bool = false) async {
         do {
-            let updated = try await APIClient.shared.patchFolder(
+            var updated = try await APIClient.shared.patchFolder(
                 folder.id, name: name, color: color,
-                emoji: emoji, clearEmoji: emoji == nil
+                emoji: emoji, clearEmoji: emoji == nil,
+                clearBackgroundImage: clearImage
             )
+            if let image {
+                updated = try await APIClient.shared.uploadFolderImage(folderId: folder.id, image: image)
+            }
             if let index = folders.firstIndex(where: { $0.id == updated.id }) {
                 folders[index] = updated
             }

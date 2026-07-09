@@ -56,12 +56,14 @@ struct ProjectFolder: Codable, Identifiable, Hashable {
     var color: String
     var emoji: String?
     var sortOrder: Int
+    var backgroundImageURL: String?
     var projectCount: Int
     let createdAt: Date
 
     enum CodingKeys: String, CodingKey {
         case id, name, color, emoji
         case sortOrder = "sort_order"
+        case backgroundImageURL = "background_image_url"
         case projectCount = "project_count"
         case createdAt = "created_at"
     }

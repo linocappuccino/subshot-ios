@@ -202,7 +202,8 @@ final class APIClient {
 
     func patchFolder(
         _ id: String, name: String? = nil, color: String? = nil,
-        emoji: String? = nil, clearEmoji: Bool = false, sortOrder: Int? = nil
+        emoji: String? = nil, clearEmoji: Bool = false, sortOrder: Int? = nil,
+        clearBackgroundImage: Bool = false
     ) async throws -> ProjectFolder {
         var req = try await authorizedRequest("folders/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -210,8 +211,9 @@ final class APIClient {
             let name: String?; let color: String?
             let emoji: String?; let clear_emoji: Bool
             let sort_order: Int?
+            let clear_background_image: Bool
         }
-        req.httpBody = try encoder.encode(Body(name: name, color: color, emoji: emoji, clear_emoji: clearEmoji, sort_order: sortOrder))
+        req.httpBody = try encoder.encode(Body(name: name, color: color, emoji: emoji, clear_emoji: clearEmoji, sort_order: sortOrder, clear_background_image: clearBackgroundImage))
         return try await send(req)
     }
 
@@ -219,6 +221,27 @@ final class APIClient {
         let req = try await authorizedRequest("folders/\(id)", method: "DELETE")
         try await sendNoContent(req)
     }
+
+    #if canImport(UIKit)
+    func uploadFolderImage(folderId: String, image: UIImage) async throws -> ProjectFolder {
+        guard let jpegData = image.jpegData(compressionQuality: 0.85) else {
+            throw APIError.network(URLError(.cannotCreateFile))
+        }
+        var req = try await authorizedRequest("folders/\(folderId)/image", method: "POST")
+        let boundary = "Boundary-\(UUID().uuidString)"
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"folder.jpg\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+        body.append(jpegData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        req.httpBody = body
+
+        return try await send(req)
+    }
+    #endif
 
     struct ShareLinkResult: Decodable { let url: String; let expires_at: Date }
 

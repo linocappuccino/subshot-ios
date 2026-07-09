@@ -5,15 +5,17 @@ import SwiftUI
 /// generic folder icon), and a color from the shared palette.
 struct FolderEditSheet: View {
     let existing: ProjectFolder?
-    var onSave: (String, String, String?) async -> Void
+    var onSave: (String, String, String?, UIImage?, Bool) async -> Void
 
     @State private var name: String
     @State private var emoji: String
     @State private var color: String
+    @State private var uploadedImage: UIImage?
+    @State private var clearBackgroundImage = false
     @Environment(\.dismiss) private var dismiss
     @FocusState private var nameFocused: Bool
 
-    init(existing: ProjectFolder?, onSave: @escaping (String, String, String?) async -> Void) {
+    init(existing: ProjectFolder?, onSave: @escaping (String, String, String?, UIImage?, Bool) async -> Void) {
         self.existing = existing
         self.onSave = onSave
         _name = State(initialValue: existing?.name ?? "")
@@ -24,6 +26,41 @@ struct FolderEditSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                // Same stage-locally-then-upload-on-save pattern as
+                // SceneEditSheet's cover photo - uploading a brand-new
+                // folder's image needs its id, which doesn't exist yet.
+                Section("Hintergrundbild") {
+                    ImageSourceButton(onImagePicked: {
+                        uploadedImage = $0
+                        clearBackgroundImage = false
+                    }) {
+                        HStack {
+                            if let uploadedImage {
+                                Image(uiImage: uploadedImage)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: 60, height: 60)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            } else if let bgUrl = existing?.backgroundImageURL, !clearBackgroundImage {
+                                AsyncShotThumbnail(path: bgUrl, size: 60)
+                            } else {
+                                Image(systemName: "photo.fill")
+                                    .frame(width: 60, height: 60)
+                                    .background(Color(.systemGray5))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                            Text((uploadedImage == nil && (existing?.backgroundImageURL == nil || clearBackgroundImage)) ? "Bild hinzufügen" : "Bild ändern")
+                                .foregroundStyle(.primary)
+                        }
+                    }
+                    if uploadedImage != nil || (existing?.backgroundImageURL != nil && !clearBackgroundImage) {
+                        Button("Bild entfernen", role: .destructive) {
+                            uploadedImage = nil
+                            clearBackgroundImage = true
+                        }
+                    }
+                }
+
                 Section("Name") {
                     TextField("z.B. Kunde XY", text: $name)
                         .focused($nameFocused)
@@ -70,7 +107,7 @@ struct FolderEditSheet: View {
                         guard !trimmedName.isEmpty else { return }
                         let trimmedEmoji = emoji.trimmingCharacters(in: .whitespacesAndNewlines)
                         Task {
-                            await onSave(trimmedName, color, trimmedEmoji.isEmpty ? nil : trimmedEmoji)
+                            await onSave(trimmedName, color, trimmedEmoji.isEmpty ? nil : trimmedEmoji, uploadedImage, clearBackgroundImage)
                             dismiss()
                         }
                     }

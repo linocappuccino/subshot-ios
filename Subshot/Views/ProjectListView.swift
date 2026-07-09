@@ -204,7 +204,7 @@ struct ProjectListView: View {
                 title: folder.name,
                 subtitle: folder.projectCount == 1 ? "1 Projekt" : "\(folder.projectCount) Projekte",
                 color: folder.color,
-                thumbnailPath: nil,
+                thumbnailPath: folder.backgroundImageURL,
                 fallbackIcon: "folder.fill",
                 emoji: folder.emoji
             )
@@ -315,8 +315,8 @@ private struct GridSheets: ViewModifier {
                 }
             }
             .sheet(isPresented: $creatingFolder) {
-                FolderEditSheet(existing: nil) { name, color, emoji in
-                    await viewModel.createFolder(name: name, color: color, emoji: emoji)
+                FolderEditSheet(existing: nil) { name, color, emoji, image, _ in
+                    await viewModel.createFolder(name: name, color: color, emoji: emoji, image: image)
                 }
             }
             .sheet(item: $editingProject) { project in
@@ -325,8 +325,8 @@ private struct GridSheets: ViewModifier {
                 }
             }
             .sheet(item: $editingFolder) { folder in
-                FolderEditSheet(existing: folder) { name, color, emoji in
-                    await viewModel.updateFolder(folder, name: name, color: color, emoji: emoji)
+                FolderEditSheet(existing: folder) { name, color, emoji, image, clearImage in
+                    await viewModel.updateFolder(folder, name: name, color: color, emoji: emoji, image: image, clearImage: clearImage)
                 }
             }
             .sheet(isPresented: $showingNotifications) {
