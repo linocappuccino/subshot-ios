@@ -136,7 +136,7 @@ struct NotionImportSheet: View {
                 Text(db.title).foregroundStyle(.primary)
                 Spacer()
                 if selectedDatabaseId == db.id {
-                    Image(systemName: "checkmark").foregroundStyle(.accent)
+                    Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
                 }
             }
         }
