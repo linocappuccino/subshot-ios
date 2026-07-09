@@ -105,7 +105,15 @@ struct NotionImportSheet: View {
                 }
             }
             Section("Datenbank auswählen") {
-                ForEach(databases) { db in
+                // Explicit `id:` forces the plain (non-Binding) ForEach
+                // overload — without it, Swift's overload resolution here
+                // picked ForEach(_:content:) for Binding<[NotionDatabase]>
+                // instead, silently treating `db` as Binding<NotionDatabase>
+                // (dynamic member lookup then turns db.title into
+                // Binding<String>, not String) — that's what actually
+                // produced all three "databases"/Binding<String>/'let'
+                // errors Xcode reported, not three separate bugs.
+                ForEach(databases, id: \.id) { db in
                     Button {
                         selectedDatabaseId = db.id
                     } label: {
