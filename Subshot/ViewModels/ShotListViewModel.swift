@@ -511,23 +511,17 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
-    /// Quick good-take entry straight from the scene tile (see
-    /// ShotListView.goodTakeButton) — same idea as assignScene: a single
-    /// field shouldn't require opening the full ShotDetailSheet. patchShotFull
-    /// always overwrites every field (it's a plain dict PATCH, not a partial
-    /// one — see APIClient), so every other field is passed through
-    /// unchanged here to avoid silently wiping them.
-    func setGoodTake(_ shot: Shot, filename: String?) async {
+    /// Quick good-take entry straight from the scene's main tile (see
+    /// ShotListView.sceneGoodTakeButton) — lives on the scene itself, so it's
+    /// always there regardless of how many shots the scene has.
+    func setSceneGoodTake(_ scene: Scene, filename: String?) async {
         do {
-            let updated = try await APIClient.shared.patchShotFull(
-                shot.id,
-                description: shot.description,
-                durationSeconds: shot.durationSeconds,
-                cameraAngle: shot.cameraAngle,
-                priority: shot.priority?.rawValue,
-                goodTakeFilename: filename
+            let updated = try await APIClient.shared.patchScene(
+                scene.id, goodTakeFilename: filename, clearGoodTake: filename == nil
             )
-            replace(updated)
+            if let index = scenes.firstIndex(where: { $0.id == updated.id }) {
+                scenes[index] = updated
+            }
         } catch {
             errorMessage = error.localizedDescription
         }

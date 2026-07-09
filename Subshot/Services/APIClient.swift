@@ -283,7 +283,8 @@ final class APIClient {
         sectionId: String? = nil, clearSection: Bool = false, sortOrder: Int? = nil,
         locationAddress: String? = nil, locationLat: Double? = nil, locationLng: Double? = nil,
         clearLocation: Bool = false,
-        priority: ShotPriority? = nil, clearPriority: Bool = false
+        priority: ShotPriority? = nil, clearPriority: Bool = false,
+        goodTakeFilename: String? = nil, clearGoodTake: Bool = false
     ) async throws -> Scene {
         var req = try await authorizedRequest("scenes/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -297,6 +298,7 @@ final class APIClient {
             let location_address: String?; let location_lat: Double?; let location_lng: Double?
             let clear_location: Bool
             let priority: String?; let clear_priority: Bool
+            let good_take_filename: String?; let clear_good_take: Bool
         }
         req.httpBody = try encoder.encode(Body(
             name: name, color: color, description: description,
@@ -307,6 +309,7 @@ final class APIClient {
             sort_order: sortOrder,
             location_address: locationAddress, location_lat: locationLat, location_lng: locationLng,
             clear_location: clearLocation,
+            good_take_filename: goodTakeFilename, clear_good_take: clearGoodTake,
             priority: priority?.rawValue, clear_priority: clearPriority
         ))
         return try await send(req)

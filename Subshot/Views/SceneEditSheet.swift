@@ -140,7 +140,7 @@ struct SceneEditSheet: View {
                 }
 
                 if !isIntermediateStep {
-                    Section("Dialog") {
+                    Section {
                         TextField("Gesprochener Text", text: $dialogue, axis: .vertical)
                             .lineLimit(3...6)
                         ForEach(liveDialogues) { line in
@@ -165,6 +165,8 @@ struct SceneEditSheet: View {
                                 Label("+ Dialog", systemImage: "plus")
                             }
                         }
+                    } header: {
+                        Label("Dialog", systemImage: "quote.bubble")
                     }
                 }
 

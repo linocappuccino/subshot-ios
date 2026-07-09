@@ -130,6 +130,7 @@ struct Scene: Codable, Identifiable, Hashable {
     var locationAddress: String?
     var locationLat: Double?
     var locationLng: Double?
+    var goodTakeFilename: String?
     let number: Int
     let letter: String?
     var priority: ShotPriority?
@@ -154,6 +155,7 @@ struct Scene: Codable, Identifiable, Hashable {
         case locationAddress = "location_address"
         case locationLat = "location_lat"
         case locationLng = "location_lng"
+        case goodTakeFilename = "good_take_filename"
         case isIntermediateStep = "is_intermediate_step"
     }
 

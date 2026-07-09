@@ -68,16 +68,10 @@ struct ShotListView: View {
     @AppStorage("shotListIpadColumnCount") private var ipadColumnCountRaw: Double = 3
     @State private var showingColumnCountPopover = false
     private var ipadColumnCount: Int { Int(ipadColumnCountRaw.rounded()) }
-    /// Quick good-take entry straight from a scene's main tile — see
-    /// goodTakeButton. Only offered there for single-shot scenes; multi-shot
-    /// scenes still go through each shot's own detail sheet, one per shot.
-    @State private var editingGoodTakeShot: Shot?
+    /// Quick good-take entry always available on a scene's main tile — see
+    /// sceneGoodTakeButton.
+    @State private var editingGoodTakeScene: Scene?
     @State private var goodTakeText = ""
-    /// Which scene's "+ Dialog" inline text field is currently open — nil
-    /// means none. Same one-at-a-time convention as addingToScene for shots.
-    @State private var addingDialogueToScene: String?
-    @State private var newDialogueText = ""
-    @FocusState private var newDialogueFocused: Bool
     @FocusState private var newRowFocused: Bool
     private let projectId: String
 
@@ -230,19 +224,19 @@ struct ShotListView: View {
             Text(viewModel.errorMessage ?? "")
         }
         .alert("Good Take", isPresented: Binding(
-            get: { editingGoodTakeShot != nil },
-            set: { if !$0 { editingGoodTakeShot = nil } }
+            get: { editingGoodTakeScene != nil },
+            set: { if !$0 { editingGoodTakeScene = nil } }
         )) {
             TextField("Dateiname, z.B. A003_C012", text: $goodTakeText)
             Button("Abbrechen", role: .cancel) {}
             Button("Speichern") {
-                if let shot = editingGoodTakeShot {
+                if let scene = editingGoodTakeScene {
                     let trimmed = goodTakeText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    Task { await viewModel.setGoodTake(shot, filename: trimmed.isEmpty ? nil : trimmed) }
+                    Task { await viewModel.setSceneGoodTake(scene, filename: trimmed.isEmpty ? nil : trimmed) }
                 }
             }
         } message: {
-            Text("Dateiname der guten Aufnahme für diese Einstellung.")
+            Text("Dateiname der guten Aufnahme für diese Szene.")
         }
         .alert("Alles im Kasten?", isPresented: $viewModel.showAllTimedScenesDoneConfirmation) {
             Button("OK", role: .cancel) {}
@@ -607,14 +601,18 @@ struct ShotListView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             // Individually-checkable dialogue lines, stacked under the
-            // legacy single-dialogue field above — "+ Dialog" appends one at
-            // a time (see addDialogueRow), each independently strikeable off
-            // once actually recorded (see dialogueRow).
-            if !scene.isIntermediateStep {
+            // legacy single-dialogue field above — read-only here on
+            // purpose. Adding a new line only happens in SceneEditSheet (tap
+            // into the scene first) so the main tile isn't cluttered with an
+            // inline text field; this list just shows what's already there
+            // so it can be checked off without opening the sheet.
+            if !scene.isIntermediateStep, !scene.dialogues.isEmpty {
+                Label("Dialog", systemImage: "quote.bubble")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
                 ForEach(scene.dialogues) { dialogue in
                     dialogueRow(dialogue: dialogue, scene: scene)
                 }
-                addDialogueRow(scene: scene)
             }
             if let address = scene.locationAddress, let lat = scene.locationLat, let lng = scene.locationLng {
                 HStack(spacing: 10) {
@@ -629,9 +627,8 @@ struct ShotListView: View {
             // tile) instead of living in the header row — reads less cluttered
             // now that the header is just the scene number/name/count/priority.
             HStack(spacing: 8) {
-                let sceneShots = viewModel.shots(in: scene)
-                if !scene.isIntermediateStep, sceneShots.count == 1 {
-                    goodTakeButton(shot: sceneShots[0])
+                if !scene.isIntermediateStep {
+                    sceneGoodTakeButton(scene: scene)
                 }
                 Spacer()
                 sceneAssigneeMenu(scene: scene)
@@ -782,20 +779,19 @@ struct ShotListView: View {
         .animation(.spring(response: 0.35, dampingFraction: 0.82), value: scene.completed)
     }
 
-    /// Good-take filename entry, surfaced directly on the scene's main tile —
-    /// previously only reachable via a shot's own detail sheet, which made no
-    /// sense for the very common single-shot scene (drilling into "weitere
-    /// Einstellungen" for the one and only shot just to log a filename).
-    /// Multi-shot scenes still enter it per-shot via ShotDetailSheet — this
-    /// button only appears when the scene has exactly one shot.
+    /// Good-take filename entry, always on the scene's own main tile — lives
+    /// on the scene itself (not a shot), so it's there whether the scene has
+    /// zero, one, or several shots. A shot's own detail sheet has its own
+    /// separate good-take field for per-shot logging; this one is the
+    /// scene-level "the take we're keeping" note.
     @ViewBuilder
-    private func goodTakeButton(shot: Shot) -> some View {
-        let hasGoodTake = shot.goodTakeFilename?.isEmpty == false
+    private func sceneGoodTakeButton(scene: Scene) -> some View {
+        let hasGoodTake = scene.goodTakeFilename?.isEmpty == false
         Button {
-            goodTakeText = shot.goodTakeFilename ?? ""
-            editingGoodTakeShot = shot
+            goodTakeText = scene.goodTakeFilename ?? ""
+            editingGoodTakeScene = scene
         } label: {
-            Label(hasGoodTake ? shot.goodTakeFilename! : "Good Take", systemImage: "checkmark.seal.fill")
+            Label(hasGoodTake ? scene.goodTakeFilename! : "Good Take", systemImage: "checkmark.seal.fill")
                 .font(.caption.weight(.semibold))
                 .labelStyle(.titleAndIcon)
                 .lineLimit(1)
@@ -859,37 +855,6 @@ struct ShotListView: View {
                 Label("Löschen", systemImage: "trash")
             }
         }
-    }
-
-    @ViewBuilder
-    private func addDialogueRow(scene: Scene) -> some View {
-        if addingDialogueToScene == scene.id {
-            TextField("Neuer Dialog", text: $newDialogueText)
-                .focused($newDialogueFocused)
-                .submitLabel(.done)
-                .font(.footnote)
-                .onSubmit { Task { await commitNewDialogue(scene: scene) } }
-                .padding(8)
-                .background(Color(.tertiarySystemGroupedBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-        } else {
-            Button {
-                newDialogueText = ""
-                addingDialogueToScene = scene.id
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                    newDialogueFocused = true
-                }
-            } label: {
-                Label("+ Dialog", systemImage: "plus")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func commitNewDialogue(scene: Scene) async {
-        addingDialogueToScene = nil
-        await viewModel.addDialogue(to: scene, text: newDialogueText)
     }
 
     @ViewBuilder
