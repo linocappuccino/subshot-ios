@@ -53,10 +53,9 @@ struct ShotListView: View {
     @State private var isExportingPdf = false
     @State private var exportedPdfURL: URL?
     @State private var showingNotionImport = false
-    /// Same "tap to fetch, button swaps into the real share trigger once
-    /// ready" pattern as the PDF export button right next to it.
     @State private var isCreatingShareLink = false
     @State private var shareLinkURL: URL?
+    @State private var isPresentingShareSheet = false
     /// List (current, one full-width tile per row) vs. grid (2 columns) —
     /// per-device preference, not project state, so it doesn't need a
     /// backend round trip and each person on set can pick what fits their
@@ -168,22 +167,29 @@ struct ShotListView: View {
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                if let shareLinkURL {
-                    ShareLink(item: shareLinkURL) {
-                        Image(systemName: "link")
-                    }
-                } else {
-                    Button {
-                        Task { await createShareLink() }
-                    } label: {
-                        if isCreatingShareLink {
-                            ProgressView()
-                        } else {
-                            Image(systemName: "link")
+                Button {
+                    // Once the link's already been fetched this session, the
+                    // share sheet opens immediately — only the very first tap
+                    // has to wait on the network round-trip. Previously this
+                    // button only fetched the URL and swapped itself out for
+                    // a separate `ShareLink` button, so getting the actual
+                    // OS share sheet up took two taps every time.
+                    if shareLinkURL != nil {
+                        isPresentingShareSheet = true
+                    } else {
+                        Task {
+                            await createShareLink()
+                            if shareLinkURL != nil { isPresentingShareSheet = true }
                         }
                     }
-                    .disabled(isCreatingShareLink)
+                } label: {
+                    if isCreatingShareLink {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "link")
+                    }
                 }
+                .disabled(isCreatingShareLink)
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { showingTeamSheet = true } label: {
@@ -198,6 +204,11 @@ struct ShotListView: View {
         }
         .sheet(isPresented: $showingTeamSheet) {
             TeamSheet(projectId: projectId)
+        }
+        .sheet(isPresented: $isPresentingShareSheet) {
+            if let shareLinkURL {
+                ActivityView(activityItems: [shareLinkURL])
+            }
         }
         .sheet(isPresented: $showingNotionImport) {
             NotionImportSheet(projectId: projectId) {
@@ -965,6 +976,21 @@ struct ShotListView: View {
         }
     }
 
+}
+
+/// Thin wrapper so the share sheet can be triggered programmatically
+/// (`.sheet(isPresented:)`) the instant the link URL is ready — SwiftUI's own
+/// `ShareLink` only presents in response to a tap on itself, which is exactly
+/// what forced the old two-tap flow (tap to fetch the URL, tap again on the
+/// now-swapped-in `ShareLink` to actually see the share sheet).
+private struct ActivityView: UIViewControllerRepresentable {
+    let activityItems: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 /// Storyboard-style card: big photo (if one's been added) on top, description
