@@ -31,7 +31,6 @@ struct SceneEditSheet: View {
     @State private var name: String
     @State private var color: String
     @State private var description: String
-    @State private var dialogue: String
     @State private var hasDate: Bool
     @State private var scheduledDate: Date
     @State private var durationMinutes: Int?
@@ -65,7 +64,6 @@ struct SceneEditSheet: View {
         _name = State(initialValue: existing?.name ?? "")
         _color = State(initialValue: existing?.color ?? Color.subshotPalette[0])
         _description = State(initialValue: existing?.description ?? "")
-        _dialogue = State(initialValue: existing?.dialogue ?? "")
         _hasDate = State(initialValue: existing?.scheduledAt != nil)
         // A brand-new scene defaults its start time to right when the
         // previous one (by sort_order — the last scene currently in the
@@ -141,8 +139,6 @@ struct SceneEditSheet: View {
 
                 if !isIntermediateStep {
                     Section {
-                        TextField("Gesprochener Text", text: $dialogue, axis: .vertical)
-                            .lineLimit(3...6)
                         ForEach(liveDialogues) { line in
                             existingDialogueRow(line)
                         }
@@ -241,11 +237,16 @@ struct SceneEditSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Fertig") {
                         Task {
+                            // No more free-text "Dialog" field in this sheet
+                            // (see the Dialog section below - only the
+                            // checkable multi-line list + "+ Dialog" now) -
+                            // this passes the existing value straight
+                            // through unchanged rather than ever clearing it.
                             let saved = await onSave(
                                 name.trimmingCharacters(in: .whitespacesAndNewlines),
                                 color,
                                 description.trimmingCharacters(in: .whitespacesAndNewlines),
-                                dialogue.trimmingCharacters(in: .whitespacesAndNewlines),
+                                existing?.dialogue ?? "",
                                 hasDate ? scheduledDate : nil,
                                 hasDate ? durationMinutes : nil,
                                 priority
