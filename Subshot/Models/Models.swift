@@ -19,6 +19,7 @@ struct Project: Codable, Identifiable, Hashable {
     let id: String
     var name: String
     var color: String
+    var emoji: String?
     var shootDate: Date?
     var locationAddress: String?
     var locationLat: Double?
@@ -29,7 +30,7 @@ struct Project: Codable, Identifiable, Hashable {
     let createdAt: Date
 
     enum CodingKeys: String, CodingKey {
-        case id, name, color
+        case id, name, color, emoji
         case shootDate = "shoot_date"
         case locationAddress = "location_address"
         case locationLat = "location_lat"

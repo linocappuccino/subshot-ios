@@ -40,6 +40,14 @@ struct SceneEditSheet: View {
     @State private var isAddingShot = false
     @State private var newShotText = ""
     @FocusState private var newShotFocused: Bool
+    /// Dialogue lines for a scene that doesn't exist yet — there's no scene
+    /// id to attach a SceneDialogue to until "Fertig" actually creates it
+    /// (same staging idea as `uploadedImage` above), so these are flushed to
+    /// the backend one by one right after `onSave` returns.
+    @State private var draftDialogues: [String] = []
+    @State private var isAddingDialogue = false
+    @State private var newDialogueText = ""
+    @FocusState private var newDialogueFocused: Bool
     @Environment(\.dismiss) private var dismiss
 
     init(
@@ -59,7 +67,21 @@ struct SceneEditSheet: View {
         _description = State(initialValue: existing?.description ?? "")
         _dialogue = State(initialValue: existing?.dialogue ?? "")
         _hasDate = State(initialValue: existing?.scheduledAt != nil)
-        _scheduledDate = State(initialValue: existing?.scheduledAt ?? Date())
+        // A brand-new scene defaults its start time to right when the
+        // previous one (by sort_order — the last scene currently in the
+        // list) wraps, i.e. its scheduled_at + duration_minutes — not to
+        // "now". Only reaches one scene back, not the whole chain: if that
+        // previous scene has no date/duration set, this falls through to
+        // `Date()` same as before, it does NOT walk further back to find an
+        // earlier one that does.
+        let suggestedDate: Date? = {
+            guard existing == nil else { return nil }
+            guard let previous = viewModel.scenes.max(by: { $0.sortOrder < $1.sortOrder }),
+                  let previousStart = previous.scheduledAt,
+                  let previousDuration = previous.durationMinutes else { return nil }
+            return previousStart.addingTimeInterval(TimeInterval(previousDuration * 60))
+        }()
+        _scheduledDate = State(initialValue: existing?.scheduledAt ?? suggestedDate ?? Date())
         _durationMinutes = State(initialValue: existing?.durationMinutes)
         _priority = State(initialValue: existing?.priority)
     }
@@ -121,6 +143,28 @@ struct SceneEditSheet: View {
                     Section("Dialog") {
                         TextField("Gesprochener Text", text: $dialogue, axis: .vertical)
                             .lineLimit(3...6)
+                        ForEach(liveDialogues) { line in
+                            existingDialogueRow(line)
+                        }
+                        ForEach(Array(draftDialogues.enumerated()), id: \.offset) { index, text in
+                            draftDialogueRow(text, at: index)
+                        }
+                        if isAddingDialogue {
+                            TextField("Neuer Dialog", text: $newDialogueText)
+                                .focused($newDialogueFocused)
+                                .submitLabel(.done)
+                                .onSubmit { commitNewDialogue() }
+                        } else {
+                            Button {
+                                newDialogueText = ""
+                                isAddingDialogue = true
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                    newDialogueFocused = true
+                                }
+                            } label: {
+                                Label("+ Dialog", systemImage: "plus")
+                            }
+                        }
                     }
                 }
 
@@ -210,6 +254,11 @@ struct SceneEditSheet: View {
                             if let uploadedImage, let target = existing ?? saved {
                                 await onImagePicked?(target, uploadedImage)
                             }
+                            if let target = existing ?? saved {
+                                for text in draftDialogues {
+                                    await viewModel.addDialogue(to: target, text: text)
+                                }
+                            }
                             dismiss()
                         }
                     }
@@ -223,6 +272,69 @@ struct SceneEditSheet: View {
         isAddingShot = false
         await viewModel.createShot(description: newShotText, sceneId: scene.id)
         newShotText = ""
+    }
+
+    /// Reads through the shared viewModel rather than `existing.dialogues`
+    /// directly, so a line added/checked off here shows up immediately —
+    /// same reasoning as the "Einstellungen" section above using
+    /// `viewModel.shots(in:)` instead of a fixed snapshot.
+    private var liveDialogues: [SceneDialogue] {
+        guard let existing else { return [] }
+        return viewModel.scenes.first(where: { $0.id == existing.id })?.dialogues ?? []
+    }
+
+    private func commitNewDialogue() {
+        let trimmed = newDialogueText.trimmingCharacters(in: .whitespacesAndNewlines)
+        isAddingDialogue = false
+        guard !trimmed.isEmpty else { return }
+        if let existing {
+            Task { await viewModel.addDialogue(to: existing, text: trimmed) }
+        } else {
+            draftDialogues.append(trimmed)
+        }
+        newDialogueText = ""
+    }
+
+    @ViewBuilder
+    private func existingDialogueRow(_ line: SceneDialogue) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                guard let existing else { return }
+                Task { await viewModel.toggleDialogue(line, in: existing) }
+            } label: {
+                Image(systemName: line.done ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(line.done ? .green : .secondary)
+            }
+            .buttonStyle(.plain)
+            Text(line.text)
+                .font(.subheadline)
+                .strikethrough(line.done)
+        }
+        .swipeActions {
+            Button(role: .destructive) {
+                guard let existing else { return }
+                Task { await viewModel.deleteDialogue(line, in: existing) }
+            } label: {
+                Label("Löschen", systemImage: "trash")
+            }
+        }
+    }
+
+    /// Not yet checkable — a draft line has no SceneDialogue id until the
+    /// scene itself is created and this gets flushed via addDialogue above.
+    @ViewBuilder
+    private func draftDialogueRow(_ text: String, at index: Int) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "circle").foregroundStyle(.secondary)
+            Text(text).font(.subheadline)
+        }
+        .swipeActions {
+            Button(role: .destructive) {
+                draftDialogues.remove(at: index)
+            } label: {
+                Label("Löschen", systemImage: "trash")
+            }
+        }
     }
 }
 

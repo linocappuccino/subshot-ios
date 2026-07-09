@@ -152,12 +152,13 @@ struct ProjectListView: View {
                     ZStack(alignment: .topTrailing) {
                         Image(systemName: "bell")
                         if !viewModel.notifications.isEmpty {
-                            Text("\(viewModel.notifications.count)")
+                            Text(viewModel.notifications.count > 99 ? "99+" : "\(viewModel.notifications.count)")
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundStyle(.white)
-                                .padding(4)
+                                .padding(.horizontal, 4)
+                                .frame(minWidth: 16, minHeight: 16)
                                 .background(Color.red)
-                                .clipShape(Circle())
+                                .clipShape(Capsule())
                                 .offset(x: 9, y: -9)
                         }
                     }
@@ -200,7 +201,8 @@ struct ProjectListView: View {
                 subtitle: "Wird gelöscht in \(project.daysUntilDeletion) Tagen",
                 color: project.color,
                 thumbnailPath: project.thumbnailUrl,
-                fallbackIcon: "film.stack"
+                fallbackIcon: "film.stack",
+                emoji: project.emoji
             )
         }
         .buttonStyle(.plain)
@@ -342,8 +344,8 @@ private struct GridSheets: ViewModifier {
                 }
             }
             .sheet(item: $editingProject) { project in
-                ProjectEditSheet(project: project) { name, color in
-                    await viewModel.update(project, name: name, color: color)
+                ProjectEditSheet(project: project) { name, color, emoji in
+                    await viewModel.update(project, name: name, color: color, emoji: emoji)
                 }
             }
             .sheet(item: $editingFolder) { folder in

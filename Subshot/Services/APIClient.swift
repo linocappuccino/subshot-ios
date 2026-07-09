@@ -138,10 +138,11 @@ final class APIClient {
         return try await send(req)
     }
 
-    func createProject(name: String, color: String, folderId: String? = nil) async throws -> Project {
+    func createProject(name: String, color: String, emoji: String? = nil, folderId: String? = nil) async throws -> Project {
         var req = try await authorizedRequest("projects", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try encoder.encode(["name": name, "color": color])
+        struct Body: Encodable { let name: String; let color: String; let emoji: String? }
+        req.httpBody = try encoder.encode(Body(name: name, color: color, emoji: emoji))
         let project: Project = try await send(req)
         // Creation has no folder_id param server-side (ProjectCreate doesn't
         // carry one) — a second patch is the simplest way to land a new
@@ -157,6 +158,7 @@ final class APIClient {
 
     func patchProject(
         _ id: String, name: String? = nil, color: String? = nil,
+        emoji: String? = nil, clearEmoji: Bool = false,
         shootDate: Date? = nil, locationAddress: String? = nil,
         locationLat: Double? = nil, locationLng: Double? = nil,
         folderId: String? = nil, clearFolder: Bool = false
@@ -164,12 +166,14 @@ final class APIClient {
         var req = try await authorizedRequest("projects/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         struct Body: Encodable {
-            let name: String?; let color: String?; let shoot_date: Date?
+            let name: String?; let color: String?
+            let emoji: String?; let clear_emoji: Bool
+            let shoot_date: Date?
             let location_address: String?; let location_lat: Double?; let location_lng: Double?
             let folder_id: String?; let clear_folder: Bool
         }
         req.httpBody = try encoder.encode(Body(
-            name: name, color: color, shoot_date: shootDate,
+            name: name, color: color, emoji: emoji, clear_emoji: clearEmoji, shoot_date: shootDate,
             location_address: locationAddress, location_lat: locationLat, location_lng: locationLng,
             folder_id: folderId, clear_folder: clearFolder
         ))

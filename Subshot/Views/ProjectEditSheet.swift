@@ -5,17 +5,19 @@ import SwiftUI
 /// ProjectListView rows.
 struct ProjectEditSheet: View {
     let project: Project
-    var onSave: (String, String) async -> Void
+    var onSave: (String, String, String?) async -> Void
 
     @State private var name: String
     @State private var color: String
+    @State private var emoji: String
     @Environment(\.dismiss) private var dismiss
 
-    init(project: Project, onSave: @escaping (String, String) async -> Void) {
+    init(project: Project, onSave: @escaping (String, String, String?) async -> Void) {
         self.project = project
         self.onSave = onSave
         _name = State(initialValue: project.name)
         _color = State(initialValue: project.color)
+        _emoji = State(initialValue: project.emoji ?? "")
     }
 
     var body: some View {
@@ -23,6 +25,17 @@ struct ProjectEditSheet: View {
             Form {
                 Section("Name") {
                     TextField("Projektname", text: $name)
+                }
+                Section("Emoji") {
+                    TextField("Optional, z.B. 🎬", text: $emoji)
+                        // A single emoji is one (extended) grapheme cluster —
+                        // trimming to the first one keeps this a one-emoji
+                        // field even if someone pastes a run of them.
+                        .onChange(of: emoji) { _, newValue in
+                            if let first = newValue.first {
+                                emoji = String(first)
+                            }
+                        }
                 }
                 Section("Farbe") {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 14) {
@@ -52,8 +65,9 @@ struct ProjectEditSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Fertig") {
                         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let trimmedEmoji = emoji.trimmingCharacters(in: .whitespacesAndNewlines)
                         Task {
-                            await onSave(trimmed.isEmpty ? project.name : trimmed, color)
+                            await onSave(trimmed.isEmpty ? project.name : trimmed, color, trimmedEmoji.isEmpty ? nil : trimmedEmoji)
                             dismiss()
                         }
                     }

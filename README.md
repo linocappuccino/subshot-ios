@@ -25,7 +25,16 @@ Dateien rein — danach ist alles normale Xcode-Arbeit.
    `https://github.com/clerk/clerk-ios` → beide Produkte **ClerkKit** und
    **ClerkKitUI** zum Target hinzufügen.
 
-4. **Bauen & testen:** Cmd+R im Simulator. Login-Screen sollte erscheinen,
+4. **Kamera-Berechtigung eintragen:** Target → Info → unter "Custom iOS
+   Target Properties" den Key **Privacy - Camera Usage Description**
+   (`NSCameraUsageDescription`) hinzufügen, z.B. Wert "Wird benötigt, um
+   Fotos für Szenen und Einstellungen aufzunehmen." Fehlt dieser Key, killt
+   iOS die App sofort und ohne Fehlerdialog, sobald `ImageSourceButton` die
+   Kamera öffnet (betrifft nur "Foto aufnehmen" — die Mediathek über
+   PhotosPicker braucht keinen Info.plist-Eintrag, deshalb fällt es dort
+   nicht auf).
+
+5. **Bauen & testen:** Cmd+R im Simulator. Login-Screen sollte erscheinen,
    "Anmelden" öffnet Clerks Auth-Sheet (Google + E-Mail, wie schon auf der
    Web-Testseite gesehen).
 

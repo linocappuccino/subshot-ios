@@ -135,9 +135,12 @@ final class ProjectListViewModel: ObservableObject {
         }
     }
 
-    func update(_ project: Project, name: String, color: String) async {
+    func update(_ project: Project, name: String, color: String, emoji: String?) async {
         do {
-            let updated = try await APIClient.shared.patchProject(project.id, name: name, color: color)
+            let updated = try await APIClient.shared.patchProject(
+                project.id, name: name, color: color,
+                emoji: emoji, clearEmoji: emoji == nil
+            )
             if let index = projects.firstIndex(where: { $0.id == updated.id }) {
                 projects[index] = updated
             }

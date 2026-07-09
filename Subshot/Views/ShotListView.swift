@@ -204,6 +204,20 @@ struct ShotListView: View {
                 await viewModel.load()
             }
         }
+        // Every failed API call in this screen (including a scene/shot image
+        // upload that didn't make it — e.g. a dropped connection mid-upload)
+        // only ever set viewModel.errorMessage; nothing displayed it, so
+        // those failures were completely silent — "the image just doesn't
+        // show up" with no error at all. This is the single alert for all of
+        // them.
+        .alert("Fehler", isPresented: Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { if !$0 { viewModel.errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(viewModel.errorMessage ?? "")
+        }
         .alert("Good Take", isPresented: Binding(
             get: { editingGoodTakeShot != nil },
             set: { if !$0 { editingGoodTakeShot = nil } }
