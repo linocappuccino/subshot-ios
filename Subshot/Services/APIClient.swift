@@ -243,12 +243,18 @@ final class APIClient {
     }
     #endif
 
-    struct ShareLinkResult: Decodable { let url: String; let expires_at: Date }
+    struct ShareLinkResult: Decodable { let url: String; let expires_at: Date; let has_password: Bool }
 
     /// Idempotent server-side — calling this again just returns/extends the
     /// same link rather than minting a new URL (see get_or_create_share_link).
-    func projectShareLink(_ id: String) async throws -> ShareLinkResult {
-        let req = try await authorizedRequest("projects/\(id)/share-link", method: "POST")
+    /// `password`/`clearPassword` are optional on purpose: omitting both
+    /// leaves whatever password an existing link already had untouched, so
+    /// re-sharing without touching password settings can't silently wipe one.
+    func projectShareLink(_ id: String, password: String? = nil, clearPassword: Bool = false) async throws -> ShareLinkResult {
+        var req = try await authorizedRequest("projects/\(id)/share-link", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let password: String?; let clear_password: Bool }
+        req.httpBody = try encoder.encode(Body(password: password, clear_password: clearPassword))
         return try await send(req)
     }
 
@@ -592,6 +598,17 @@ final class APIClient {
         return try await send(req)
     }
 
+    /// Same shape as createTodoList above, but scoped to a section's own
+    /// project-info box (multi-day shoots) instead of the project-level one
+    /// — see POST /sections/{id}/todo-lists on the backend.
+    func createSectionTodoList(sectionId: String, name: String, sortOrder: Int) async throws -> TodoList {
+        var req = try await authorizedRequest("sections/\(sectionId)/todo-lists", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let name: String; let sort_order: Int }
+        req.httpBody = try encoder.encode(Body(name: name, sort_order: sortOrder))
+        return try await send(req)
+    }
+
     func patchTodoList(_ id: String, name: String) async throws -> TodoList {
         var req = try await authorizedRequest("todo-lists/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -648,11 +665,23 @@ final class APIClient {
         return try await send(req)
     }
 
-    func patchSection(_ id: String, name: String? = nil, sortOrder: Int? = nil) async throws -> SceneSection {
+    func patchSection(
+        _ id: String, name: String? = nil, sortOrder: Int? = nil,
+        shootDate: Date? = nil, locationAddress: String? = nil, locationLat: Double? = nil, locationLng: Double? = nil,
+        addProjectInfo: Bool = false, removeProjectInfo: Bool = false
+    ) async throws -> SceneSection {
         var req = try await authorizedRequest("sections/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        struct Body: Encodable { let name: String?; let sort_order: Int? }
-        req.httpBody = try encoder.encode(Body(name: name, sort_order: sortOrder))
+        struct Body: Encodable {
+            let name: String?; let sort_order: Int?
+            let shoot_date: Date?; let location_address: String?; let location_lat: Double?; let location_lng: Double?
+            let add_project_info: Bool; let remove_project_info: Bool
+        }
+        req.httpBody = try encoder.encode(Body(
+            name: name, sort_order: sortOrder,
+            shoot_date: shootDate, location_address: locationAddress, location_lat: locationLat, location_lng: locationLng,
+            add_project_info: addProjectInfo, remove_project_info: removeProjectInfo
+        ))
         return try await send(req)
     }
 

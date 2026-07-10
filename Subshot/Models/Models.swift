@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 // Mirrors the backend's Pydantic schemas exactly (app/schemas.py on the server) —
 // keep these two in sync by hand for now; there's no shared-codegen step yet.
@@ -57,13 +58,26 @@ struct ProjectFolder: Codable, Identifiable, Hashable {
     var emoji: String?
     var sortOrder: Int
     var backgroundImageURL: String?
+    /// Fractional (0-1) face-detected focus point within the cover image,
+    /// or nil when no face was found (see app/face_detect.py on the
+    /// backend) — used by AsyncShotThumbnail's FocusedFillImage to pan the
+    /// crop toward the face instead of a plain center crop.
+    var backgroundImageFocusX: Double?
+    var backgroundImageFocusY: Double?
     var projectCount: Int
     let createdAt: Date
+
+    var backgroundImageFocusPoint: UnitPoint? {
+        guard let backgroundImageFocusX, let backgroundImageFocusY else { return nil }
+        return UnitPoint(x: backgroundImageFocusX, y: backgroundImageFocusY)
+    }
 
     enum CodingKeys: String, CodingKey {
         case id, name, color, emoji
         case sortOrder = "sort_order"
         case backgroundImageURL = "background_image_url"
+        case backgroundImageFocusX = "background_image_focus_x"
+        case backgroundImageFocusY = "background_image_focus_y"
         case projectCount = "project_count"
         case createdAt = "created_at"
     }
@@ -268,6 +282,9 @@ struct TodoItem: Codable, Identifiable, Hashable {
 struct TodoList: Codable, Identifiable, Hashable {
     let id: String
     let projectId: String
+    /// Set when this list belongs to a section's own project-info box
+    /// (multi-day shoots) rather than the project-level one.
+    var sectionId: String?
     var name: String
     var sortOrder: Int
     var items: [TodoItem]
@@ -275,6 +292,7 @@ struct TodoList: Codable, Identifiable, Hashable {
     enum CodingKeys: String, CodingKey {
         case id, name, items
         case projectId = "project_id"
+        case sectionId = "section_id"
         case sortOrder = "sort_order"
     }
 }
@@ -288,11 +306,27 @@ struct SceneSection: Codable, Identifiable, Hashable {
     let projectId: String
     var name: String
     var sortOrder: Int
+    /// Multi-day shoots (2026-07-10): a section can optionally carry its own
+    /// mini project-info box (shoot date/location/todo lists), same fields
+    /// as Project's own top-level ones. false/nil fields = no box, not "box
+    /// with empty fields" — see backend Section.has_project_info doc.
+    var hasProjectInfo: Bool = false
+    var shootDate: Date?
+    var locationAddress: String?
+    var locationLat: Double?
+    var locationLng: Double?
+    var todoLists: [TodoList] = []
 
     enum CodingKeys: String, CodingKey {
         case id, name
         case projectId = "project_id"
         case sortOrder = "sort_order"
+        case hasProjectInfo = "has_project_info"
+        case shootDate = "shoot_date"
+        case locationAddress = "location_address"
+        case locationLat = "location_lat"
+        case locationLng = "location_lng"
+        case todoLists = "todo_lists"
     }
 }
 

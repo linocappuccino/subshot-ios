@@ -50,6 +50,13 @@ struct ShotListView: View {
     /// SceneEditSheet is purely a creation-time UI choice, see its own doc
     /// comment.
     @State private var creatingIntermediateStep = false
+    /// Set right before opening SectionEditSheet from the "Projektinfo"
+    /// entry in addSceneButton's menu (2026-07-10, Lino: wants Projektinfo
+    /// reachable from the same "+" menu as Neue Szene/Zwischenschritt/
+    /// Abschnitt, not only via the small per-section button once a section
+    /// already exists) — creates a section AND immediately gives it a
+    /// project-info box in one step, see the sheet's onSave closure below.
+    @State private var creatingSectionWithProjectInfo = false
     @State private var editingSection: SceneSection??  // same nesting convention as editingScene
     @State private var collapsedSections: Set<String> = []
     /// Which scene tile is currently hovered by an in-flight drag — drives
@@ -57,17 +64,31 @@ struct ShotListView: View {
     /// sceneCard). Not "which scene is being dragged": .draggable() doesn't
     /// expose a drag-started callback, only drop-target hover does.
     @State private var dropTargetSceneId: String?
+    /// Which completed ("im Kasten") scenes are temporarily expanded back to
+    /// full detail — collapsed is the default for any completed scene (see
+    /// sceneCard/sceneCollapsedRow), tapping one adds it here to "peek" at
+    /// full detail again. Deliberately session-local UI state, not persisted
+    /// — a fresh load always starts every completed scene collapsed.
+    @State private var expandedCompletedSceneIds: Set<String> = []
     @State private var isExportingPdf = false
     @State private var exportedPdfURL: URL?
     @State private var showingNotionImport = false
-    @State private var isCreatingShareLink = false
     @State private var shareLinkURL: URL?
     @State private var isPresentingShareSheet = false
+    @State private var showingShareLinkSheet = false
     /// List (current, one full-width tile per row) vs. grid (2 columns) —
     /// per-device preference, not project state, so it doesn't need a
     /// backend round trip and each person on set can pick what fits their
     /// phone/how they like to scan the board.
     @AppStorage("shotListGridMode") private var isGridMode = false
+    /// Independent of isGridMode/ipadColumnCount above (those control column
+    /// *count* for the same full-detail card) — this switches to an entirely
+    /// different, reduced-info 2-column tile (photo + number/title/priority +
+    /// timer only, no dialogues/address/good-take/assignee/description) for a
+    /// fast visual overview. Available on every device, not iPad-gated like
+    /// the column controls, since a phone-width quick scan is exactly the
+    /// point of this mode.
+    @AppStorage("sceneCompactTileMode") private var isCompactTileMode = false
     /// iPad-only column count, adjustable via a slider (see
     /// columnCountPopover) — 1...4, stored as Double since Slider needs a
     /// floating-point binding; always rounded before use as a grid column
@@ -106,11 +127,10 @@ struct ShotListView: View {
                 // Only once at least one section exists does grouping (with
                 // an explicit "Ohne Abschnitt" bucket for the rest) kick in.
                 if viewModel.sections.isEmpty {
-                    // scenes(in: nil), not the raw array — same "Im Kasten"
-                    // scenes always last" sort applies here too (a project
-                    // with no sections yet still has every scene's sectionId
-                    // == nil, so this is equivalent to the unsectioned bucket
-                    // below, just without its own header).
+                    // scenes(in: nil), not the raw array — a project with no
+                    // sections yet still has every scene's sectionId == nil,
+                    // so this is equivalent to the unsectioned bucket below,
+                    // just without its own header.
                     sceneGrid(viewModel.scenes(in: nil))
                 } else {
                     ForEach(viewModel.sections) { section in
@@ -131,6 +151,18 @@ struct ShotListView: View {
         .navigationTitle(projectName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                // Reduced-info 2-column tile overview vs. today's full-detail
+                // cards — orthogonal to the iPad-only column controls below
+                // (those change how many full cards fit per row; this changes
+                // how much detail each tile shows at all), so it's offered on
+                // every device including iPhone.
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { isCompactTileMode.toggle() }
+                } label: {
+                    Image(systemName: isCompactTileMode ? "checklist" : "square.grid.2x2")
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 if isPad {
                     if horizontalSizeClass == .regular {
@@ -170,29 +202,16 @@ struct ShotListView: View {
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
+                // Opens the management sheet (link + optional password)
+                // instead of sharing straight away — password protection
+                // needs a place to live, and folding it into a quick-share
+                // one-tap button would either bury it or turn every share
+                // into a two-tap flow either way, so it's its own sheet now.
                 Button {
-                    // Once the link's already been fetched this session, the
-                    // share sheet opens immediately — only the very first tap
-                    // has to wait on the network round-trip. Previously this
-                    // button only fetched the URL and swapped itself out for
-                    // a separate `ShareLink` button, so getting the actual
-                    // OS share sheet up took two taps every time.
-                    if shareLinkURL != nil {
-                        isPresentingShareSheet = true
-                    } else {
-                        Task {
-                            await createShareLink()
-                            if shareLinkURL != nil { isPresentingShareSheet = true }
-                        }
-                    }
+                    showingShareLinkSheet = true
                 } label: {
-                    if isCreatingShareLink {
-                        ProgressView()
-                    } else {
-                        Image(systemName: "link")
-                    }
+                    Image(systemName: "link")
                 }
-                .disabled(isCreatingShareLink)
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { showingTeamSheet = true } label: {
@@ -202,6 +221,25 @@ struct ShotListView: View {
         }
         .task { await viewModel.load() }
         .refreshable { await viewModel.load() }
+        // Lightweight "live updates" (2026-07-10): polls every 12s while
+        // this screen is open so a teammate's edits show up without anyone
+        // pulling to refresh — deliberately NOT a websocket/real-time typing
+        // sync (overkill for a shot list: people mostly toggle checkboxes/
+        // add shots, not co-edit the same text field char-by-char). `load()`
+        // already replaces state via whole-array assignment matched by
+        // Identifiable id, which SwiftUI diffs in place with no flicker/
+        // loading-spinner flash (no isLoading gate anywhere in this view) —
+        // confirmed that's what makes this safe to do silently in the
+        // background. Separate `.task` from the initial load above so a
+        // pull-to-refresh or the first load isn't affected by this timer's
+        // own lifecycle.
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 12_000_000_000)
+                if Task.isCancelled { break }
+                await viewModel.load()
+            }
+        }
         .sheet(item: $selectedShot) { shot in
             ShotDetailSheet(shot: shot, viewModel: viewModel)
         }
@@ -211,6 +249,12 @@ struct ShotListView: View {
         .sheet(isPresented: $isPresentingShareSheet) {
             if let shareLinkURL {
                 ActivityView(activityItems: [shareLinkURL])
+            }
+        }
+        .sheet(isPresented: $showingShareLinkSheet) {
+            ShareLinkSheet(projectId: projectId) { url in
+                shareLinkURL = url
+                isPresentingShareSheet = true
             }
         }
         .sheet(isPresented: $showingNotionImport) {
@@ -279,14 +323,17 @@ struct ShotListView: View {
         }
         .sheet(isPresented: Binding(
             get: { editingSection != nil },
-            set: { if !$0 { editingSection = nil } }
+            set: { if !$0 { editingSection = nil; creatingSectionWithProjectInfo = false } }
         )) {
             if case .some(let existing) = editingSection {
                 SectionEditSheet(existing: existing) { name in
                     if let existing {
                         await viewModel.renameSection(existing, name: name)
-                    } else {
-                        await viewModel.createSection(name: name)
+                    } else if let created = await viewModel.createSection(name: name) {
+                        if creatingSectionWithProjectInfo {
+                            await viewModel.addSectionProjectInfo(created)
+                        }
+                        creatingSectionWithProjectInfo = false
                     }
                 }
             }
@@ -337,6 +384,12 @@ struct ShotListView: View {
                 Label("Neuer Abschnitt", systemImage: "folder.badge.plus")
             }
             Button {
+                creatingSectionWithProjectInfo = true
+                editingSection = .some(nil)
+            } label: {
+                Label("Projektinfo", systemImage: "info.circle")
+            }
+            Button {
                 showingNotionImport = true
             } label: {
                 Label("Von Notion importieren", systemImage: "square.and.arrow.down.on.square")
@@ -363,7 +416,14 @@ struct ShotListView: View {
     /// doubled-up one.
     @ViewBuilder
     private func sceneGrid(_ scenes: [Scene]) -> some View {
-        if horizontalSizeClass == .regular {
+        if isCompactTileMode {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+                ForEach(scenes) { scene in
+                    sceneCompactTile(scene: scene)
+                }
+            }
+            .padding(.horizontal, 16)
+        } else if horizontalSizeClass == .regular {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: ipadColumnCount), spacing: 16) {
                 ForEach(scenes) { scene in
                     sceneCard(scene: scene)
@@ -392,6 +452,9 @@ struct ShotListView: View {
     private func sectionGroup(section: SceneSection?) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionHeader(section: section)
+            if let section {
+                sectionProjectInfoArea(section: section)
+            }
             if section == nil || !collapsedSections.contains(section!.id) {
                 sceneGrid(viewModel.scenes(in: section))
                 // Always-present drop target INSIDE the section, below its
@@ -402,6 +465,25 @@ struct ShotListView: View {
                 // something happens to be drawn) accepts the drop.
                 sectionDropZone(section: section)
             }
+        }
+    }
+
+    /// Multi-day shoots (2026-07-10): shows the section's SectionInfoBox
+    /// once it has one. No more per-section "+ Projektinfo hinzufügen"
+    /// button (same day, Lino: it showed above every single section
+    /// regardless of whether that section had one yet, which read as
+    /// clutter once "Projektinfo" became its own option in the main "+"
+    /// menu — that menu creates a section with project info already
+    /// attached in one step, so there's no "plain section, add info later"
+    /// path to support here anymore). Never shown for the unsectioned
+    /// "Ohne Abschnitt" bucket (that one has no SceneSection of its own to
+    /// attach an info box to, only the project-level ProjectInfoBox exists
+    /// there).
+    @ViewBuilder
+    private func sectionProjectInfoArea(section: SceneSection) -> some View {
+        if section.hasProjectInfo {
+            SectionInfoBox(viewModel: viewModel, section: section, projectId: projectId)
+                .padding(.horizontal, 16)
         }
     }
 
@@ -524,9 +606,17 @@ struct ShotListView: View {
         }
     }
 
+    /// A completed scene that isn't currently expanded (see
+    /// expandedCompletedSceneIds) — collapsed is the default state for any
+    /// "im Kasten" scene.
+    private func isCollapsed(_ scene: Scene) -> Bool {
+        scene.completed && !expandedCompletedSceneIds.contains(scene.id)
+    }
+
     @ViewBuilder
     private func sceneCard(scene: Scene) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let collapsed = isCollapsed(scene)
+        VStack(alignment: .leading, spacing: 14) {
             // Landing indicator: shows exactly where a dragged scene will
             // insert if dropped right now (always "before this tile" — see
             // sceneTile's dropDestination) — a plain highlighted background
@@ -538,19 +628,27 @@ struct ShotListView: View {
                     .padding(.horizontal, 4)
                     .transition(.opacity)
             }
-            sceneTile(scene: scene)
-            // Zwischenschritt: no shot list at all, not even the add-row —
-            // it's a lightweight connective beat, not a shootable scene.
-            if !scene.isIntermediateStep {
-                ForEach(viewModel.shots(in: scene)) { shot in
-                    shotCardView(shot: shot, sceneId: scene.id)
+            if collapsed {
+                sceneCollapsedRow(scene: scene)
+            } else {
+                sceneTile(scene: scene)
+                // Zwischenschritt: no shot list at all, not even the add-row
+                // — it's a lightweight connective beat, not a shootable
+                // scene. Also hidden while collapsed above, along with
+                // everything else — a collapsed "im Kasten" row is meant to
+                // be a one-line summary, not a partial card.
+                if !scene.isIntermediateStep {
+                    ForEach(viewModel.shots(in: scene)) { shot in
+                        shotCardView(shot: shot, sceneId: scene.id)
+                    }
+                    addRow(sceneId: scene.id)
                 }
-                addRow(sceneId: scene.id)
             }
         }
-        .padding(12)
+        .padding(collapsed ? 10 : 14)
         .background(scene.completed ? Color.green.opacity(0.18) : Color(.secondarySystemGroupedBackground))
         .animation(.easeInOut(duration: 0.3), value: scene.completed)
+        .animation(.easeInOut(duration: 0.25), value: collapsed)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .modifier(ScenePulseOnElapse(scene: scene))
         // Grid mode owns its own outer horizontal padding + inter-column gap
@@ -561,6 +659,61 @@ struct ShotListView: View {
         .dropDestination(for: String.self) { ids, _ in
             guard let dragged = ids.first, !dragged.hasPrefix("scene:") else { return }
             Task { await viewModel.moveShot(dragged, toScene: scene.id) }
+        }
+    }
+
+    /// Collapsed "im Kasten" summary — just number/title/priority plus the
+    /// start date if there is one, on the same green tint as the full card's
+    /// completed background. Tap expands back to the full sceneTile (see
+    /// isCollapsed/expandedCompletedSceneIds); editing still needs to work
+    /// without expanding first, so it's reachable via long-press here too,
+    /// same as the full tile once completed (see sceneTile's contextMenu).
+    @ViewBuilder
+    private func sceneCollapsedRow(scene: Scene) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 8) {
+                Text(scene.displayNumber)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(sceneAccentColor(scene.priority))
+                    .clipShape(Capsule())
+                Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if !scene.isIntermediateStep, let priority = scene.priority {
+                    Text(priority.label)
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(sceneAccentColor(priority))
+                        .clipShape(Capsule())
+                }
+            }
+            if let scheduledAt = scene.scheduledAt {
+                Text("Start: \(scheduledAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.easeInOut(duration: 0.25)) { expandedCompletedSceneIds.insert(scene.id) }
+        }
+        .contextMenu {
+            Button {
+                editingScene = .some(scene)
+            } label: {
+                Label("Bearbeiten", systemImage: "pencil")
+            }
+            Button {
+                Task { await viewModel.setSceneCompleted(scene, completed: false) }
+            } label: {
+                Label("Nicht mehr im Kasten", systemImage: "arrow.uturn.backward")
+            }
         }
     }
 
@@ -581,7 +734,7 @@ struct ShotListView: View {
     /// reorder rather than debugging blind from this server.
     @ViewBuilder
     private func sceneTile(scene: Scene) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             if let imageUrl = scene.imageUrl {
                 AsyncShotThumbnail(path: imageUrl, size: nil, lockAspectRatio: true)
                     .frame(maxWidth: .infinity)
@@ -589,63 +742,96 @@ struct ShotListView: View {
             }
             sceneHeader(scene: scene)
             SceneTimerInfo(scene: scene)
-            // No lineLimit here on purpose — description/dialogue must always
-            // show in full, with whatever line breaks the person typed
-            // (Text renders literal "\n"s as-is; nothing strips them on the
-            // way in from SceneEditSheet's TextField).
-            if let description = scene.description, !description.isEmpty {
-                Text(description)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if let description = scene.description, !description.isEmpty,
-               let dialogue = scene.dialogue, !dialogue.isEmpty {
-                Divider()
-            }
-            if let dialogue = scene.dialogue, !dialogue.isEmpty {
-                Label(dialogue, systemImage: "quote.bubble")
-                    .font(.subheadline.italic())
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            // Individually-checkable dialogue lines, stacked under the
-            // legacy single-dialogue field above — read-only here on
-            // purpose. Adding a new line only happens in SceneEditSheet (tap
-            // into the scene first) so the main tile isn't cluttered with an
-            // inline text field; this list just shows what's already there
-            // so it can be checked off without opening the sheet.
-            if !scene.isIntermediateStep, !scene.dialogues.isEmpty {
-                Label("Dialog", systemImage: "quote.bubble")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                ForEach(scene.dialogues) { dialogue in
-                    dialogueRow(dialogue: dialogue, scene: scene)
-                }
-            }
-            if let address = scene.locationAddress, let lat = scene.locationLat, let lng = scene.locationLng {
-                HStack(spacing: 10) {
-                    SceneMapThumbnail(lat: lat, lng: lng, size: 56)
-                    Text(address)
+            // Separates the header/timer block above from the content below —
+            // always shown (not conditional on description existing) so the
+            // card reads as two clearly separated zones at a glance.
+            Divider().opacity(0.6)
+            // Grouped into one Group so this whole block (up to 5 conditional
+            // sub-views) counts as a single child of the outer VStack's
+            // ViewBuilder — the outer VStack already has a header, timer, two
+            // new dividers, and the bottom row as siblings, so ungrouped this
+            // would push past ViewBuilder's per-block child limit.
+            Group {
+                // No lineLimit here on purpose — description/dialogue must
+                // always show in full, with whatever line breaks the person
+                // typed (Text renders literal "\n"s as-is; nothing strips
+                // them on the way in from SceneEditSheet's TextField).
+                if let description = scene.description, !description.isEmpty {
+                    Text(description)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let description = scene.description, !description.isEmpty,
+                   let dialogue = scene.dialogue, !dialogue.isEmpty {
+                    Divider()
+                }
+                if let dialogue = scene.dialogue, !dialogue.isEmpty {
+                    Label(dialogue, systemImage: "quote.bubble")
+                        .font(.subheadline.italic())
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                // Individually-checkable dialogue lines, stacked under the
+                // legacy single-dialogue field above — read-only here on
+                // purpose. Adding a new line only happens in SceneEditSheet
+                // (tap into the scene first) so the main tile isn't cluttered
+                // with an inline text field; this list just shows what's
+                // already there so it can be checked off without opening the
+                // sheet.
+                if !scene.isIntermediateStep, !scene.dialogues.isEmpty {
+                    Label("Dialog", systemImage: "quote.bubble")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    ForEach(scene.dialogues) { dialogue in
+                        dialogueRow(dialogue: dialogue, scene: scene)
+                    }
+                }
+                if let address = scene.locationAddress, let lat = scene.locationLat, let lng = scene.locationLng {
+                    HStack(spacing: 10) {
+                        SceneMapThumbnail(lat: lat, lng: lng, size: 56)
+                        Text(address)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
                 }
             }
-            // Assignee + "Im Kasten" moved down here (bottom-right of the whole
-            // tile) instead of living in the header row — reads less cluttered
-            // now that the header is just the scene number/name/count/priority.
+            // Separates the content above from the bottom action row below —
+            // reads as its own little strip (good take / assignee / im Kasten).
+            Divider().opacity(0.6)
+            // Good Take (left) / assignee (center) / "Im Kasten" (right) — two
+            // spacers distribute the three roughly evenly instead of clumping
+            // assignee+imKasten together at the trailing edge.
             HStack(spacing: 8) {
                 if !scene.isIntermediateStep {
                     sceneGoodTakeButton(scene: scene)
                 }
                 Spacer()
                 sceneAssigneeMenu(scene: scene)
+                Spacer()
                 imKastenButton(scene: scene)
             }
         }
         .contentShape(Rectangle())
-        .onTapGesture { editingScene = .some(scene) }
+        .onTapGesture {
+            // A completed scene shown expanded (the user tapped its
+            // collapsed row to peek) taps back to collapsed instead of
+            // opening the edit sheet — editing it goes through the
+            // long-press menu below instead, same as the collapsed row.
+            if scene.completed {
+                withAnimation(.easeInOut(duration: 0.25)) { expandedCompletedSceneIds.remove(scene.id) }
+            } else {
+                editingScene = .some(scene)
+            }
+        }
+        .contextMenu {
+            Button {
+                editingScene = .some(scene)
+            } label: {
+                Label("Bearbeiten", systemImage: "pencil")
+            }
+        }
         .draggable("scene:\(scene.id)") {
             sceneDragPreview(scene: scene)
         }
@@ -668,6 +854,45 @@ struct ShotListView: View {
                 dropTargetSceneId = targeted ? scene.id : (dropTargetSceneId == scene.id ? nil : dropTargetSceneId)
             }
         }
+    }
+
+    /// Reduced-info counterpart to sceneTile for isCompactTileMode — photo,
+    /// number/title/priority, and the timer only. Deliberately leaves out
+    /// dialogues, address, good take, and assignee (all still one tap away:
+    /// tapping the tile opens the same edit sheet as the full card) so a
+    /// 2-column grid of these reads as a fast visual overview, not a smaller
+    /// version of the same dense card. Reuses SceneTimerInfo/ScenePulseOnElapse
+    /// as-is rather than duplicating the countdown/elapse logic.
+    @ViewBuilder
+    private func sceneCompactTile(scene: Scene) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let imageUrl = scene.imageUrl {
+                AsyncShotThumbnail(path: imageUrl, size: nil, lockAspectRatio: true)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 100)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            HStack(alignment: .top, spacing: 6) {
+                Text(scene.displayNumber)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(sceneAccentColor(scene.priority))
+                    .clipShape(Capsule())
+                Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(2)
+            }
+            SceneTimerInfo(scene: scene)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(scene.completed ? Color.green.opacity(0.18) : Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .modifier(ScenePulseOnElapse(scene: scene))
+        .contentShape(Rectangle())
+        .onTapGesture { editingScene = .some(scene) }
     }
 
     /// Custom drag preview instead of the system's plain view snapshot — a
@@ -701,19 +926,18 @@ struct ShotListView: View {
     /// its own full-width row and can wrap to two lines.
     @ViewBuilder
     private func sceneHeader(scene: Scene) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text(scene.displayNumber)
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(sceneAccentColor(scene.priority))
-                    .clipShape(Capsule())
-                Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
-                    .font(.title3.weight(.semibold))
-                    .lineLimit(2)
-            }
+        HStack(alignment: .top, spacing: 8) {
+            Text(scene.displayNumber)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(sceneAccentColor(scene.priority))
+                .clipShape(Capsule())
+            Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
+                .font(.title3.weight(.semibold))
+                .lineLimit(2)
+            Spacer(minLength: 8)
             if !scene.isIntermediateStep, let priority = scene.priority {
                 Text(priority.label)
                     .font(.footnote.weight(.bold))
@@ -761,9 +985,10 @@ struct ShotListView: View {
     }
 
     /// "Im Kasten" ("it's a wrap" — scene fully shot): tapping it toggles
-    /// `completed`, which tints the whole card green and (when turning it on)
-    /// slides it to the bottom of the scene list — see
-    /// `ShotListViewModel.setSceneCompleted` for the animation/reorder.
+    /// `completed`, which tints the whole card green and collapses it to
+    /// sceneCollapsedRow in place (see isCollapsed/sceneCard) — it used to
+    /// also move the scene to the end of the list, removed since it made
+    /// the list jump around mid-scroll while checking scenes off on set.
     /// A plain Button nested here so its tap takes priority over the
     /// surrounding tile's own onTapGesture/draggable.
     @ViewBuilder
@@ -796,7 +1021,7 @@ struct ShotListView: View {
             goodTakeText = scene.goodTakeFilename ?? ""
             editingGoodTakeScene = scene
         } label: {
-            Label(hasGoodTake ? scene.goodTakeFilename! : "Good Take", systemImage: "checkmark.seal.fill")
+            Label(hasGoodTake ? scene.goodTakeFilename! : "Good Take", systemImage: "sdcard.fill")
                 .font(.subheadline.weight(.semibold))
                 .labelStyle(.titleAndIcon)
                 .lineLimit(1)
@@ -938,17 +1163,6 @@ struct ShotListView: View {
     /// idempotent, so tapping this again later just extends the same link
     /// rather than creating a second, different URL to confuse whoever
     /// already has the first one.
-    private func createShareLink() async {
-        isCreatingShareLink = true
-        defer { isCreatingShareLink = false }
-        do {
-            let result = try await APIClient.shared.projectShareLink(projectId)
-            shareLinkURL = URL(string: result.url)
-        } catch {
-            viewModel.errorMessage = error.localizedDescription
-        }
-    }
-
 }
 
 /// Thin wrapper so the share sheet can be triggered programmatically
@@ -1036,7 +1250,7 @@ private struct ShotCard: View {
                 .foregroundStyle(.secondary)
 
                 if let goodTake = shot.goodTakeFilename, !goodTake.isEmpty {
-                    Label("Good Take: \(goodTake)", systemImage: "checkmark.seal.fill")
+                    Label("Good Take: \(goodTake)", systemImage: "sdcard.fill")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.green)
                         .lineLimit(1)
@@ -1076,11 +1290,13 @@ private struct SceneTimerInfo: View {
                 let end = scene.durationMinutes.map { scheduledAt.addingTimeInterval(TimeInterval($0) * 60) }
                 let isRunning = end.map { now >= scheduledAt && now < $0 } ?? false
 
-                VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .center, spacing: 8) {
                     Label("Start: \(scheduledAt.formatted(date: .abbreviated, time: .shortened))", systemImage: "calendar")
                         .font(.caption)
                         .foregroundStyle(isRunning ? Color.yellow : Color(.secondaryLabel))
                         .animation(.easeInOut(duration: 0.4), value: isRunning)
+
+                    Spacer(minLength: 8)
 
                     if let end {
                         if now < scheduledAt {
@@ -1102,12 +1318,18 @@ private struct SceneTimerInfo: View {
 }
 
 /// Live mm:ss countdown while a scene is rolling — grey more than 15min from
-/// the end, fading through yellow at the 15min mark, red at 10min. The small
-/// white dot pulses continuously the whole time as a "live" indicator (this
-/// is unrelated to the one-time whole-card pulse fired when the timer hits 0).
+/// the end, fading through yellow at the 15min mark, solid red from the 5min
+/// mark on (previously only reached full red at 0 — now the whole badge also
+/// pulses once it's solid red, not just the small "live" dot, so the last 5
+/// minutes read as unmistakably urgent). The small white dot pulses
+/// continuously the whole time as a general "live" indicator (unrelated to
+/// the one-time whole-card pulse fired when the timer hits 0, see
+/// ScenePulseOnElapse).
 private struct LiveSceneBadge: View {
     let remaining: TimeInterval
     @State private var pulse = false
+
+    private var isUrgent: Bool { remaining > 0 && remaining <= 300 }
 
     var body: some View {
         HStack(spacing: 5) {
@@ -1124,6 +1346,7 @@ private struct LiveSceneBadge: View {
         .padding(.vertical, 4)
         .background(Self.color(for: remaining))
         .clipShape(Capsule())
+        .scaleEffect(isUrgent && pulse ? 1.1 : 1.0)
         .animation(.easeInOut(duration: 0.4), value: remaining <= 900)
         .onAppear {
             withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
@@ -1133,10 +1356,10 @@ private struct LiveSceneBadge: View {
     }
 
     private static func color(for remaining: TimeInterval) -> Color {
-        if remaining <= 0 {
+        if remaining <= 300 {
             return .red
         } else if remaining <= 600 {
-            return Color.yellow.interpolated(to: .red, fraction: 1 - (remaining / 600))
+            return Color.yellow.interpolated(to: .red, fraction: 1 - ((remaining - 300) / 300))
         } else if remaining <= 900 {
             return Color(.secondaryLabel).interpolated(to: .yellow, fraction: 1 - ((remaining - 600) / 300))
         } else {
@@ -1155,6 +1378,13 @@ private struct LiveSceneBadge: View {
 /// continuous effect. Self-contained ViewModifier (not folded into SceneTile
 /// directly) so it can own its own @State without restructuring the rest of
 /// sceneCard's view-builder-function shape.
+///
+/// A spring (instead of the old linear easeInOut) gives the scale a natural
+/// overshoot-and-settle instead of a hard snap back to 1.0, paired with a
+/// brief red glow so the "pop" reads as an alert, not just a size change.
+/// Also fires a haptic (vibration) at the exact same moment — the visual
+/// pulse alone is easy to miss if the phone isn't being looked at right when
+/// time runs out.
 private struct ScenePulseOnElapse: ViewModifier {
     let scene: Scene
     @State private var pulse = false
@@ -1167,12 +1397,14 @@ private struct ScenePulseOnElapse: ViewModifier {
         return AnyView(
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 content
-                    .scaleEffect(pulse ? 1.03 : 1.0)
-                    .animation(.easeInOut(duration: 0.18), value: pulse)
+                    .scaleEffect(pulse ? 1.045 : 1.0)
+                    .shadow(color: .red.opacity(pulse ? 0.4 : 0), radius: pulse ? 16 : 0)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.55), value: pulse)
                     .onChange(of: context.date) { oldDate, newDate in
                         if oldDate < end && newDate >= end {
+                            UINotificationFeedbackGenerator().notificationOccurred(.warning)
                             pulse = true
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { pulse = false }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { pulse = false }
                         }
                     }
             }

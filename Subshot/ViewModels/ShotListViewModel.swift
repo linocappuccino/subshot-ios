@@ -125,19 +125,11 @@ final class ShotListViewModel: ObservableObject {
     /// Scenes belonging to a section, in order — nil means the "no section"
     /// group. Plain filter (not cached like shotsBySceneId): scene counts
     /// per project are small enough that re-scanning per render is cheap.
-    /// Completed ("Im Kasten") scenes always sort after open ones within their
-    /// section — enforced here on every read rather than relied on purely
-    /// from insertion order, since that broke as soon as a new scene got
-    /// added to the same section afterward: createScene/reorderScene both
-    /// place new items using the *global* max sort_order across every scene
-    /// in the project, so a later-added open scene in a section could end up
-    /// with a higher raw order than a scene marked "Im Kasten" earlier,
-    /// pushing the finished scene back above it. `sorted(by:)` is a stable
-    /// sort in Swift, so scenes on the same side of the completed/open split
-    /// keep their existing relative order.
+    /// No longer sorts completed scenes to the end — "im Kasten" now
+    /// collapses a scene in place instead of moving it, see
+    /// setSceneCompleted's doc comment. Natural (insertion/sort_order) order.
     func scenes(in section: SceneSection?) -> [Scene] {
         scenes.filter { $0.sectionId == section?.id }
-            .sorted { !$0.completed && $1.completed }
     }
 
     // MARK: - Sections
@@ -288,6 +280,12 @@ final class ShotListViewModel: ObservableObject {
     /// first (wrapped in `withAnimation`) so the color change and reorder
     /// animate immediately instead of waiting on the network round-trip;
     /// the server calls afterward reconcile/persist the same result.
+    /// Deliberately does NOT reorder the scene to the end anymore (used to,
+    /// via a local array move + reorderScene(before: nil) server call) — a
+    /// scene "im Kasten" now collapses in place instead (see ShotListView's
+    /// sceneCollapsedRow/expandedCompletedSceneIds) so the shot list doesn't
+    /// jump around mid-scroll while checking things off on set, and the
+    /// original scene order stays intact as a reference.
     func setSceneCompleted(_ scene: Scene, completed: Bool) async {
         guard let index = scenes.firstIndex(where: { $0.id == scene.id }) else { return }
         #if canImport(UIKit)
@@ -295,10 +293,6 @@ final class ShotListViewModel: ObservableObject {
         #endif
         withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
             scenes[index].completed = completed
-            if completed {
-                let moved = scenes.remove(at: index)
-                scenes.append(moved)
-            }
         }
         do {
             let updated = try await APIClient.shared.patchScene(scene.id, completed: completed)
@@ -309,7 +303,6 @@ final class ShotListViewModel: ObservableObject {
             errorMessage = error.localizedDescription
         }
         if completed {
-            await reorderScene(scene.id, before: nil)
             // Only a scheduled ("getimte") scene finishing off the very last
             // still-open scheduled scene in the project triggers the
             // reminder — completing an untimed scene, or one that still
@@ -531,6 +524,33 @@ final class ShotListViewModel: ObservableObject {
 
     static let maxTodoLists = 5
 
+    /// Locates and mutates a TodoList by id, wherever it actually lives —
+    /// the project-level `todoLists` array, or one of the sections' own
+    /// arrays (multi-day shoots, 2026-07-10: a section can carry its own
+    /// project-info box with its own todo lists, see SceneSection.todoLists).
+    /// Every todo-list/item mutation method below goes through this instead
+    /// of assuming `todoLists` is the only place a list can be.
+    private func mutateTodoList(_ id: String, _ mutate: (inout TodoList) -> Void) {
+        if let index = todoLists.firstIndex(where: { $0.id == id }) {
+            mutate(&todoLists[index])
+            return
+        }
+        for sectionIndex in sections.indices {
+            if let listIndex = sections[sectionIndex].todoLists.firstIndex(where: { $0.id == id }) {
+                mutate(&sections[sectionIndex].todoLists[listIndex])
+                return
+            }
+        }
+    }
+
+    private func findTodoList(_ id: String) -> TodoList? {
+        if let list = todoLists.first(where: { $0.id == id }) { return list }
+        for section in sections {
+            if let list = section.todoLists.first(where: { $0.id == id }) { return list }
+        }
+        return nil
+    }
+
     @discardableResult
     func createTodoList(name: String) async -> TodoList? {
         guard todoLists.count < Self.maxTodoLists else { return nil }
@@ -545,12 +565,28 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
+    /// Same as createTodoList above, but for a section's own project-info
+    /// box — appended to that section's own todoLists, not the project-level
+    /// array.
+    @discardableResult
+    func createSectionTodoList(section: SceneSection, name: String) async -> TodoList? {
+        guard let sectionIndex = sections.firstIndex(where: { $0.id == section.id }),
+              sections[sectionIndex].todoLists.count < Self.maxTodoLists else { return nil }
+        do {
+            let sortOrder = (sections[sectionIndex].todoLists.map(\.sortOrder).max() ?? -1) + 1
+            let list = try await APIClient.shared.createSectionTodoList(sectionId: section.id, name: name, sortOrder: sortOrder)
+            sections[sectionIndex].todoLists.append(list)
+            return list
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
     func renameTodoList(_ list: TodoList, name: String) async {
         do {
             let updated = try await APIClient.shared.patchTodoList(list.id, name: name)
-            if let index = todoLists.firstIndex(where: { $0.id == updated.id }) {
-                todoLists[index].name = updated.name
-            }
+            mutateTodoList(updated.id) { $0.name = updated.name }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -558,6 +594,9 @@ final class ShotListViewModel: ObservableObject {
 
     func deleteTodoList(_ list: TodoList) async {
         todoLists.removeAll { $0.id == list.id }
+        for sectionIndex in sections.indices {
+            sections[sectionIndex].todoLists.removeAll { $0.id == list.id }
+        }
         do {
             try await APIClient.shared.deleteTodoList(list.id)
         } catch {
@@ -568,11 +607,11 @@ final class ShotListViewModel: ObservableObject {
     @discardableResult
     func createTodoItem(in list: TodoList, text: String) async -> TodoItem? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let listIndex = todoLists.firstIndex(where: { $0.id == list.id }) else { return nil }
+        guard !trimmed.isEmpty, let existing = findTodoList(list.id) else { return nil }
         do {
-            let sortOrder = (todoLists[listIndex].items.map(\.sortOrder).max() ?? -1) + 1
+            let sortOrder = (existing.items.map(\.sortOrder).max() ?? -1) + 1
             let item = try await APIClient.shared.createTodoItem(todoListId: list.id, text: trimmed, sortOrder: sortOrder)
-            todoLists[listIndex].items.append(item)
+            mutateTodoList(list.id) { $0.items.append(item) }
             return item
         } catch {
             errorMessage = error.localizedDescription
@@ -581,19 +620,19 @@ final class ShotListViewModel: ObservableObject {
     }
 
     func toggleTodoItemDone(_ item: TodoItem) async {
-        guard let listIndex = todoLists.firstIndex(where: { $0.id == item.todoListId }),
-              let itemIndex = todoLists[listIndex].items.firstIndex(where: { $0.id == item.id }) else { return }
         do {
             let updated = try await APIClient.shared.patchTodoItem(item.id, done: !item.done)
-            todoLists[listIndex].items[itemIndex] = updated
+            mutateTodoList(item.todoListId) { list in
+                if let itemIndex = list.items.firstIndex(where: { $0.id == updated.id }) {
+                    list.items[itemIndex] = updated
+                }
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
     func assignTodoItem(_ item: TodoItem, to userId: String?) async {
-        guard let listIndex = todoLists.firstIndex(where: { $0.id == item.todoListId }),
-              let itemIndex = todoLists[listIndex].items.firstIndex(where: { $0.id == item.id }) else { return }
         do {
             let updated: TodoItem
             if let userId {
@@ -601,17 +640,75 @@ final class ShotListViewModel: ObservableObject {
             } else {
                 updated = try await APIClient.shared.patchTodoItem(item.id, clearAssignee: true)
             }
-            todoLists[listIndex].items[itemIndex] = updated
+            mutateTodoList(item.todoListId) { list in
+                if let itemIndex = list.items.firstIndex(where: { $0.id == updated.id }) {
+                    list.items[itemIndex] = updated
+                }
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
     func deleteTodoItem(_ item: TodoItem) async {
-        guard let listIndex = todoLists.firstIndex(where: { $0.id == item.todoListId }) else { return }
-        todoLists[listIndex].items.removeAll { $0.id == item.id }
+        mutateTodoList(item.todoListId) { list in
+            list.items.removeAll { $0.id == item.id }
+        }
         do {
             try await APIClient.shared.deleteTodoItem(item.id)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    // MARK: - Section project-info boxes (multi-day shoots)
+
+    /// Idempotent — no-op (still returns success) if the section already has
+    /// one, matching the backend's own idempotent add_project_info handling.
+    func addSectionProjectInfo(_ section: SceneSection) async {
+        do {
+            let updated = try await APIClient.shared.patchSection(section.id, addProjectInfo: true)
+            if let index = sections.firstIndex(where: { $0.id == updated.id }) {
+                sections[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Removes the section's info box entirely — clears its date/location
+    /// and deletes its todo lists server-side (see patch_section's
+    /// remove_project_info handling), not just hides it client-side.
+    func removeSectionProjectInfo(_ section: SceneSection) async {
+        do {
+            let updated = try await APIClient.shared.patchSection(section.id, removeProjectInfo: true)
+            if let index = sections.firstIndex(where: { $0.id == updated.id }) {
+                sections[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func updateSectionShootDate(_ section: SceneSection, date: Date?) async {
+        do {
+            let updated = try await APIClient.shared.patchSection(section.id, shootDate: date)
+            if let index = sections.firstIndex(where: { $0.id == updated.id }) {
+                sections[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func updateSectionLocation(_ section: SceneSection, address: String, lat: Double, lng: Double) async {
+        do {
+            let updated = try await APIClient.shared.patchSection(
+                section.id, locationAddress: address, locationLat: lat, locationLng: lng
+            )
+            if let index = sections.firstIndex(where: { $0.id == updated.id }) {
+                sections[index] = updated
+            }
         } catch {
             errorMessage = error.localizedDescription
         }

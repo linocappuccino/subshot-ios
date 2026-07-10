@@ -206,7 +206,8 @@ struct ProjectListView: View {
                 color: folder.color,
                 thumbnailPath: folder.backgroundImageURL,
                 fallbackIcon: "folder.fill",
-                emoji: folder.emoji
+                emoji: folder.emoji,
+                thumbnailFocusPoint: folder.backgroundImageFocusPoint
             )
         }
         .buttonStyle(.plain)
@@ -226,7 +227,7 @@ struct ProjectListView: View {
         }
     }
 
-    private func tileBody(title: String, subtitle: String?, color: String, thumbnailPath: String?, fallbackIcon: String, emoji: String? = nil) -> some View {
+    private func tileBody(title: String, subtitle: String?, color: String, thumbnailPath: String?, fallbackIcon: String, emoji: String? = nil, thumbnailFocusPoint: UnitPoint? = nil) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             // Color.clear + .aspectRatio + .overlay, not relying on the
             // ZStack sizing itself from its content — the same bulletproof
@@ -250,7 +251,23 @@ struct ProjectListView: View {
                         RoundedRectangle(cornerRadius: 14)
                             .fill(Color(hex: color).opacity(0.9))
                         if let thumbnailPath {
-                            AsyncShotThumbnail(path: thumbnailPath, size: nil, lockAspectRatio: false)
+                            AsyncShotThumbnail(path: thumbnailPath, size: nil, lockAspectRatio: false, focusPoint: thumbnailFocusPoint)
+                            // Diagonal light-reflection streak — the classic
+                            // "light catching glass" cue, same treatment as
+                            // the web app's tiles (TileShell) for parity, so
+                            // an uploaded photo reads as sitting behind a
+                            // glass pane rather than a flat, plain picture.
+                            GeometryReader { geo in
+                                LinearGradient(
+                                    colors: [.clear, .white.opacity(0.3), .clear],
+                                    startPoint: .top, endPoint: .bottom
+                                )
+                                .frame(width: geo.size.width * 0.55)
+                                .rotationEffect(.degrees(-20))
+                                .offset(x: -geo.size.width * 0.35)
+                                .blur(radius: 6)
+                            }
+                            .allowsHitTesting(false)
                         } else if let emoji, !emoji.isEmpty {
                             Text(emoji)
                                 .font(.system(size: 48))

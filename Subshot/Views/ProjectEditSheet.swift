@@ -27,15 +27,9 @@ struct ProjectEditSheet: View {
                     TextField("Projektname", text: $name)
                 }
                 Section("Emoji") {
-                    TextField("Optional, z.B. 🎬", text: $emoji)
-                        // A single emoji is one (extended) grapheme cluster —
-                        // trimming to the first one keeps this a one-emoji
-                        // field even if someone pastes a run of them.
-                        .onChange(of: emoji) { _, newValue in
-                            if let first = newValue.first {
-                                emoji = String(first)
-                            }
-                        }
+                    EmojiPickerField(emoji: $emoji)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .listRowBackground(Color.clear)
                 }
                 Section("Farbe") {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 14) {

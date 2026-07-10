@@ -1,6 +1,140 @@
 import SwiftUI
 import MapKit
 
+/// Section-scoped counterpart to ProjectInfoBox, for multi-day shoots
+/// (2026-07-10): a section can optionally carry its own mini info box (own
+/// shoot date/location/todo lists, same fields/behavior as the project-level
+/// one) — shown inline in that section, moves with it when the section is
+/// reordered (no separate drag handle of its own). Unlike the top-level
+/// ProjectInfoBox, this one CAN be deleted (see the trash button in the
+/// header) — the original project-level box can't be moved or removed, only
+/// ones added to a section can.
+struct SectionInfoBox: View {
+    @ObservedObject var viewModel: ShotListViewModel
+    let section: SceneSection
+    let projectId: String
+
+    @State private var isExpanded = false
+    @State private var showingTeamSheet = false
+    @State private var showingDeleteConfirm = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 16) {
+                    Divider()
+                    ShootDateSection(
+                        shootDate: section.shootDate,
+                        onUpdate: { date in await viewModel.updateSectionShootDate(section, date: date) }
+                    )
+                    Divider()
+                    LocationSection(
+                        address: section.locationAddress, lat: section.locationLat, lng: section.locationLng,
+                        onUpdate: { address, lat, lng in
+                            await viewModel.updateSectionLocation(section, address: address, lat: lat, lng: lng)
+                        },
+                        completer: viewModel.locationCompleter
+                    )
+                    Divider()
+                    peopleSection
+                    Divider()
+                    TodoListsSection(
+                        lists: section.todoLists, maxLists: ShotListViewModel.maxTodoLists,
+                        viewModel: viewModel,
+                        onCreate: { name in await viewModel.createSectionTodoList(section: section, name: name) }
+                    )
+                }
+                .padding(.top, 12)
+                .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
+            }
+        }
+        .padding(14)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .sheet(isPresented: $showingTeamSheet, onDismiss: {
+            Task { await viewModel.refreshMembers() }
+        }) {
+            TeamSheet(projectId: projectId)
+        }
+        .confirmationDialog("Projektinfo löschen?", isPresented: $showingDeleteConfirm, titleVisibility: .visible) {
+            Button("Löschen", role: .destructive) {
+                Task { await viewModel.removeSectionProjectInfo(section) }
+            }
+            Button("Abbrechen", role: .cancel) {}
+        } message: {
+            Text("Datum, Ort und Todo-Listen dieser Projektinfo werden entfernt.")
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 4) {
+            Button {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack {
+                    Image(systemName: "info.circle.fill")
+                        .foregroundStyle(.secondary)
+                    Text("Projektinfo: \(section.name)")
+                        .font(.headline)
+                        .lineLimit(1)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            // Only added info boxes get this — the original top-level
+            // ProjectInfoBox has no delete button at all, by design.
+            Button(role: .destructive) {
+                showingDeleteConfirm = true
+            } label: {
+                Image(systemName: "trash")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    /// Same as ProjectInfoBox.peopleSection — reuses the project's member
+    /// list (Team/membership is project-wide, not per shoot day) rather than
+    /// duplicating the exact same list from the viewModel; only the
+    /// invite-someone entry point (Team sheet) is shared too.
+    private var peopleSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Personen", systemImage: "person.2")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            HStack(spacing: -8) {
+                ForEach(viewModel.members) { member in
+                    MemberAvatar(member: member, size: 44)
+                        .overlay(Circle().stroke(Color(.secondarySystemGroupedBackground), lineWidth: 2))
+                }
+                Button {
+                    showingTeamSheet = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44)
+                        .background(Color(.tertiarySystemGroupedBackground))
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(Color(.secondarySystemGroupedBackground), lineWidth: 2))
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 8)
+            }
+        }
+    }
+}
+
 /// Collapsible info panel at the top of the scene overview: shoot date,
 /// location (MapKit address autocomplete + a plain icon tile — deliberately
 /// no rendered map, see LocationSection — tapping it opens Google Maps), and
@@ -22,13 +156,19 @@ struct ProjectInfoBox: View {
             if isExpanded {
                 VStack(alignment: .leading, spacing: 16) {
                     Divider()
-                    ShootDateSection(viewModel: viewModel)
+                    ShootDateSection(shootDate: viewModel.shootDate, onUpdate: viewModel.updateShootDate)
                     Divider()
-                    LocationSection(viewModel: viewModel, completer: viewModel.locationCompleter)
+                    LocationSection(
+                        address: viewModel.locationAddress, lat: viewModel.locationLat, lng: viewModel.locationLng,
+                        onUpdate: viewModel.updateLocation, completer: viewModel.locationCompleter
+                    )
                     Divider()
                     peopleSection
                     Divider()
-                    TodoListsSection(viewModel: viewModel)
+                    TodoListsSection(
+                        lists: viewModel.todoLists, maxLists: ShotListViewModel.maxTodoLists,
+                        viewModel: viewModel, onCreate: { name in await viewModel.createTodoList(name: name) }
+                    )
                 }
                 .padding(.top, 12)
                 // No .move(edge:) — sliding content in/out while the
@@ -122,8 +262,12 @@ struct ProjectInfoBox: View {
     }
 }
 
+/// Generic over "where the date actually lives" via `shootDate`/`onUpdate` —
+/// used by both the project-level ProjectInfoBox and a section's own
+/// SectionInfoBox (multi-day shoots, 2026-07-10), same UI either way.
 private struct ShootDateSection: View {
-    @ObservedObject var viewModel: ShotListViewModel
+    let shootDate: Date?
+    let onUpdate: (Date?) async -> Void
     @State private var hasDate = false
     @State private var date = Date()
 
@@ -140,18 +284,18 @@ private struct ShootDateSection: View {
             // synchronously mid-transaction.
             Toggle("Datum festlegen", isOn: $hasDate.animation(.spring(response: 0.35, dampingFraction: 0.86)))
                 .onChange(of: hasDate) { _, newValue in
-                    Task { await viewModel.updateShootDate(newValue ? date : nil) }
+                    Task { await onUpdate(newValue ? date : nil) }
                 }
             if hasDate {
                 DatePicker("Start", selection: $date, displayedComponents: [.date, .hourAndMinute])
                     .onChange(of: date) { _, newValue in
-                        Task { await viewModel.updateShootDate(newValue) }
+                        Task { await onUpdate(newValue) }
                     }
                     .transition(.opacity)
             }
         }
         .task {
-            if let shootDate = viewModel.shootDate {
+            if let shootDate {
                 date = shootDate
                 hasDate = true
             }
@@ -159,8 +303,13 @@ private struct ShootDateSection: View {
     }
 }
 
+/// Generic over "where the location actually lives", same reasoning as
+/// ShootDateSection above.
 private struct LocationSection: View {
-    @ObservedObject var viewModel: ShotListViewModel
+    let address: String?
+    let lat: Double?
+    let lng: Double?
+    let onUpdate: (String, Double, Double) async -> Void
     @ObservedObject var completer: LocationSearchCompleter
     @State private var query = ""
     @State private var isEditing = false
@@ -171,9 +320,9 @@ private struct LocationSection: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            if let address = viewModel.locationAddress, !isEditing {
+            if let address, !isEditing {
                 HStack(alignment: .top, spacing: 10) {
-                    if let lat = viewModel.locationLat, let lng = viewModel.locationLng {
+                    if let lat, let lng {
                         // Real map preview now (SceneMapThumbnail, same as
                         // scenes) — the earlier "crashes the Simulator"
                         // finding turned out to be the general iOS-26.5-
@@ -228,7 +377,7 @@ private struct LocationSection: View {
 
     private func select(_ completion: MKLocalSearchCompletion) async {
         guard let resolved = try? await LocationSearch.resolve(completion) else { return }
-        await viewModel.updateLocation(address: resolved.address, lat: resolved.lat, lng: resolved.lng)
+        await onUpdate(resolved.address, resolved.lat, resolved.lng)
         withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
             isEditing = false
             completer.clear()
@@ -237,12 +386,21 @@ private struct LocationSection: View {
     }
 }
 
-/// Up to 5 lists per project (spec limit, enforced by both the backend and
-/// `ShotListViewModel.maxTodoLists` here). Renaming and adding items are
-/// inline (tap-to-edit / tap-to-add-row), matching the rest of this screen's
-/// style rather than introducing sheets or native alerts for such a small edit.
+/// Up to 5 lists (spec limit, enforced by both the backend and `maxLists`
+/// here) — generic over `lists`/`maxLists`/`onCreate` so the same view
+/// serves both the project-level box (viewModel.todoLists) and a section's
+/// own box (that section's own todoLists), same reasoning as
+/// ShootDateSection/LocationSection above. `viewModel` is still needed
+/// as-is for TodoListCard's per-item calls, which already operate on a
+/// specific TodoList/TodoItem regardless of which parent owns it. Renaming
+/// and adding items are inline (tap-to-edit / tap-to-add-row), matching the
+/// rest of this screen's style rather than introducing sheets or native
+/// alerts for such a small edit.
 private struct TodoListsSection: View {
+    let lists: [TodoList]
+    let maxLists: Int
     @ObservedObject var viewModel: ShotListViewModel
+    let onCreate: (String) async -> Void
     @State private var isAddingList = false
     @State private var newListName = ""
     @FocusState private var newListFocused: Bool
@@ -253,7 +411,7 @@ private struct TodoListsSection: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            ForEach(viewModel.todoLists) { list in
+            ForEach(lists) { list in
                 TodoListCard(list: list, viewModel: viewModel)
             }
 
@@ -276,7 +434,7 @@ private struct TodoListsSection: View {
                     }
                     .buttonStyle(.plain)
                 }
-            } else if viewModel.todoLists.count < ShotListViewModel.maxTodoLists {
+            } else if lists.count < maxLists {
                 Button {
                     newListName = ""
                     isAddingList = true
@@ -297,7 +455,7 @@ private struct TodoListsSection: View {
         isAddingList = false
         let trimmed = newListName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        await viewModel.createTodoList(name: trimmed)
+        await onCreate(trimmed)
     }
 }
 

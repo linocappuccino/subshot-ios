@@ -18,6 +18,13 @@ struct AsyncShotThumbnail: View {
     /// mixed photo orientations don't produce inconsistent card heights.
     var lockAspectRatio: Bool = false
 
+    /// Fractional (0-1) face-detected focus point within the source image
+    /// (see Folder.backgroundImageFocusX/Y) — when set, the `.fill`-mode
+    /// crop below is shifted so this point lands centered in the visible
+    /// frame instead of the image's geometric middle. `nil` (the default)
+    /// keeps today's plain center crop.
+    var focusPoint: UnitPoint? = nil
+
     @State private var image: UIImage?
     @State private var failed = false
 
@@ -54,9 +61,13 @@ struct AsyncShotThumbnail: View {
     @ViewBuilder
     private var thumbnailContent: some View {
         if let image {
-            Image(uiImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fill)
+            if let focusPoint {
+                FocusedFillImage(image: image, focusPoint: focusPoint)
+            } else {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            }
         } else if failed {
             Image(systemName: "photo")
                 .foregroundStyle(.secondary)
@@ -91,6 +102,51 @@ struct AsyncShotThumbnail: View {
             }
         }
         failed = true
+    }
+}
+
+/// Fill-mode crop that pans toward a fractional focus point instead of
+/// always centering — the standard SwiftUI "oversized image + offset +
+/// clipped" trick, just with the offset computed from `focusPoint` instead
+/// of implicitly being the geometric middle. Used for folder cover photos
+/// with a face-detected focus point (see Folder.backgroundImageFocusX/Y);
+/// unused (nil focusPoint) elsewhere just falls back to plain center-fill.
+private struct FocusedFillImage: View {
+    let image: UIImage
+    let focusPoint: UnitPoint
+
+    var body: some View {
+        GeometryReader { geo in
+            let frameW = geo.size.width
+            let frameH = geo.size.height
+            let imgW = image.size.width
+            let imgH = image.size.height
+
+            let offset: (x: CGFloat, y: CGFloat) = {
+                guard frameW > 0, frameH > 0, imgW > 0, imgH > 0 else { return (0, 0) }
+                let imageAspect = imgW / imgH
+                let frameAspect = frameW / frameH
+                if imageAspect > frameAspect {
+                    // Image is relatively wider than the frame — height
+                    // matches exactly, width overflows and needs panning.
+                    let scaledWidth = frameH * imageAspect
+                    let overflowX = scaledWidth - frameW
+                    return (-(focusPoint.x - 0.5) * overflowX, 0)
+                } else if imageAspect < frameAspect {
+                    let scaledHeight = frameW / imageAspect
+                    let overflowY = scaledHeight - frameH
+                    return (0, -(focusPoint.y - 0.5) * overflowY)
+                }
+                return (0, 0)
+            }()
+
+            Image(uiImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: frameW, height: frameH)
+                .offset(x: offset.x, y: offset.y)
+                .clipped()
+        }
     }
 }
 
