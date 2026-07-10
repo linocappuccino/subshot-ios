@@ -71,11 +71,13 @@ struct ShotListView: View {
     /// — and (b) visually enlarges/snapshots the source view for its preview,
     /// which distorted this app's custom card layout; a plain
     /// .confirmationDialog never resizes the tile it was triggered from).
-    /// .contextMenu and .draggable also compete for the same long-press
-    /// gesture on iOS, which is the likely reason dragging scene tiles
-    /// wasn't reliably starting at all — onLongPressGesture's own
-    /// maximumDistance naturally defers to .draggable once the finger
-    /// actually moves, instead of the two systems fighting over the touch.
+    /// .contextMenu and .draggable also compete exclusively for the same
+    /// long-press gesture on iOS — confirmed on-device: with a plain
+    /// .onLongPressGesture in place of .contextMenu, .draggable's own
+    /// internal long-press recognizer won every time and the menu never
+    /// appeared at all. Triggered via .simultaneousGesture(LongPressGesture)
+    /// instead (see sceneTile etc.) — that tells SwiftUI to recognize it
+    /// alongside .draggable rather than compete with it for the touch.
     @State private var sceneMenuTarget: Scene?
     @State private var sceneToDelete: Scene?
     @State private var sectionMenuTarget: SceneSection?
@@ -85,6 +87,14 @@ struct ShotListView: View {
     /// sceneCard). Not "which scene is being dragged": .draggable() doesn't
     /// expose a drag-started callback, only drop-target hover does.
     @State private var dropTargetSceneId: String?
+    /// Same idea as dropTargetSceneId, for section headers — sections had no
+    /// drag hover indicator at all before, only scene tiles did ("es braucht
+    /// auch einen blaue Indikator-Linie wenn man Abschnitte verschiebt").
+    /// `nil` key = the "Ohne Abschnitt" pseudo-section (it can't actually be
+    /// a drop target for a dragged section — see sectionHeader — but shares
+    /// the same sentinel-key convention as isSectionCollapsed for
+    /// consistency, harmless since it never gets set).
+    @State private var dropTargetSectionId: String?
     /// Which completed ("im Kasten") scenes are temporarily expanded back to
     /// full detail — collapsed is the default for any completed scene (see
     /// sceneCard/sceneCollapsedRow), tapping one adds it here to "peek" at
@@ -492,6 +502,19 @@ struct ShotListView: View {
     @ViewBuilder
     private func sectionGroup(section: SceneSection?) -> some View {
         VStack(alignment: .leading, spacing: 10) {
+            // Landing indicator for a dragged section — same accent-color
+            // capsule sceneCard already shows for dragged scenes, just
+            // driven by dropTargetSectionId instead. "Ohne Abschnitt" can
+            // never actually be the target (see sectionHeader), so this is
+            // effectively a no-op there, but written the same way as every
+            // other section for consistency.
+            if let section, dropTargetSectionId == section.id {
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(height: 3)
+                    .padding(.horizontal, 20)
+                    .transition(.opacity)
+            }
             sectionHeader(section: section)
             if let section {
                 sectionProjectInfoArea(section: section)
@@ -579,10 +602,15 @@ struct ShotListView: View {
             row
                 .draggable("section:\(section.id)")
                 .dropDestination(for: String.self) { ids, _ in
-                    guard let raw = ids.first, raw.hasPrefix("section:") else { return }
+                    guard let raw = ids.first, raw.hasPrefix("section:") else { return false }
                     let draggedId = String(raw.dropFirst("section:".count))
-                    guard draggedId != section.id else { return }
+                    guard draggedId != section.id else { return false }
                     Task { await viewModel.reorderSection(draggedId, before: section.id) }
+                    return true
+                } isTargeted: { targeted in
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        dropTargetSectionId = targeted ? section.id : (dropTargetSectionId == section.id ? nil : dropTargetSectionId)
+                    }
                 }
         } else {
             row
@@ -619,14 +647,24 @@ struct ShotListView: View {
         .padding(.horizontal, 16)
         .contentShape(Rectangle())
         .onTapGesture { toggleSectionCollapse(section) }
-        .onLongPressGesture(minimumDuration: 0.45, maximumDistance: 15) {
-            if let section {
-                #if canImport(UIKit)
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                #endif
-                sectionMenuTarget = section
+        // .simultaneousGesture, not .onLongPressGesture — the latter
+        // competes exclusively with .draggable's own internal long-press
+        // recognizer (attached by sectionHeader below) for the same touch,
+        // and .draggable was consistently winning: the long-press menu
+        // never appeared at all ("man hat keine Möglichkeit eine Kachel zu
+        // löschen"). .simultaneousGesture tells SwiftUI to recognize this
+        // alongside whatever else is watching the same view instead of
+        // competing for it exclusively.
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.45).onEnded { _ in
+                if let section {
+                    #if canImport(UIKit)
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    #endif
+                    sectionMenuTarget = section
+                }
             }
-        }
+        )
     }
 
     /// No "Einstellung hinzufügen" row here (unlike sceneCard) — new shots
@@ -757,12 +795,14 @@ struct ShotListView: View {
         .onTapGesture {
             withAnimation(.easeInOut(duration: 0.25)) { _ = expandedCompletedSceneIds.insert(scene.id) }
         }
-        .onLongPressGesture(minimumDuration: 0.45, maximumDistance: 15) {
-            #if canImport(UIKit)
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            #endif
-            sceneMenuTarget = scene
-        }
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.45).onEnded { _ in
+                #if canImport(UIKit)
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                #endif
+                sceneMenuTarget = scene
+            }
+        )
     }
 
     /// Image + header + description grouped as one tappable unit — tap
@@ -879,15 +919,6 @@ struct ShotListView: View {
                 imKastenButton(scene: scene)
             }
         }
-        // LazyVGrid doesn't equalize cell heights across a row on its own —
-        // each column sizes to its own content. A fixed height (generous
-        // enough for image + header + a few lines of content + the action
-        // row) is what actually guarantees "Kacheln müssen immer gleich
-        // gross aussehen" instead of just making it likely most of the time.
-        // May need retuning once seen on a real device — this number is a
-        // reasoned estimate, not a measured one.
-        .frame(height: columnLayout ? 420 : nil, alignment: .top)
-        .clipped()
         .contentShape(Rectangle())
         .onTapGesture {
             // A completed scene shown expanded (the user tapped its
@@ -900,12 +931,14 @@ struct ShotListView: View {
                 editingScene = .some(scene)
             }
         }
-        .onLongPressGesture(minimumDuration: 0.45, maximumDistance: 15) {
-            #if canImport(UIKit)
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            #endif
-            sceneMenuTarget = scene
-        }
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.45).onEnded { _ in
+                #if canImport(UIKit)
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                #endif
+                sceneMenuTarget = scene
+            }
+        )
         .draggable("scene:\(scene.id)") {
             sceneDragPreview(scene: scene)
         }
@@ -1115,12 +1148,14 @@ struct ShotListView: View {
         }
             .contentShape(Rectangle())
             .onTapGesture { selectedShot = shot }
-            .onLongPressGesture(minimumDuration: 0.45, maximumDistance: 15) {
-                #if canImport(UIKit)
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                #endif
-                shotMenuTarget = shot
-            }
+            .simultaneousGesture(
+                LongPressGesture(minimumDuration: 0.45).onEnded { _ in
+                    #if canImport(UIKit)
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    #endif
+                    shotMenuTarget = shot
+                }
+            )
             .draggable(shot.id)
             .dropDestination(for: String.self) { ids, _ in
                 guard let dragged = ids.first, dragged != shot.id else { return }

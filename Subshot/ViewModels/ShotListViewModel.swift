@@ -447,9 +447,14 @@ final class ShotListViewModel: ObservableObject {
     func moveShot(_ shotId: String, toScene sceneId: String?, before targetId: String? = nil) async {
         guard let shot = shots.first(where: { $0.id == shotId }) else { return }
         var destination = shots(in: scenes.first { $0.id == sceneId })
+        // Target's position is read from `destination` BEFORE the dragged
+        // shot is removed — see reorderScene's doc comment for why: finding
+        // it AFTER removal made "insert before target" a silent no-op for
+        // the most common gesture (dragging onto the very next shot below).
+        let targetIndex = targetId.flatMap { id in destination.firstIndex(where: { $0.id == id }) }
         destination.removeAll { $0.id == shotId }
-        if let targetId, let idx = destination.firstIndex(where: { $0.id == targetId }) {
-            destination.insert(shot, at: idx)
+        if let targetIndex {
+            destination.insert(shot, at: min(targetIndex, destination.count))
         } else {
             destination.append(shot)
         }
@@ -471,9 +476,21 @@ final class ShotListViewModel: ObservableObject {
     func reorderScene(_ sceneId: String, before targetId: String?) async {
         var list = scenes
         guard let scene = list.first(where: { $0.id == sceneId }) else { return }
+        // Target's position is read from `scenes` (the ORIGINAL, pre-removal
+        // array), not from `list` after removing the dragged scene. Finding
+        // it in the post-removal list made "insert before target" a silent
+        // no-op for the single most common drag gesture — dragging a scene
+        // onto the very next scene below it: removing the dragged scene
+        // already shifts every later scene's index down by one, so
+        // re-finding the target after that and inserting "before" it landed
+        // the scene right back where it started (reported: "kann Kacheln
+        // nach oben verschieben aber nicht nach unten"). Using the original
+        // index doesn't have that problem — same fix already applied to
+        // reorderSection below, and to the web client's reorderSections.
+        let targetIndex = targetId.flatMap { id in scenes.firstIndex(where: { $0.id == id }) }
         list.removeAll { $0.id == sceneId }
-        if let targetId, let idx = list.firstIndex(where: { $0.id == targetId }) {
-            list.insert(scene, at: idx)
+        if let targetIndex {
+            list.insert(scene, at: min(targetIndex, list.count))
         } else {
             list.append(scene)
         }
