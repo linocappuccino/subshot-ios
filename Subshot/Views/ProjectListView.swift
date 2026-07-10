@@ -149,30 +149,33 @@ struct ProjectListView: View {
         if folderId == nil {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button { showingNotifications = true } label: {
-                    // Toolbar items clip content to the label's own natural
-                    // size — an .offset() badge meant to overflow past the
-                    // bell's edge gets cut off there instead of floating
-                    // above it (Lino, 2026-07-10: "die Zahl... sieht so aus
-                    // als würd der rote Kreis mit der Zahl im Glockekreis
-                    // sein und nicht darüber"). Fix: give the ZStack an
-                    // explicit frame bigger than the bell glyph itself, so
-                    // the badge has real layout room inside it instead of
-                    // relying on visual overflow the toolbar then clips.
-                    ZStack(alignment: .topTrailing) {
-                        Image(systemName: "bell")
-                            .frame(width: 22, height: 22)
-                        if !viewModel.notifications.isEmpty {
-                            Text(viewModel.notifications.count > 99 ? "99+" : "\(viewModel.notifications.count)")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 4)
-                                .frame(minWidth: 16, minHeight: 16)
-                                .background(Color.red)
-                                .clipShape(Capsule())
-                                .offset(x: 6, y: -4)
+                    // .offset() moves a view visually WITHOUT changing how
+                    // much space its parent thinks it needs — a toolbar item
+                    // still clips to that original (unmoved) layout size, so
+                    // an offset badge gets cut off right at the bell's edge
+                    // instead of sitting on top of it, no matter how big a
+                    // .frame() wraps around the whole thing (tried that
+                    // first, 2026-07-10 — just shifted/clipped the badge
+                    // differently, still wrong: Lino "sieht scheisse aus").
+                    // .alignmentGuide DOES change what the parent counts as
+                    // this view's bounds, so the ZStack actually grows to
+                    // include the badge instead of clipping it — the
+                    // correct fix for a badge that needs to visibly sit on
+                    // an icon's edge inside a toolbar.
+                    Image(systemName: "bell")
+                        .overlay(alignment: .topTrailing) {
+                            if !viewModel.notifications.isEmpty {
+                                Text(viewModel.notifications.count > 99 ? "99+" : "\(viewModel.notifications.count)")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 4)
+                                    .frame(minWidth: 16, minHeight: 16)
+                                    .background(Color.red)
+                                    .clipShape(Capsule())
+                                    .alignmentGuide(.top) { d in d[.bottom] * 0.6 }
+                                    .alignmentGuide(.trailing) { d in d[.leading] + d.width * 0.4 }
+                            }
                         }
-                    }
-                    .frame(width: 30, height: 30)
                 }
             }
         }
