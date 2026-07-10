@@ -554,9 +554,9 @@ struct ShotListView: View {
                 Button {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
                         if collapsedSections.contains(section.id) {
-                            collapsedSections.remove(section.id)
+                            _ = collapsedSections.remove(section.id)
                         } else {
-                            collapsedSections.insert(section.id)
+                            _ = collapsedSections.insert(section.id)
                         }
                     }
                 } label: {
@@ -715,7 +715,7 @@ struct ShotListView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.25)) { expandedCompletedSceneIds.insert(scene.id) }
+            withAnimation(.easeInOut(duration: 0.25)) { _ = expandedCompletedSceneIds.insert(scene.id) }
         }
         .contextMenu {
             Button {
@@ -834,7 +834,7 @@ struct ShotListView: View {
             // opening the edit sheet — editing it goes through the
             // long-press menu below instead, same as the collapsed row.
             if scene.completed {
-                withAnimation(.easeInOut(duration: 0.25)) { expandedCompletedSceneIds.remove(scene.id) }
+                withAnimation(.easeInOut(duration: 0.25)) { _ = expandedCompletedSceneIds.remove(scene.id) }
             } else {
                 editingScene = .some(scene)
             }
