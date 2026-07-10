@@ -182,6 +182,15 @@ final class ShotListViewModel: ObservableObject {
         } else {
             list.append(section)
         }
+        // Apply the reordered list locally FIRST (same pattern as
+        // reorderScene) — the previous version only ever mutated `sections`
+        // by id as each per-item PATCH response trickled in, so the visible
+        // order didn't change until every request in the loop had round-
+        // tripped, and a single slow/failed request left it stuck exactly
+        // where it started ("springt zurück in die alte Position").
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+            sections = list
+        }
         do {
             for (index, sec) in list.enumerated() where sec.sortOrder != index {
                 let updated = try await APIClient.shared.patchSection(sec.id, sortOrder: index)
@@ -189,7 +198,6 @@ final class ShotListViewModel: ObservableObject {
                     sections[i] = updated
                 }
             }
-            sections.sort { $0.sortOrder < $1.sortOrder }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -377,6 +385,24 @@ final class ShotListViewModel: ObservableObject {
         scenes[sceneIndex].dialogues.removeAll { $0.id == dialogue.id }
         do {
             try await APIClient.shared.deleteSceneDialogue(dialogue.id)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Scenes in a deleted section fall back to "no section" server-side
+    /// (see deleteSection above) — a deleted SCENE's own shots follow the
+    /// same pattern (Shot.scene_id is ON DELETE SET NULL), landing in the
+    /// unassigned shot list instead of vanishing. There was previously no
+    /// way to delete a scene at all from the UI (see ShotListView's
+    /// sceneMenuTarget) even though the backend endpoint already existed.
+    func deleteScene(_ scene: Scene) async {
+        scenes.removeAll { $0.id == scene.id }
+        for index in shots.indices where shots[index].sceneId == scene.id {
+            shots[index].sceneId = nil
+        }
+        do {
+            try await APIClient.shared.deleteScene(scene.id)
         } catch {
             errorMessage = error.localizedDescription
         }

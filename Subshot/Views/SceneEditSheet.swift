@@ -356,10 +356,20 @@ private struct SceneLocationSection: View {
     @State private var query = ""
     @State private var isEditing = false
 
+    /// `scene` is a snapshot captured once when the sheet opened (SceneEditSheet's
+    /// `existing` never re-reads from the view model) — selecting an address updates
+    /// the backend immediately (see `select` below), but without this, the sheet kept
+    /// showing the stale pre-selection state (empty search field again) until it was
+    /// dismissed and reopened, which read as "address isn't applied until Fertig".
+    /// Same fix already applied to dialogues via `liveDialogues` in the parent sheet.
+    private var liveScene: Scene {
+        viewModel.scenes.first(where: { $0.id == scene.id }) ?? scene
+    }
+
     var body: some View {
-        if let address = scene.locationAddress, !isEditing {
+        if let address = liveScene.locationAddress, !isEditing {
             VStack(alignment: .leading, spacing: 8) {
-                if let lat = scene.locationLat, let lng = scene.locationLng {
+                if let lat = liveScene.locationLat, let lng = liveScene.locationLng {
                     SceneMapThumbnail(lat: lat, lng: lng, size: 200)
                         .frame(maxWidth: .infinity)
                 }

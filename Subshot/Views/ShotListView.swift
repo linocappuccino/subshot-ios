@@ -59,7 +59,27 @@ struct ShotListView: View {
     @State private var creatingSectionWithProjectInfo = false
     @State private var editingSection: SceneSection??  // same nesting convention as editingScene
     @State private var sectionToDelete: SceneSection?
+    /// "Ohne Abschnitt" has no SceneSection id of its own to key off of (see
+    /// isSectionCollapsed/toggleSectionCollapse) — this sentinel stands in
+    /// for it so the same Set can track every section's collapsed state,
+    /// including the unsectioned bucket.
+    private let unassignedSectionKey = "__unassigned__"
     @State private var collapsedSections: Set<String> = []
+    /// Long-press target for the Bearbeiten/Löschen action sheet — replaces
+    /// the old .contextMenu on scene tiles (which (a) only ever offered
+    /// Bearbeiten, never Löschen — there was no way to delete a scene at all
+    /// — and (b) visually enlarges/snapshots the source view for its preview,
+    /// which distorted this app's custom card layout; a plain
+    /// .confirmationDialog never resizes the tile it was triggered from).
+    /// .contextMenu and .draggable also compete for the same long-press
+    /// gesture on iOS, which is the likely reason dragging scene tiles
+    /// wasn't reliably starting at all — onLongPressGesture's own
+    /// maximumDistance naturally defers to .draggable once the finger
+    /// actually moves, instead of the two systems fighting over the touch.
+    @State private var sceneMenuTarget: Scene?
+    @State private var sceneToDelete: Scene?
+    @State private var sectionMenuTarget: SceneSection?
+    @State private var shotMenuTarget: Shot?
     /// Which scene tile is currently hovered by an in-flight drag — drives
     /// the thin accent-color landing indicator above that tile (see
     /// sceneCard). Not "which scene is being dragged": .draggable() doesn't
@@ -308,7 +328,61 @@ struct ShotListView: View {
                 }
             }
         } message: {
-            Text("\"\(sectionToDelete?.name ?? "")\" wird gelöscht. Enthaltene Szenen bleiben erhalten und landen unter \"Ohne Abschnitt\".")
+            // Scenes are NOT deleted (backend: Scene.section_id is
+            // ON DELETE SET NULL) — they fall back to "Ohne Abschnitt". But
+            // if this section carries its own Projektinfo (Drehdatum/Ort/
+            // Todo-Listen, see SectionInfoBox), that IS deleted for good
+            // (TodoList.section_id is ON DELETE CASCADE) — worth spelling
+            // out explicitly rather than leaving it implied, since visually
+            // that info box reads as its own tile too.
+            Text(sectionToDelete?.hasProjectInfo == true
+                 ? "\"\(sectionToDelete?.name ?? "")\" wird gelöscht. Enthaltene Szenen bleiben erhalten und landen unter \"Ohne Abschnitt\" — die Projektinfo dieses Abschnitts (Drehdatum, Ort, Todo-Listen) wird aber endgültig gelöscht."
+                 : "\"\(sectionToDelete?.name ?? "")\" wird gelöscht. Enthaltene Szenen bleiben erhalten und landen unter \"Ohne Abschnitt\".")
+        }
+        .confirmationDialog("Szene", isPresented: Binding(
+            get: { sceneMenuTarget != nil },
+            set: { if !$0 { sceneMenuTarget = nil } }
+        ), presenting: sceneMenuTarget) { scene in
+            Button("Bearbeiten") { editingScene = .some(scene) }
+            if scene.completed {
+                Button("Nicht mehr im Kasten") {
+                    Task { await viewModel.setSceneCompleted(scene, completed: false) }
+                }
+            }
+            Button("Löschen", role: .destructive) { sceneToDelete = scene }
+            Button("Abbrechen", role: .cancel) {}
+        }
+        .alert("Szene löschen?", isPresented: Binding(
+            get: { sceneToDelete != nil },
+            set: { if !$0 { sceneToDelete = nil } }
+        )) {
+            Button("Abbrechen", role: .cancel) {}
+            Button("Löschen", role: .destructive) {
+                if let scene = sceneToDelete {
+                    Task { await viewModel.deleteScene(scene) }
+                }
+            }
+        } message: {
+            let name = sceneToDelete?.name?.isEmpty == false ? sceneToDelete!.name! : "Unbenannte Szene"
+            Text("\"\(name)\" wird endgültig gelöscht, inklusive aller Einstellungen darin.")
+        }
+        .confirmationDialog("Abschnitt", isPresented: Binding(
+            get: { sectionMenuTarget != nil },
+            set: { if !$0 { sectionMenuTarget = nil } }
+        ), presenting: sectionMenuTarget) { section in
+            Button("Umbenennen") { editingSection = .some(section) }
+            Button("Löschen", role: .destructive) { sectionToDelete = section }
+            Button("Abbrechen", role: .cancel) {}
+        }
+        .confirmationDialog("Einstellung", isPresented: Binding(
+            get: { shotMenuTarget != nil },
+            set: { if !$0 { shotMenuTarget = nil } }
+        ), presenting: shotMenuTarget) { shot in
+            Button(shot.status == .done ? "Als offen markieren" : "Erledigt") {
+                Task { await viewModel.toggleDone(shot) }
+            }
+            Button("Löschen", role: .destructive) { viewModel.deleteWithUndo(shot) }
+            Button("Abbrechen", role: .cancel) {}
         }
         .sheet(isPresented: Binding(
             get: { editingScene != nil },
@@ -440,28 +514,29 @@ struct ShotListView: View {
         } else if horizontalSizeClass == .regular {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: ipadColumnCount), spacing: 16) {
                 ForEach(scenes) { scene in
-                    sceneCard(scene: scene)
+                    sceneCard(scene: scene, columnLayout: ipadColumnCount > 1)
                 }
             }
             .padding(.horizontal, 16)
         } else if isPad && isGridMode {
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
                 ForEach(scenes) { scene in
-                    sceneCard(scene: scene)
+                    sceneCard(scene: scene, columnLayout: true)
                 }
             }
             .padding(.horizontal, 16)
         } else {
             ForEach(scenes) { scene in
-                sceneCard(scene: scene)
+                sceneCard(scene: scene, columnLayout: false)
             }
         }
     }
 
     /// `section == nil` renders the "Ohne Abschnitt" bucket — only shown at
-    /// all once at least one real section exists (see body above), and
-    /// always expanded (no collapse toggle) since it has no identity of its
-    /// own to persist a collapsed state against.
+    /// all once at least one real section exists (see body above). Uses
+    /// unassignedSectionKey to participate in the same collapse tracking as
+    /// real sections (see isSectionCollapsed/toggleSectionCollapse) even
+    /// though it has no SceneSection id of its own.
     @ViewBuilder
     private func sectionGroup(section: SceneSection?) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -469,7 +544,7 @@ struct ShotListView: View {
             if let section {
                 sectionProjectInfoArea(section: section)
             }
-            if section == nil || !collapsedSections.contains(section!.id) {
+            if !isSectionCollapsed(section) {
                 sceneGrid(viewModel.scenes(in: section))
                 // Always-present drop target INSIDE the section, below its
                 // scenes — an empty (or collapsed) section previously had
@@ -478,6 +553,21 @@ struct ShotListView: View {
                 // explicit contentShape so the whole area (not just where
                 // something happens to be drawn) accepts the drop.
                 sectionDropZone(section: section)
+            }
+        }
+    }
+
+    private func isSectionCollapsed(_ section: SceneSection?) -> Bool {
+        collapsedSections.contains(section?.id ?? unassignedSectionKey)
+    }
+
+    private func toggleSectionCollapse(_ section: SceneSection?) {
+        let key = section?.id ?? unassignedSectionKey
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+            if collapsedSections.contains(key) {
+                collapsedSections.remove(key)
+            } else {
+                collapsedSections.insert(key)
             }
         }
     }
@@ -547,28 +637,21 @@ struct ShotListView: View {
         }
     }
 
+    /// Whole row (chevron + name, "Ohne Abschnitt" included) toggles
+    /// collapse on tap now, not just the small chevron hit target — and
+    /// long-press opens Umbenennen/Löschen instead of a separate
+    /// ellipsis-icon Menu button (see sceneMenuTarget's doc comment on why
+    /// icon-triggered menus were replaced project-wide). "Ohne Abschnitt"
+    /// has nothing to rename/delete, so it only gets the tap-to-collapse
+    /// behavior, no long-press action.
     @ViewBuilder
     private func sectionHeaderRow(section: SceneSection?) -> some View {
         HStack {
-            if let section {
-                Button {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
-                        if collapsedSections.contains(section.id) {
-                            _ = collapsedSections.remove(section.id)
-                        } else {
-                            _ = collapsedSections.insert(section.id)
-                        }
-                    }
-                } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(collapsedSections.contains(section.id) ? 0 : 90))
-                        .frame(width: 30, height: 30)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+                .rotationEffect(.degrees(isSectionCollapsed(section) ? 0 : 90))
+                .frame(width: 30, height: 30)
             Text(section?.name ?? "Ohne Abschnitt")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
@@ -580,26 +663,18 @@ struct ShotListView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            if let section {
-                Menu {
-                    Button {
-                        editingSection = .some(section)
-                    } label: {
-                        Label("Umbenennen", systemImage: "pencil")
-                    }
-                    Button(role: .destructive) {
-                        sectionToDelete = section
-                    } label: {
-                        Label("Löschen", systemImage: "trash")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .foregroundStyle(.secondary)
-                }
-            }
         }
         .padding(.horizontal, 16)
         .contentShape(Rectangle())
+        .onTapGesture { toggleSectionCollapse(section) }
+        .onLongPressGesture(minimumDuration: 0.45, maximumDistance: 15) {
+            if let section {
+                #if canImport(UIKit)
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                #endif
+                sectionMenuTarget = section
+            }
+        }
     }
 
     /// No "Einstellung hinzufügen" row here (unlike sceneCard) — new shots
@@ -627,8 +702,21 @@ struct ShotListView: View {
         scene.completed && !expandedCompletedSceneIds.contains(scene.id)
     }
 
+    /// `columnLayout` is true whenever this card renders inside a 2+ column
+    /// grid (see sceneGrid) rather than the default single full-width
+    /// column — at half (or less) width, sceneTile's normally-unlimited
+    /// description/dialogue text wrapped into far more lines than in the
+    /// single-column layout, and since LazyVGrid does NOT equalize row
+    /// heights across cells the way a description list would, cards ended
+    /// up wildly different heights depending on how much text each scene
+    /// happened to have. See sceneTile's own columnLayout handling for the
+    /// line-limit/fixed-height fix. The per-scene shot list + "Einstellung
+    /// hinzufügen" row is hidden here too in that mode, for the same
+    /// reason (an arbitrary number of shot cards would defeat any attempt
+    /// at a uniform tile height) — full detail incl. shots is still one tap
+    /// away via the edit sheet, same reasoning sceneCompactTile already uses.
     @ViewBuilder
-    private func sceneCard(scene: Scene) -> some View {
+    private func sceneCard(scene: Scene, columnLayout: Bool) -> some View {
         let collapsed = isCollapsed(scene)
         VStack(alignment: .leading, spacing: 14) {
             // Landing indicator: shows exactly where a dragged scene will
@@ -645,13 +733,13 @@ struct ShotListView: View {
             if collapsed {
                 sceneCollapsedRow(scene: scene)
             } else {
-                sceneTile(scene: scene)
+                sceneTile(scene: scene, columnLayout: columnLayout)
                 // Zwischenschritt: no shot list at all, not even the add-row
                 // — it's a lightweight connective beat, not a shootable
                 // scene. Also hidden while collapsed above, along with
                 // everything else — a collapsed "im Kasten" row is meant to
                 // be a one-line summary, not a partial card.
-                if !scene.isIntermediateStep {
+                if !scene.isIntermediateStep, !columnLayout {
                     ForEach(viewModel.shots(in: scene)) { shot in
                         shotCardView(shot: shot, sceneId: scene.id)
                     }
@@ -681,7 +769,7 @@ struct ShotListView: View {
     /// completed background. Tap expands back to the full sceneTile (see
     /// isCollapsed/expandedCompletedSceneIds); editing still needs to work
     /// without expanding first, so it's reachable via long-press here too,
-    /// same as the full tile once completed (see sceneTile's contextMenu).
+    /// same as the full tile once completed (see sceneMenuTarget).
     @ViewBuilder
     private func sceneCollapsedRow(scene: Scene) -> some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -717,17 +805,11 @@ struct ShotListView: View {
         .onTapGesture {
             withAnimation(.easeInOut(duration: 0.25)) { _ = expandedCompletedSceneIds.insert(scene.id) }
         }
-        .contextMenu {
-            Button {
-                editingScene = .some(scene)
-            } label: {
-                Label("Bearbeiten", systemImage: "pencil")
-            }
-            Button {
-                Task { await viewModel.setSceneCompleted(scene, completed: false) }
-            } label: {
-                Label("Nicht mehr im Kasten", systemImage: "arrow.uturn.backward")
-            }
+        .onLongPressGesture(minimumDuration: 0.45, maximumDistance: 15) {
+            #if canImport(UIKit)
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            #endif
+            sceneMenuTarget = scene
         }
     }
 
@@ -747,11 +829,17 @@ struct ShotListView: View {
     /// trusting it; if the same hang reappears, revert to a menu-based
     /// reorder rather than debugging blind from this server.
     @ViewBuilder
-    private func sceneTile(scene: Scene) -> some View {
+    private func sceneTile(scene: Scene, columnLayout: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             if let imageUrl = scene.imageUrl {
                 AsyncShotThumbnail(path: imageUrl, size: nil, lockAspectRatio: true)
                     .frame(maxWidth: .infinity)
+                    // Fixed image height in column layout (same value
+                    // sceneCompactTile already uses) — at half tile width the
+                    // aspect-locked thumbnail would otherwise still vary in
+                    // height card to card depending on the source photo's
+                    // aspect ratio, working against "immer gleich gross".
+                    .frame(height: columnLayout ? 100 : nil)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             sceneHeader(scene: scene)
@@ -766,15 +854,20 @@ struct ShotListView: View {
             // new dividers, and the bottom row as siblings, so ungrouped this
             // would push past ViewBuilder's per-block child limit.
             Group {
-                // No lineLimit here on purpose — description/dialogue must
-                // always show in full, with whatever line breaks the person
-                // typed (Text renders literal "\n"s as-is; nothing strips
-                // them on the way in from SceneEditSheet's TextField).
+                // No lineLimit in the single-column layout — description/
+                // dialogue show in full there, with whatever line breaks the
+                // person typed. In column layout (2+ columns, see sceneCard)
+                // the same amount of text wraps into far more lines at half
+                // width, which is what made grid-mode cards balloon to wildly
+                // different heights — capped here instead so every card in
+                // that mode reaches a similar, predictable size (full detail
+                // is always one tap away via the edit sheet regardless).
                 if let description = scene.description, !description.isEmpty {
                     Text(description)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(columnLayout ? 3 : nil)
+                        .fixedSize(horizontal: false, vertical: !columnLayout)
                 }
                 if let description = scene.description, !description.isEmpty,
                    let dialogue = scene.dialogue, !dialogue.isEmpty {
@@ -784,7 +877,8 @@ struct ShotListView: View {
                     Label(dialogue, systemImage: "quote.bubble")
                         .font(.subheadline.italic())
                         .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(columnLayout ? 2 : nil)
+                        .fixedSize(horizontal: false, vertical: !columnLayout)
                 }
                 // Individually-checkable dialogue lines, stacked under the
                 // legacy single-dialogue field above — read-only here on
@@ -792,13 +886,19 @@ struct ShotListView: View {
                 // (tap into the scene first) so the main tile isn't cluttered
                 // with an inline text field; this list just shows what's
                 // already there so it can be checked off without opening the
-                // sheet.
+                // sheet. Capped to the first 2 in column layout, same
+                // reasoning as description/dialogue above.
                 if !scene.isIntermediateStep, !scene.dialogues.isEmpty {
                     Label("Dialog", systemImage: "quote.bubble")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
-                    ForEach(scene.dialogues) { dialogue in
+                    ForEach(columnLayout ? Array(scene.dialogues.prefix(2)) : scene.dialogues) { dialogue in
                         dialogueRow(dialogue: dialogue, scene: scene)
+                    }
+                    if columnLayout && scene.dialogues.count > 2 {
+                        Text("+\(scene.dialogues.count - 2) weitere")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 if let address = scene.locationAddress, let lat = scene.locationLat, let lng = scene.locationLng {
@@ -827,6 +927,15 @@ struct ShotListView: View {
                 imKastenButton(scene: scene)
             }
         }
+        // LazyVGrid doesn't equalize cell heights across a row on its own —
+        // each column sizes to its own content. A fixed height (generous
+        // enough for image + header + a few lines of content + the action
+        // row) is what actually guarantees "Kacheln müssen immer gleich
+        // gross aussehen" instead of just making it likely most of the time.
+        // May need retuning once seen on a real device — this number is a
+        // reasoned estimate, not a measured one.
+        .frame(height: columnLayout ? 420 : nil, alignment: .top)
+        .clipped()
         .contentShape(Rectangle())
         .onTapGesture {
             // A completed scene shown expanded (the user tapped its
@@ -839,12 +948,11 @@ struct ShotListView: View {
                 editingScene = .some(scene)
             }
         }
-        .contextMenu {
-            Button {
-                editingScene = .some(scene)
-            } label: {
-                Label("Bearbeiten", systemImage: "pencil")
-            }
+        .onLongPressGesture(minimumDuration: 0.45, maximumDistance: 15) {
+            #if canImport(UIKit)
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            #endif
+            sceneMenuTarget = scene
         }
         .draggable("scene:\(scene.id)") {
             sceneDragPreview(scene: scene)
@@ -1055,17 +1163,11 @@ struct ShotListView: View {
         }
             .contentShape(Rectangle())
             .onTapGesture { selectedShot = shot }
-            .contextMenu {
-                Button {
-                    Task { await viewModel.toggleDone(shot) }
-                } label: {
-                    Label(shot.status == .done ? "Als offen markieren" : "Erledigt", systemImage: "checkmark.circle")
-                }
-                Button(role: .destructive) {
-                    viewModel.deleteWithUndo(shot)
-                } label: {
-                    Label("Löschen", systemImage: "trash")
-                }
+            .onLongPressGesture(minimumDuration: 0.45, maximumDistance: 15) {
+                #if canImport(UIKit)
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                #endif
+                shotMenuTarget = shot
             }
             .draggable(shot.id)
             .dropDestination(for: String.self) { ids, _ in

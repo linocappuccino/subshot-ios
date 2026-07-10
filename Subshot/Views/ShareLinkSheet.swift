@@ -56,8 +56,21 @@ struct ShareLinkSheet: View {
                 }
 
                 Section {
+                    // The switch alone now fully controls protection — turning it off
+                    // while a password is active clears it immediately (see onChange
+                    // below). Previously there was ALSO a separate "Passwortschutz
+                    // entfernen" button further down that did the same thing, which
+                    // read as two different controls for one setting ("die kann man
+                    // mit einem Switch an oder ausmachen, darunter ist aber nochmal
+                    // eine Passwort-Meldung mit einem Schloss") — removed in favor of
+                    // just this one.
                     Toggle("Mit Passwort schützen", isOn: $isProtecting.animation())
                         .disabled(isLoading)
+                        .onChange(of: isProtecting) { _, newValue in
+                            if !newValue && hasPassword {
+                                Task { await clearPassword() }
+                            }
+                        }
                     if isProtecting {
                         SecureField(hasPassword ? "Neues Passwort (optional)" : "Passwort", text: $passwordText)
                         Button {
@@ -78,16 +91,6 @@ struct ShareLinkSheet: View {
                         Text("Aktiv — Besucher müssen das Passwort eingeben, bevor sie die Vorschau sehen.")
                     } else {
                         Text("Sinnvoll für Projekte/Kunden, wo nichts öffentlich einsehbar sein soll, auch nicht mit dem Link.")
-                    }
-                }
-
-                if hasPassword {
-                    Section {
-                        Button(role: .destructive) {
-                            Task { await clearPassword() }
-                        } label: {
-                            Label("Passwortschutz entfernen", systemImage: "lock.open")
-                        }
                     }
                 }
             }
