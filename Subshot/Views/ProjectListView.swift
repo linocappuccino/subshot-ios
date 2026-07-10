@@ -149,8 +149,18 @@ struct ProjectListView: View {
         if folderId == nil {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button { showingNotifications = true } label: {
+                    // Toolbar items clip content to the label's own natural
+                    // size — an .offset() badge meant to overflow past the
+                    // bell's edge gets cut off there instead of floating
+                    // above it (Lino, 2026-07-10: "die Zahl... sieht so aus
+                    // als würd der rote Kreis mit der Zahl im Glockekreis
+                    // sein und nicht darüber"). Fix: give the ZStack an
+                    // explicit frame bigger than the bell glyph itself, so
+                    // the badge has real layout room inside it instead of
+                    // relying on visual overflow the toolbar then clips.
                     ZStack(alignment: .topTrailing) {
                         Image(systemName: "bell")
+                            .frame(width: 22, height: 22)
                         if !viewModel.notifications.isEmpty {
                             Text(viewModel.notifications.count > 99 ? "99+" : "\(viewModel.notifications.count)")
                                 .font(.system(size: 10, weight: .bold))
@@ -159,9 +169,10 @@ struct ProjectListView: View {
                                 .frame(minWidth: 16, minHeight: 16)
                                 .background(Color.red)
                                 .clipShape(Capsule())
-                                .offset(x: 9, y: -9)
+                                .offset(x: 6, y: -4)
                         }
                     }
+                    .frame(width: 30, height: 30)
                 }
             }
         }
