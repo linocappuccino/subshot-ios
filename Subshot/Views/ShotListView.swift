@@ -65,23 +65,32 @@ struct ShotListView: View {
     /// including the unsectioned bucket.
     private let unassignedSectionKey = "__unassigned__"
     @State private var collapsedSections: Set<String> = []
-    /// Long-press target for the Bearbeiten/Löschen action sheet — replaces
-    /// the old .contextMenu on scene tiles (which (a) only ever offered
-    /// Bearbeiten, never Löschen — there was no way to delete a scene at all
-    /// — and (b) visually enlarges/snapshots the source view for its preview,
-    /// which distorted this app's custom card layout; a plain
-    /// .confirmationDialog never resizes the tile it was triggered from).
-    /// .contextMenu and .draggable also compete exclusively for the same
-    /// long-press gesture on iOS — confirmed on-device: with a plain
-    /// .onLongPressGesture in place of .contextMenu, .draggable's own
-    /// internal long-press recognizer won every time and the menu never
-    /// appeared at all. Triggered via .simultaneousGesture(LongPressGesture)
-    /// instead (see sceneTile etc.) — that tells SwiftUI to recognize it
-    /// alongside .draggable rather than compete with it for the touch.
-    @State private var sceneMenuTarget: Scene?
+    /// Delete-confirmation target — the actual Bearbeiten/Löschen menu itself
+    /// is .contextMenu now (see sceneTile etc.), triggered by the same
+    /// long-press. Two custom approaches were tried and rejected before
+    /// this, both confirmed broken on-device:
+    /// 1. Plain .contextMenu with its default auto-preview: visually
+    ///    enlarges/snapshots the source view, which distorted this app's
+    ///    custom card layout ("nicht vergrössern, sonst zerstört").
+    /// 2. A hand-rolled long-press via .onLongPressGesture, later
+    ///    .simultaneousGesture(LongPressGesture(...)): the menu never
+    ///    appeared at all with plain .onLongPressGesture (.draggable's own
+    ///    internal recognizer won every time, exclusive gestures compete);
+    ///    switching to .simultaneousGesture made the menu appear but then
+    ///    broke dragging itself (a bare LongPressGesture doesn't cancel on
+    ///    movement, so it kept firing mid-drag on any drag that took longer
+    ///    than minimumDuration — reported as "kann nicht mehr nach unten
+    ///    verschieben", which downward drags hit more since they typically
+    ///    cover more distance/time than a one-tile-up drag).
+    /// Landed on .contextMenu(menuItems:preview:) instead — Apple's actual
+    /// supported combo for this (UIKit's UIContextMenuInteraction and
+    /// UIDragInteraction are explicitly built to disambiguate "hold still"
+    /// vs "hold and move" on the same view), with a small custom `preview:`
+    /// (reusing sceneDragPreview, the same compact view already used for
+    /// the drag lift) instead of the default full-tile auto-snapshot, which
+    /// is what fixes the "enlarge/destroy" complaint without giving up the
+    /// native disambiguation.
     @State private var sceneToDelete: Scene?
-    @State private var sectionMenuTarget: SceneSection?
-    @State private var shotMenuTarget: Shot?
     /// Which scene tile is currently hovered by an in-flight drag — drives
     /// the thin accent-color landing indicator above that tile (see
     /// sceneCard). Not "which scene is being dragged": .draggable() doesn't
@@ -328,23 +337,17 @@ struct ShotListView: View {
             Text("Alle Shots wirklich im Kasten, hast du auch wirklich keine Aussage oder Szene vergessen?")
         }
         // All 5 of these (Abschnitt/Szene-löschen alerts, Szene/Abschnitt/
-        // Einstellung long-press action sheets) used to be inline modifiers
-        // right here — Xcode's "unable to type-check in reasonable time" on
-        // this file was this modifier chain (already long before these were
-        // added: sheets, other alerts, toolbar, task, etc., all on the same
-        // body expression) finally tipping over. Moved into their own
-        // ViewModifier below so the compiler only has to type-check one
-        // `.modifier(...)` call here instead of 5 more inline ones with
-        // embedded ternaries/ViewBuilder closures.
+        // Delete-confirmation alerts for Abschnitt/Szene — used to be inline
+        // modifiers right here — Xcode's "unable to type-check in
+        // reasonable time" on this file was this modifier chain (already
+        // long before these were added: sheets, other alerts, toolbar,
+        // task, etc., all on the same body expression) finally tipping
+        // over. Moved into their own ViewModifier below so the compiler
+        // only has to type-check one `.modifier(...)` call here.
         .modifier(TileActionDialogs(
             viewModel: viewModel,
             sectionToDelete: $sectionToDelete,
-            sceneMenuTarget: $sceneMenuTarget,
-            sceneToDelete: $sceneToDelete,
-            sectionMenuTarget: $sectionMenuTarget,
-            shotMenuTarget: $shotMenuTarget,
-            editingScene: $editingScene,
-            editingSection: $editingSection
+            sceneToDelete: $sceneToDelete
         ))
         .sheet(isPresented: Binding(
             get: { editingScene != nil },
@@ -600,6 +603,22 @@ struct ShotListView: View {
             // up and drop it on another section's header to reorder — same
             // haptic drag idiom as project/scene tiles.
             row
+                .contextMenu {
+                    Button {
+                        editingSection = .some(section)
+                    } label: {
+                        Label("Umbenennen", systemImage: "pencil")
+                    }
+                    Button(role: .destructive) {
+                        sectionToDelete = section
+                    } label: {
+                        Label("Löschen", systemImage: "trash")
+                    }
+                } preview: {
+                    Text(section.name)
+                        .font(.subheadline.weight(.semibold))
+                        .padding(12)
+                }
                 .draggable("section:\(section.id)")
                 .dropDestination(for: String.self) { ids, _ in
                     guard let raw = ids.first, raw.hasPrefix("section:") else { return false }
@@ -619,11 +638,11 @@ struct ShotListView: View {
 
     /// Whole row (chevron + name, "Ohne Abschnitt" included) toggles
     /// collapse on tap now, not just the small chevron hit target — and
-    /// long-press opens Umbenennen/Löschen instead of a separate
-    /// ellipsis-icon Menu button (see sceneMenuTarget's doc comment on why
-    /// icon-triggered menus were replaced project-wide). "Ohne Abschnitt"
-    /// has nothing to rename/delete, so it only gets the tap-to-collapse
-    /// behavior, no long-press action.
+    /// long-press opens Umbenennen/Löschen via .contextMenu, attached in
+    /// sectionHeader (see sceneToDelete's doc comment on why .contextMenu,
+    /// not a hand-rolled gesture). "Ohne Abschnitt" has nothing to
+    /// rename/delete, so it only gets the tap-to-collapse behavior, no
+    /// long-press menu.
     @ViewBuilder
     private func sectionHeaderRow(section: SceneSection?) -> some View {
         HStack {
@@ -647,24 +666,6 @@ struct ShotListView: View {
         .padding(.horizontal, 16)
         .contentShape(Rectangle())
         .onTapGesture { toggleSectionCollapse(section) }
-        // .simultaneousGesture, not .onLongPressGesture — the latter
-        // competes exclusively with .draggable's own internal long-press
-        // recognizer (attached by sectionHeader below) for the same touch,
-        // and .draggable was consistently winning: the long-press menu
-        // never appeared at all ("man hat keine Möglichkeit eine Kachel zu
-        // löschen"). .simultaneousGesture tells SwiftUI to recognize this
-        // alongside whatever else is watching the same view instead of
-        // competing for it exclusively.
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.45).onEnded { _ in
-                if let section {
-                    #if canImport(UIKit)
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    #endif
-                    sectionMenuTarget = section
-                }
-            }
-        )
     }
 
     /// No "Einstellung hinzufügen" row here (unlike sceneCard) — new shots
@@ -758,8 +759,8 @@ struct ShotListView: View {
     /// start date if there is one, on the same green tint as the full card's
     /// completed background. Tap expands back to the full sceneTile (see
     /// isCollapsed/expandedCompletedSceneIds); editing still needs to work
-    /// without expanding first, so it's reachable via long-press here too,
-    /// same as the full tile once completed (see sceneMenuTarget).
+    /// without expanding first, so it's reachable via long-press (.contextMenu)
+    /// here too, same as the full tile once completed.
     @ViewBuilder
     private func sceneCollapsedRow(scene: Scene) -> some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -795,14 +796,23 @@ struct ShotListView: View {
         .onTapGesture {
             withAnimation(.easeInOut(duration: 0.25)) { _ = expandedCompletedSceneIds.insert(scene.id) }
         }
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.45).onEnded { _ in
-                #if canImport(UIKit)
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                #endif
-                sceneMenuTarget = scene
+        .contextMenu {
+            Button {
+                editingScene = .some(scene)
+            } label: {
+                Label("Bearbeiten", systemImage: "pencil")
             }
-        )
+            Button {
+                Task { await viewModel.setSceneCompleted(scene, completed: false) }
+            } label: {
+                Label("Nicht mehr im Kasten", systemImage: "arrow.uturn.backward")
+            }
+            Button(role: .destructive) {
+                sceneToDelete = scene
+            } label: {
+                Label("Löschen", systemImage: "trash")
+            }
+        }
     }
 
     /// Image + header + description grouped as one tappable unit — tap
@@ -931,14 +941,27 @@ struct ShotListView: View {
                 editingScene = .some(scene)
             }
         }
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.45).onEnded { _ in
-                #if canImport(UIKit)
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                #endif
-                sceneMenuTarget = scene
+        .contextMenu {
+            Button {
+                editingScene = .some(scene)
+            } label: {
+                Label("Bearbeiten", systemImage: "pencil")
             }
-        )
+            if scene.completed {
+                Button {
+                    Task { await viewModel.setSceneCompleted(scene, completed: false) }
+                } label: {
+                    Label("Nicht mehr im Kasten", systemImage: "arrow.uturn.backward")
+                }
+            }
+            Button(role: .destructive) {
+                sceneToDelete = scene
+            } label: {
+                Label("Löschen", systemImage: "trash")
+            }
+        } preview: {
+            sceneDragPreview(scene: scene)
+        }
         .draggable("scene:\(scene.id)") {
             sceneDragPreview(scene: scene)
         }
@@ -1148,14 +1171,18 @@ struct ShotListView: View {
         }
             .contentShape(Rectangle())
             .onTapGesture { selectedShot = shot }
-            .simultaneousGesture(
-                LongPressGesture(minimumDuration: 0.45).onEnded { _ in
-                    #if canImport(UIKit)
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    #endif
-                    shotMenuTarget = shot
+            .contextMenu {
+                Button {
+                    Task { await viewModel.toggleDone(shot) }
+                } label: {
+                    Label(shot.status == .done ? "Als offen markieren" : "Erledigt", systemImage: "checkmark.circle")
                 }
-            )
+                Button(role: .destructive) {
+                    viewModel.deleteWithUndo(shot)
+                } label: {
+                    Label("Löschen", systemImage: "trash")
+                }
+            }
             .draggable(shot.id)
             .dropDestination(for: String.self) { ids, _ in
                 guard let dragged = ids.first, dragged != shot.id else { return }
@@ -1268,22 +1295,19 @@ struct ShotListView: View {
     /// already has the first one.
 }
 
-/// Bundles the Szene/Abschnitt/Einstellung long-press action sheets and their
-/// delete-confirmation alerts — pulled out of ShotListView.body (see the
-/// `.modifier(TileActionDialogs(...))` call there) purely to keep the
-/// compiler's job smaller; body was already a long chain of sheets/alerts/
-/// toolbar/task modifiers on one expression before these existed, and adding
-/// 5 more inline pushed Xcode into "unable to type-check this expression in
-/// reasonable time".
+/// Bundles the Abschnitt/Szene delete-confirmation alerts — pulled out of
+/// ShotListView.body (see the `.modifier(TileActionDialogs(...))` call
+/// there) purely to keep the compiler's job smaller; body was already a
+/// long chain of sheets/alerts/toolbar/task modifiers on one expression,
+/// and adding more inline pushed Xcode into "unable to type-check this
+/// expression in reasonable time". The Bearbeiten/Löschen/Umbenennen menus
+/// themselves are .contextMenu now, attached directly on each tile (see
+/// sceneToDelete's doc comment in ShotListView for why) — only the actual
+/// "really delete?" confirmation lives here.
 private struct TileActionDialogs: ViewModifier {
     @ObservedObject var viewModel: ShotListViewModel
     @Binding var sectionToDelete: SceneSection?
-    @Binding var sceneMenuTarget: Scene?
     @Binding var sceneToDelete: Scene?
-    @Binding var sectionMenuTarget: SceneSection?
-    @Binding var shotMenuTarget: Shot?
-    @Binding var editingScene: Scene??
-    @Binding var editingSection: SceneSection??
 
     func body(content: Content) -> some View {
         content
@@ -1300,19 +1324,6 @@ private struct TileActionDialogs: ViewModifier {
             } message: {
                 Text(sectionDeleteMessage)
             }
-            .confirmationDialog("Szene", isPresented: Binding(
-                get: { sceneMenuTarget != nil },
-                set: { if !$0 { sceneMenuTarget = nil } }
-            ), presenting: sceneMenuTarget) { scene in
-                Button("Bearbeiten") { editingScene = .some(scene) }
-                if scene.completed {
-                    Button("Nicht mehr im Kasten") {
-                        Task { await viewModel.setSceneCompleted(scene, completed: false) }
-                    }
-                }
-                Button("Löschen", role: .destructive) { sceneToDelete = scene }
-                Button("Abbrechen", role: .cancel) {}
-            }
             .alert("Szene löschen?", isPresented: Binding(
                 get: { sceneToDelete != nil },
                 set: { if !$0 { sceneToDelete = nil } }
@@ -1325,24 +1336,6 @@ private struct TileActionDialogs: ViewModifier {
                 }
             } message: {
                 Text(sceneDeleteMessage)
-            }
-            .confirmationDialog("Abschnitt", isPresented: Binding(
-                get: { sectionMenuTarget != nil },
-                set: { if !$0 { sectionMenuTarget = nil } }
-            ), presenting: sectionMenuTarget) { section in
-                Button("Umbenennen") { editingSection = .some(section) }
-                Button("Löschen", role: .destructive) { sectionToDelete = section }
-                Button("Abbrechen", role: .cancel) {}
-            }
-            .confirmationDialog("Einstellung", isPresented: Binding(
-                get: { shotMenuTarget != nil },
-                set: { if !$0 { shotMenuTarget = nil } }
-            ), presenting: shotMenuTarget) { shot in
-                Button(shot.status == .done ? "Als offen markieren" : "Erledigt") {
-                    Task { await viewModel.toggleDone(shot) }
-                }
-                Button("Löschen", role: .destructive) { viewModel.deleteWithUndo(shot) }
-                Button("Abbrechen", role: .cancel) {}
             }
     }
 

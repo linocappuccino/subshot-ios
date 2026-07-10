@@ -176,18 +176,27 @@ final class ShotListViewModel: ObservableObject {
     func reorderSection(_ sectionId: String, before targetId: String?) async {
         var list = sections
         guard let section = list.first(where: { $0.id == sectionId }) else { return }
+        // Target's position is read from `sections` (the ORIGINAL,
+        // pre-removal array) — same fix as reorderScene/moveShot below.
+        // Finding it in `list` AFTER removing the dragged section made
+        // "insert before target" a silent no-op for the most common drag
+        // (onto the very next section down): reported as "man sieht die
+        // blaue Linie aber es geht wieder zurück zur Ursprungsposition" —
+        // the drop DID fire, it just computed the same order it started
+        // with, so applying it below was a no-op.
+        let targetIndex = targetId.flatMap { id in sections.firstIndex(where: { $0.id == id }) }
         list.removeAll { $0.id == sectionId }
-        if let targetId, let idx = list.firstIndex(where: { $0.id == targetId }) {
-            list.insert(section, at: idx)
+        if let targetIndex {
+            list.insert(section, at: min(targetIndex, list.count))
         } else {
             list.append(section)
         }
         // Apply the reordered list locally FIRST (same pattern as
-        // reorderScene) — the previous version only ever mutated `sections`
+        // reorderScene) — an earlier version only ever mutated `sections`
         // by id as each per-item PATCH response trickled in, so the visible
         // order didn't change until every request in the loop had round-
         // tripped, and a single slow/failed request left it stuck exactly
-        // where it started ("springt zurück in die alte Position").
+        // where it started.
         withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
             sections = list
         }

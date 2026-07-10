@@ -6,9 +6,12 @@ import MapKit
 /// shoot date/location/todo lists, same fields/behavior as the project-level
 /// one) — shown inline in that section, moves with it when the section is
 /// reordered (no separate drag handle of its own). Unlike the top-level
-/// ProjectInfoBox, this one CAN be deleted (see the trash button in the
-/// header) — the original project-level box can't be moved or removed, only
-/// ones added to a section can.
+/// ProjectInfoBox, this one CAN be deleted — long-press for a Löschen menu
+/// (see header's .contextMenu below), same "no icon, long-press instead"
+/// convention as every other deletable tile in this screen (ShotListView's
+/// sceneToDelete doc comment has the full story on why) — the original
+/// project-level box can't be moved or removed, only ones added to a
+/// section can.
 struct SectionInfoBox: View {
     @ObservedObject var viewModel: ShotListViewModel
     let section: SceneSection
@@ -68,38 +71,35 @@ struct SectionInfoBox: View {
     }
 
     private var header: some View {
-        HStack(spacing: 4) {
-            Button {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
-                    isExpanded.toggle()
-                }
-            } label: {
-                HStack {
-                    Image(systemName: "info.circle.fill")
-                        .foregroundStyle(.secondary)
-                    Text("Projektinfo: \(section.name)")
-                        .font(.headline)
-                        .lineLimit(1)
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                }
-                .contentShape(Rectangle())
+        Button {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+                isExpanded.toggle()
             }
-            .buttonStyle(.plain)
-            // Only added info boxes get this — the original top-level
-            // ProjectInfoBox has no delete button at all, by design.
+        } label: {
+            HStack {
+                Image(systemName: "info.circle.fill")
+                    .foregroundStyle(.secondary)
+                Text("Projektinfo: \(section.name)")
+                    .font(.headline)
+                    .lineLimit(1)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        // Only added info boxes get this — the original top-level
+        // ProjectInfoBox has nothing to delete, by design. No icon: same
+        // long-press-for-Löschen convention as every other tile here.
+        .contextMenu {
             Button(role: .destructive) {
                 showingDeleteConfirm = true
             } label: {
-                Image(systemName: "trash")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+                Label("Löschen", systemImage: "trash")
             }
-            .buttonStyle(.plain)
         }
     }
 
