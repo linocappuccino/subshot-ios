@@ -58,6 +58,7 @@ struct ShotListView: View {
     /// project-info box in one step, see the sheet's onSave closure below.
     @State private var creatingSectionWithProjectInfo = false
     @State private var editingSection: SceneSection??  // same nesting convention as editingScene
+    @State private var sectionToDelete: SceneSection?
     @State private var collapsedSections: Set<String> = []
     /// Which scene tile is currently hovered by an in-flight drag — drives
     /// the thin accent-color landing indicator above that tile (see
@@ -295,6 +296,19 @@ struct ShotListView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text("Alle Shots wirklich im Kasten, hast du auch wirklich keine Aussage oder Szene vergessen?")
+        }
+        .alert("Abschnitt löschen?", isPresented: Binding(
+            get: { sectionToDelete != nil },
+            set: { if !$0 { sectionToDelete = nil } }
+        )) {
+            Button("Abbrechen", role: .cancel) {}
+            Button("Löschen", role: .destructive) {
+                if let section = sectionToDelete {
+                    Task { await viewModel.deleteSection(section) }
+                }
+            }
+        } message: {
+            Text("\"\(sectionToDelete?.name ?? "")\" wird gelöscht. Enthaltene Szenen bleiben erhalten und landen unter \"Ohne Abschnitt\".")
         }
         .sheet(isPresented: Binding(
             get: { editingScene != nil },
@@ -574,7 +588,7 @@ struct ShotListView: View {
                         Label("Umbenennen", systemImage: "pencil")
                     }
                     Button(role: .destructive) {
-                        Task { await viewModel.deleteSection(section) }
+                        sectionToDelete = section
                     } label: {
                         Label("Löschen", systemImage: "trash")
                     }
