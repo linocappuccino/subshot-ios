@@ -317,73 +317,25 @@ struct ShotListView: View {
         } message: {
             Text("Alle Shots wirklich im Kasten, hast du auch wirklich keine Aussage oder Szene vergessen?")
         }
-        .alert("Abschnitt löschen?", isPresented: Binding(
-            get: { sectionToDelete != nil },
-            set: { if !$0 { sectionToDelete = nil } }
-        )) {
-            Button("Abbrechen", role: .cancel) {}
-            Button("Löschen", role: .destructive) {
-                if let section = sectionToDelete {
-                    Task { await viewModel.deleteSection(section) }
-                }
-            }
-        } message: {
-            // Scenes are NOT deleted (backend: Scene.section_id is
-            // ON DELETE SET NULL) — they fall back to "Ohne Abschnitt". But
-            // if this section carries its own Projektinfo (Drehdatum/Ort/
-            // Todo-Listen, see SectionInfoBox), that IS deleted for good
-            // (TodoList.section_id is ON DELETE CASCADE) — worth spelling
-            // out explicitly rather than leaving it implied, since visually
-            // that info box reads as its own tile too.
-            Text(sectionToDelete?.hasProjectInfo == true
-                 ? "\"\(sectionToDelete?.name ?? "")\" wird gelöscht. Enthaltene Szenen bleiben erhalten und landen unter \"Ohne Abschnitt\" — die Projektinfo dieses Abschnitts (Drehdatum, Ort, Todo-Listen) wird aber endgültig gelöscht."
-                 : "\"\(sectionToDelete?.name ?? "")\" wird gelöscht. Enthaltene Szenen bleiben erhalten und landen unter \"Ohne Abschnitt\".")
-        }
-        .confirmationDialog("Szene", isPresented: Binding(
-            get: { sceneMenuTarget != nil },
-            set: { if !$0 { sceneMenuTarget = nil } }
-        ), presenting: sceneMenuTarget) { scene in
-            Button("Bearbeiten") { editingScene = .some(scene) }
-            if scene.completed {
-                Button("Nicht mehr im Kasten") {
-                    Task { await viewModel.setSceneCompleted(scene, completed: false) }
-                }
-            }
-            Button("Löschen", role: .destructive) { sceneToDelete = scene }
-            Button("Abbrechen", role: .cancel) {}
-        }
-        .alert("Szene löschen?", isPresented: Binding(
-            get: { sceneToDelete != nil },
-            set: { if !$0 { sceneToDelete = nil } }
-        )) {
-            Button("Abbrechen", role: .cancel) {}
-            Button("Löschen", role: .destructive) {
-                if let scene = sceneToDelete {
-                    Task { await viewModel.deleteScene(scene) }
-                }
-            }
-        } message: {
-            let name = sceneToDelete?.name?.isEmpty == false ? sceneToDelete!.name! : "Unbenannte Szene"
-            Text("\"\(name)\" wird endgültig gelöscht, inklusive aller Einstellungen darin.")
-        }
-        .confirmationDialog("Abschnitt", isPresented: Binding(
-            get: { sectionMenuTarget != nil },
-            set: { if !$0 { sectionMenuTarget = nil } }
-        ), presenting: sectionMenuTarget) { section in
-            Button("Umbenennen") { editingSection = .some(section) }
-            Button("Löschen", role: .destructive) { sectionToDelete = section }
-            Button("Abbrechen", role: .cancel) {}
-        }
-        .confirmationDialog("Einstellung", isPresented: Binding(
-            get: { shotMenuTarget != nil },
-            set: { if !$0 { shotMenuTarget = nil } }
-        ), presenting: shotMenuTarget) { shot in
-            Button(shot.status == .done ? "Als offen markieren" : "Erledigt") {
-                Task { await viewModel.toggleDone(shot) }
-            }
-            Button("Löschen", role: .destructive) { viewModel.deleteWithUndo(shot) }
-            Button("Abbrechen", role: .cancel) {}
-        }
+        // All 5 of these (Abschnitt/Szene-löschen alerts, Szene/Abschnitt/
+        // Einstellung long-press action sheets) used to be inline modifiers
+        // right here — Xcode's "unable to type-check in reasonable time" on
+        // this file was this modifier chain (already long before these were
+        // added: sheets, other alerts, toolbar, task, etc., all on the same
+        // body expression) finally tipping over. Moved into their own
+        // ViewModifier below so the compiler only has to type-check one
+        // `.modifier(...)` call here instead of 5 more inline ones with
+        // embedded ternaries/ViewBuilder closures.
+        .modifier(TileActionDialogs(
+            viewModel: viewModel,
+            sectionToDelete: $sectionToDelete,
+            sceneMenuTarget: $sceneMenuTarget,
+            sceneToDelete: $sceneToDelete,
+            sectionMenuTarget: $sectionMenuTarget,
+            shotMenuTarget: $shotMenuTarget,
+            editingScene: $editingScene,
+            editingSection: $editingSection
+        ))
         .sheet(isPresented: Binding(
             get: { editingScene != nil },
             set: { if !$0 { editingScene = nil } }
@@ -1279,6 +1231,104 @@ struct ShotListView: View {
     /// idempotent, so tapping this again later just extends the same link
     /// rather than creating a second, different URL to confuse whoever
     /// already has the first one.
+}
+
+/// Bundles the Szene/Abschnitt/Einstellung long-press action sheets and their
+/// delete-confirmation alerts — pulled out of ShotListView.body (see the
+/// `.modifier(TileActionDialogs(...))` call there) purely to keep the
+/// compiler's job smaller; body was already a long chain of sheets/alerts/
+/// toolbar/task modifiers on one expression before these existed, and adding
+/// 5 more inline pushed Xcode into "unable to type-check this expression in
+/// reasonable time".
+private struct TileActionDialogs: ViewModifier {
+    @ObservedObject var viewModel: ShotListViewModel
+    @Binding var sectionToDelete: SceneSection?
+    @Binding var sceneMenuTarget: Scene?
+    @Binding var sceneToDelete: Scene?
+    @Binding var sectionMenuTarget: SceneSection?
+    @Binding var shotMenuTarget: Shot?
+    @Binding var editingScene: Scene??
+    @Binding var editingSection: SceneSection??
+
+    func body(content: Content) -> some View {
+        content
+            .alert("Abschnitt löschen?", isPresented: Binding(
+                get: { sectionToDelete != nil },
+                set: { if !$0 { sectionToDelete = nil } }
+            )) {
+                Button("Abbrechen", role: .cancel) {}
+                Button("Löschen", role: .destructive) {
+                    if let section = sectionToDelete {
+                        Task { await viewModel.deleteSection(section) }
+                    }
+                }
+            } message: {
+                Text(sectionDeleteMessage)
+            }
+            .confirmationDialog("Szene", isPresented: Binding(
+                get: { sceneMenuTarget != nil },
+                set: { if !$0 { sceneMenuTarget = nil } }
+            ), presenting: sceneMenuTarget) { scene in
+                Button("Bearbeiten") { editingScene = .some(scene) }
+                if scene.completed {
+                    Button("Nicht mehr im Kasten") {
+                        Task { await viewModel.setSceneCompleted(scene, completed: false) }
+                    }
+                }
+                Button("Löschen", role: .destructive) { sceneToDelete = scene }
+                Button("Abbrechen", role: .cancel) {}
+            }
+            .alert("Szene löschen?", isPresented: Binding(
+                get: { sceneToDelete != nil },
+                set: { if !$0 { sceneToDelete = nil } }
+            )) {
+                Button("Abbrechen", role: .cancel) {}
+                Button("Löschen", role: .destructive) {
+                    if let scene = sceneToDelete {
+                        Task { await viewModel.deleteScene(scene) }
+                    }
+                }
+            } message: {
+                Text(sceneDeleteMessage)
+            }
+            .confirmationDialog("Abschnitt", isPresented: Binding(
+                get: { sectionMenuTarget != nil },
+                set: { if !$0 { sectionMenuTarget = nil } }
+            ), presenting: sectionMenuTarget) { section in
+                Button("Umbenennen") { editingSection = .some(section) }
+                Button("Löschen", role: .destructive) { sectionToDelete = section }
+                Button("Abbrechen", role: .cancel) {}
+            }
+            .confirmationDialog("Einstellung", isPresented: Binding(
+                get: { shotMenuTarget != nil },
+                set: { if !$0 { shotMenuTarget = nil } }
+            ), presenting: shotMenuTarget) { shot in
+                Button(shot.status == .done ? "Als offen markieren" : "Erledigt") {
+                    Task { await viewModel.toggleDone(shot) }
+                }
+                Button("Löschen", role: .destructive) { viewModel.deleteWithUndo(shot) }
+                Button("Abbrechen", role: .cancel) {}
+            }
+    }
+
+    // Scenes are NOT deleted when a section is (backend: Scene.section_id is
+    // ON DELETE SET NULL) — they fall back to "Ohne Abschnitt". But if this
+    // section carries its own Projektinfo (Drehdatum/Ort/Todo-Listen, see
+    // SectionInfoBox), that IS deleted for good (TodoList.section_id is
+    // ON DELETE CASCADE) — worth spelling out explicitly rather than leaving
+    // it implied, since visually that info box reads as its own tile too.
+    private var sectionDeleteMessage: String {
+        guard let section = sectionToDelete else { return "" }
+        if section.hasProjectInfo {
+            return "\"\(section.name)\" wird gelöscht. Enthaltene Szenen bleiben erhalten und landen unter \"Ohne Abschnitt\" — die Projektinfo dieses Abschnitts (Drehdatum, Ort, Todo-Listen) wird aber endgültig gelöscht."
+        }
+        return "\"\(section.name)\" wird gelöscht. Enthaltene Szenen bleiben erhalten und landen unter \"Ohne Abschnitt\"."
+    }
+
+    private var sceneDeleteMessage: String {
+        let name = sceneToDelete?.name?.isEmpty == false ? sceneToDelete!.name! : "Unbenannte Szene"
+        return "\"\(name)\" wird endgültig gelöscht, inklusive aller Einstellungen darin."
+    }
 }
 
 /// Thin wrapper so the share sheet can be triggered programmatically
