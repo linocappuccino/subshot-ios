@@ -149,20 +149,30 @@ struct ProjectListView: View {
         if folderId == nil {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button { showingNotifications = true } label: {
-                    // .offset() moves a view visually WITHOUT changing how
-                    // much space its parent thinks it needs — a toolbar item
-                    // still clips to that original (unmoved) layout size, so
-                    // an offset badge gets cut off right at the bell's edge
-                    // instead of sitting on top of it, no matter how big a
-                    // .frame() wraps around the whole thing (tried that
-                    // first, 2026-07-10 — just shifted/clipped the badge
-                    // differently, still wrong: Lino "sieht scheisse aus").
-                    // .alignmentGuide DOES change what the parent counts as
-                    // this view's bounds, so the ZStack actually grows to
-                    // include the badge instead of clipping it — the
-                    // correct fix for a badge that needs to visibly sit on
-                    // an icon's edge inside a toolbar.
+                    // Three things were wrong, found only once Lino sent an
+                    // actual screenshot (2026-07-10 — should have asked for
+                    // one immediately instead of guessing three times):
+                    // 1. The circular dark background around the bell is
+                    //    SYSTEM-drawn toolbar-button chrome, not anything in
+                    //    this file — badge math positioned against the bare
+                    //    SF Symbol's small glyph size landed ON the glyph,
+                    //    nowhere near that larger circle's actual edge.
+                    //    Fixed by giving the glyph an explicit 30x30 frame
+                    //    to position the badge against a known, stable size.
+                    // 2. .offset() doesn't change what the parent counts as
+                    //    this view's layout bounds, so a toolbar item (which
+                    //    clips to that unchanged size) cut the badge off.
+                    //    .alignmentGuide does change the layout contribution,
+                    //    so the icon's effective bounds actually grow to
+                    //    include the badge instead of it being clipped.
+                    // 3. The badge looked translucent (bell glyph visible
+                    //    through the red circle) — toolbar button labels get
+                    //    a system vibrancy/material effect applied to their
+                    //    whole content, which bleeds through plain solid
+                    //    colors. .compositingGroup() flattens the badge into
+                    //    one opaque layer BEFORE that effect applies.
                     Image(systemName: "bell")
+                        .frame(width: 30, height: 30)
                         .overlay(alignment: .topTrailing) {
                             if !viewModel.notifications.isEmpty {
                                 Text(viewModel.notifications.count > 99 ? "99+" : "\(viewModel.notifications.count)")
@@ -172,8 +182,9 @@ struct ProjectListView: View {
                                     .frame(minWidth: 16, minHeight: 16)
                                     .background(Color.red)
                                     .clipShape(Capsule())
-                                    .alignmentGuide(.top) { d in d[.bottom] * 0.6 }
-                                    .alignmentGuide(.trailing) { d in d[.leading] + d.width * 0.4 }
+                                    .compositingGroup()
+                                    .alignmentGuide(.top) { d in d.height * 0.7 }
+                                    .alignmentGuide(.trailing) { d in d.width * 0.3 }
                             }
                         }
                 }
