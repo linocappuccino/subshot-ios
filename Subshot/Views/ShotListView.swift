@@ -534,15 +534,18 @@ struct ShotListView: View {
             // being filed into a section via its header (see
             // sectionHeader) — same key (dropTargetSectionId,
             // unassignedSectionKey for "Ohne Abschnitt") for both cases.
-            // Always present, opacity-only toggle (see sceneDropIndicator's
-            // doc comment on why presence-toggling causes layout reflow
-            // during a drag).
+            // Collapses to zero height when inactive, same reasoning as
+            // sceneDropIndicator's own doc comment — a permanently
+            // reserved 44pt gap read as an "unschöner Abstand" between
+            // every section regardless of whether anything was being
+            // dragged (2026-07-11).
             RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
-                .frame(height: 44)
+                .frame(height: (dropTargetSectionId == (section?.id ?? unassignedSectionKey)) ? 60 : 0)
                 .padding(.horizontal, 16)
                 .opacity(dropTargetSectionId == (section?.id ?? unassignedSectionKey) ? 1 : 0)
                 .allowsHitTesting(false)
+                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: dropTargetSectionId)
             sectionHeader(section: section)
             if let section {
                 sectionProjectInfoArea(section: section)
@@ -759,19 +762,35 @@ struct ShotListView: View {
     /// hit-testing tolerance, a self-inflicted moving target. Always
     /// reserving this exact space keeps every tile's height constant for
     /// the whole drag.
-    private func sceneDropIndicator(isActive: Bool) -> some View {
-        RoundedRectangle(cornerRadius: 8)
+    /// The gap ITSELF is the drop target now (2026-07-11: "ich will ja
+    /// dass man in den Zwischenraum draggen kann... man muss sie genau
+    /// über das blaue Rechteck draggen und loslassen damit es richtig
+    /// platziert wird") — not just a decoration next to the tile's own
+    /// dropDestination. Collapsed to zero height by default (no permanent
+    /// gap between tiles — "die Kacheln haben jetzt immer einen
+    /// unschönen Abstand"), only expands to a real drop target while a
+    /// drag is hovering directly over it, animated so neighboring tiles
+    /// visibly move apart to make room — same "live reflow" idea already
+    /// proven on the web client (see project memory). `target` is the
+    /// scene this gap sits directly before.
+    private func sceneDropIndicator(before target: Scene) -> some View {
+        let isActive = dropTargetSceneId == target.id
+        return RoundedRectangle(cornerRadius: 8)
             .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
-            .frame(height: 44)
+            .frame(height: isActive ? 60 : 0)
             .padding(.horizontal, 4)
             .opacity(isActive ? 1 : 0)
-            // Purely decorative — SwiftUI shapes still register for hit-
-            // testing by default even at opacity 0, which could intercept
-            // touches meant for the tile's own long-press/drag gesture
-            // recognizers sitting on the surrounding VStack. Explicit
-            // opt-out, should never have participated in hit-testing at
-            // all given it has no gesture of its own.
-            .allowsHitTesting(false)
+            .contentShape(Rectangle())
+            .dropDestination(for: String.self) { ids, _ in
+                guard let raw = ids.first, raw.hasPrefix("scene:") else { return false }
+                let draggedId = String(raw.dropFirst("scene:".count))
+                Task { await viewModel.handleSceneDroppedOnTile(draggedId, targetScene: target) }
+                return true
+            } isTargeted: { targeted in
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    dropTargetSceneId = targeted ? target.id : (dropTargetSceneId == target.id ? nil : dropTargetSceneId)
+                }
+            }
     }
 
     /// `columnLayout` is true whenever this card renders inside a 2+ column
@@ -807,7 +826,7 @@ struct ShotListView: View {
     @ViewBuilder
     private func projectInfoSceneCard(scene: Scene) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            sceneDropIndicator(isActive: dropTargetSceneId == scene.id)
+            sceneDropIndicator(before: scene)
             SceneProjectInfoTile(viewModel: viewModel, scene: scene, projectId: projectId)
         }
         .padding(.horizontal, ((isPad && isGridMode) || horizontalSizeClass == .regular) ? 0 : 16)
@@ -827,18 +846,11 @@ struct ShotListView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
         }
-        .dropDestination(for: String.self) { ids, _ in
-            // Shared with sceneTile/sceneCompactTile now — see
-            // handleSceneDroppedOnTile's doc comment.
-            guard let raw = ids.first, raw.hasPrefix("scene:") else { return false }
-            let draggedId = String(raw.dropFirst("scene:".count))
-            Task { await viewModel.handleSceneDroppedOnTile(draggedId, targetScene: scene) }
-            return true
-        } isTargeted: { targeted in
-            withAnimation(.easeOut(duration: 0.15)) {
-                dropTargetSceneId = targeted ? scene.id : (dropTargetSceneId == scene.id ? nil : dropTargetSceneId)
-            }
-        }
+        // No dropDestination on this tile itself anymore (2026-07-11) —
+        // reordering/refiling a Projektinfo tile goes through
+        // sceneDropIndicator's own dropDestination exclusively now (the
+        // gap above this tile, not the tile), same as regularSceneCard/
+        // sceneCompactTile.
     }
 
     @ViewBuilder
@@ -853,7 +865,7 @@ struct ShotListView: View {
         // visually rendered as part of that one tile's own rounded card
         // instead of a distinct placeholder sitting in the gap before it.
         VStack(alignment: .leading, spacing: 8) {
-            sceneDropIndicator(isActive: dropTargetSceneId == scene.id)
+            sceneDropIndicator(before: scene)
             VStack(alignment: .leading, spacing: 14) {
                 if collapsed {
                     sceneCollapsedRow(scene: scene)
@@ -1113,30 +1125,20 @@ struct ShotListView: View {
         .draggable("scene:\(scene.id)") {
             sceneDragPreview(scene: scene)
         }
-        // Single dropDestination for the whole tile now (2026-07-11) —
-        // handles BOTH a scene being reordered onto this tile ("scene:"
-        // prefix) AND a shot being filed into this scene (plain, unprefixed
-        // id — see shotCardView's .draggable(shot.id)). Used to be two
-        // separate dropDestinations, one here and one on the enclosing
-        // regularSceneCard wrapping this view — see that function's own
-        // doc comment for why stacking two nested drop interactions (on
-        // top of this view's own .contextMenu/.draggable) turned out to be
-        // a real on-device problem, not just an abstract "which one wins"
-        // question.
+        // Only handles a SHOT being filed into this scene now (2026-07-11)
+        // — scene reordering moved to sceneDropIndicator's own
+        // dropDestination exclusively (the gap before a tile, not the tile
+        // itself — see that function's doc comment: "man muss sie genau
+        // über das blaue Rechteck draggen"). Rejecting "scene:"-prefixed
+        // payloads here isn't strictly required for correctness anymore
+        // (the indicator is a sibling, not nested with this view, so there
+        // is no competing-recognizer risk either way), but keeps this
+        // dropDestination's purpose singular and matches what it actually
+        // does now.
         .dropDestination(for: String.self) { ids, _ in
-            guard let raw = ids.first else { return false }
-            if raw.hasPrefix("scene:") {
-                let draggedId = String(raw.dropFirst("scene:".count))
-                Task { await viewModel.handleSceneDroppedOnTile(draggedId, targetScene: scene) }
-                return true
-            } else {
-                Task { await viewModel.moveShot(raw, toScene: scene.id) }
-                return true
-            }
-        } isTargeted: { targeted in
-            withAnimation(.easeOut(duration: 0.15)) {
-                dropTargetSceneId = targeted ? scene.id : (dropTargetSceneId == scene.id ? nil : dropTargetSceneId)
-            }
+            guard let raw = ids.first, !raw.hasPrefix("scene:") else { return false }
+            Task { await viewModel.moveShot(raw, toScene: scene.id) }
+            return true
         }
     }
 
@@ -1156,7 +1158,7 @@ struct ShotListView: View {
         // that tile's own card instead of a distinct placeholder in the
         // gap before it.
         VStack(alignment: .leading, spacing: 6) {
-            sceneDropIndicator(isActive: dropTargetSceneId == scene.id)
+            sceneDropIndicator(before: scene)
             VStack(alignment: .leading, spacing: 8) {
                 if let imageUrl = scene.imageUrl {
                     AsyncShotThumbnail(path: imageUrl, size: nil, lockAspectRatio: true)
@@ -1204,18 +1206,11 @@ struct ShotListView: View {
             .draggable("scene:\(scene.id)") {
                 sceneDragPreview(scene: scene)
             }
-            // Same reorder/refile logic as sceneTile's own dropDestination —
-            // see handleSceneDroppedOnTile's doc comment.
-            .dropDestination(for: String.self) { ids, _ in
-                guard let raw = ids.first, raw.hasPrefix("scene:") else { return false }
-                let draggedId = String(raw.dropFirst("scene:".count))
-                Task { await viewModel.handleSceneDroppedOnTile(draggedId, targetScene: scene) }
-                return true
-            } isTargeted: { targeted in
-                withAnimation(.easeOut(duration: 0.15)) {
-                    dropTargetSceneId = targeted ? scene.id : (dropTargetSceneId == scene.id ? nil : dropTargetSceneId)
-                }
-            }
+            // No dropDestination here anymore (2026-07-11) — reordering
+            // moved to sceneDropIndicator's own dropDestination exclusively
+            // (the gap before a tile). Compact tiles never showed a shot
+            // list to file a shot into either, so there's nothing left for
+            // this view itself to accept as a drop.
         }
     }
 
