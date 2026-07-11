@@ -89,13 +89,15 @@ struct ShotListView: View {
     /// sceneCard). Not "which scene is being dragged": .draggable() doesn't
     /// expose a drag-started callback, only drop-target hover does.
     @State private var dropTargetSceneId: String?
-    /// Same idea as dropTargetSceneId, for section headers — sections had no
-    /// drag hover indicator at all before, only scene tiles did ("es braucht
-    /// auch einen blaue Indikator-Linie wenn man Abschnitte verschiebt").
-    /// `nil` key = the "Ohne Abschnitt" pseudo-section (it can't actually be
-    /// a drop target for a dragged section — see sectionHeader — but shares
-    /// the same sentinel-key convention as isSectionCollapsed for
-    /// consistency, harmless since it never gets set).
+    /// Same idea as dropTargetSceneId, for section headers — drives the one
+    /// blue-line indicator in sectionGroup for BOTH a section being dragged
+    /// (reorder) AND a scene being dragged onto a section's header to file
+    /// it in (2026-07-11: unified onto one indicator/one drop target per
+    /// header, see sectionHeader/sectionGroup — used to also have a
+    /// separate dashed-rectangle sectionDropZone that competed with scene
+    /// tiles' own drop targets for the same touch region). Uses
+    /// unassignedSectionKey for "Ohne Abschnitt", same sentinel convention
+    /// as isSectionCollapsed.
     @State private var dropTargetSectionId: String?
     /// Which completed ("im Kasten") scenes are temporarily expanded back to
     /// full detail — collapsed is the default for any completed scene (see
@@ -511,13 +513,24 @@ struct ShotListView: View {
     @ViewBuilder
     private func sectionGroup(section: SceneSection?) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Landing indicator for a dragged section — same accent-color
-            // capsule sceneCard already shows for dragged scenes, just
-            // driven by dropTargetSectionId instead. "Ohne Abschnitt" can
-            // never actually be the target (see sectionHeader), so this is
-            // effectively a no-op there, but written the same way as every
-            // other section for consistency.
-            if let section, dropTargetSectionId == section.id {
+            // Landing indicator — ONE indicator type everywhere now
+            // (2026-07-11: "wir haben jetzt irgendwie einen Indikator oder
+            // Dropzone Mix-up... ich hätte gerne die blaue Linie"). Used to
+            // be this capsule (only for a dragged SECTION) PLUS a second,
+            // separate dashed-rectangle drop zone below the scene grid
+            // (only for a dragged SCENE being filed in) — two different
+            // views with two independent .dropDestinations sitting right
+            // next to each other, which SwiftUI's drop hit-testing could
+            // resolve to either one somewhat unpredictably near the
+            // boundary between them, routing some scene drops to the zone's
+            // assign-only handler instead of a tile's reorder-capable one
+            // (looked like "kann Kacheln nicht nach unten schieben" even
+            // after the reorderScene math fix). Now covers both a dragged
+            // section AND a scene being filed into an empty/any section via
+            // the header itself (see sectionHeader) — same key
+            // (dropTargetSectionId, unassignedSectionKey for "Ohne
+            // Abschnitt") for both cases, one visual, no competing target.
+            if dropTargetSectionId == (section?.id ?? unassignedSectionKey) {
                 Capsule()
                     .fill(Color.accentColor)
                     .frame(height: 3)
@@ -530,13 +543,6 @@ struct ShotListView: View {
             }
             if !isSectionCollapsed(section) {
                 sceneGrid(viewModel.scenes(in: section))
-                // Always-present drop target INSIDE the section, below its
-                // scenes — an empty (or collapsed) section previously had
-                // only its thin header row to drop onto, easy to miss
-                // entirely. This one's always at least 44pt tall and has an
-                // explicit contentShape so the whole area (not just where
-                // something happens to be drawn) accepts the drop.
-                sectionDropZone(section: section)
             }
         }
     }
@@ -576,38 +582,17 @@ struct ShotListView: View {
     }
 
     @ViewBuilder
-    private func sectionDropZone(section: SceneSection?) -> some View {
-        Color.clear
-            .frame(height: 44)
-            .contentShape(Rectangle())
-            .overlay {
-                if dropTargetSceneId == "zone:\(section?.id ?? "none")" {
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
-                }
-            }
-            .padding(.horizontal, 16)
-            .dropDestination(for: String.self) { ids, _ in
-                guard let raw = ids.first, raw.hasPrefix("scene:") else { return false }
-                let sceneId = String(raw.dropFirst("scene:".count))
-                guard let dragged = viewModel.scenes.first(where: { $0.id == sceneId }) else { return false }
-                Task { await viewModel.assignSceneToSection(dragged, sectionId: section?.id) }
-                return true
-            } isTargeted: { targeted in
-                let zoneId = "zone:\(section?.id ?? "none")"
-                withAnimation(.easeOut(duration: 0.15)) {
-                    dropTargetSceneId = targeted ? zoneId : (dropTargetSceneId == zoneId ? nil : dropTargetSceneId)
-                }
-            }
-    }
-
-    @ViewBuilder
     private func sectionHeader(section: SceneSection?) -> some View {
         let row = sectionHeaderRow(section: section)
         if let section {
             // Long-press-and-hold the header row to pick the whole section
             // up and drop it on another section's header to reorder — same
-            // haptic drag idiom as project/scene tiles.
+            // haptic drag idiom as project/scene tiles. The SAME header is
+            // also the only drop target for filing a scene INTO this
+            // section now (see dropDestination below) — replaces the old
+            // separate dashed-rectangle sectionDropZone entirely (2026-07-11,
+            // see sectionGroup's comment on why: two competing drop targets
+            // caused drops to sometimes land on the wrong handler).
             row
                 .contextMenu {
                     Button {
@@ -632,18 +617,48 @@ struct ShotListView: View {
                 }
                 .draggable("section:\(section.id)")
                 .dropDestination(for: String.self) { ids, _ in
-                    guard let raw = ids.first, raw.hasPrefix("section:") else { return false }
-                    let draggedId = String(raw.dropFirst("section:".count))
-                    guard draggedId != section.id else { return false }
-                    Task { await viewModel.reorderSection(draggedId, before: section.id) }
-                    return true
+                    guard let raw = ids.first else { return false }
+                    if raw.hasPrefix("section:") {
+                        let draggedId = String(raw.dropFirst("section:".count))
+                        guard draggedId != section.id else { return false }
+                        Task { await viewModel.reorderSection(draggedId, before: section.id) }
+                        return true
+                    } else if raw.hasPrefix("scene:") {
+                        // Files the scene into this section — no "before"
+                        // target on a header, so it just lands via
+                        // assignSceneToSection (matches what the old
+                        // sectionDropZone did). Works identically whether
+                        // this section already has scenes or is empty —
+                        // dropping directly onto one of its existing scene
+                        // tiles (see sceneTile's own dropDestination) is
+                        // still the way to also control exact position.
+                        let sceneId = String(raw.dropFirst("scene:".count))
+                        guard let dragged = viewModel.scenes.first(where: { $0.id == sceneId }) else { return false }
+                        Task { await viewModel.assignSceneToSection(dragged, sectionId: section.id) }
+                        return true
+                    }
+                    return false
                 } isTargeted: { targeted in
                     withAnimation(.easeOut(duration: 0.15)) {
                         dropTargetSectionId = targeted ? section.id : (dropTargetSectionId == section.id ? nil : dropTargetSectionId)
                     }
                 }
         } else {
+            // "Ohne Abschnitt" — no rename/delete/reorder (not a real
+            // SceneSection), but still a valid target for filing a scene
+            // OUT of any section back to unassigned.
             row
+                .dropDestination(for: String.self) { ids, _ in
+                    guard let raw = ids.first, raw.hasPrefix("scene:") else { return false }
+                    let sceneId = String(raw.dropFirst("scene:".count))
+                    guard let dragged = viewModel.scenes.first(where: { $0.id == sceneId }) else { return false }
+                    Task { await viewModel.assignSceneToSection(dragged, sectionId: nil) }
+                    return true
+                } isTargeted: { targeted in
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        dropTargetSectionId = targeted ? unassignedSectionKey : (dropTargetSectionId == unassignedSectionKey ? nil : dropTargetSectionId)
+                    }
+                }
         }
     }
 
