@@ -351,7 +351,7 @@ final class ShotListViewModel: ObservableObject {
             // and only to same-day scenes that already have both a start
             // and duration of their own to chain from.
             if let previousScheduledAt, let newStart = updated.scheduledAt, previousScheduledAt != newStart,
-               let duration = updated.durationMinutes {
+               updated.durationMinutes != nil {
                 let calendar = Calendar.current
                 let affected = scenes
                     .filter { $0.id != updated.id }
