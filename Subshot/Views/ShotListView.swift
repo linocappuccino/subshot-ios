@@ -544,13 +544,16 @@ struct ShotListView: View {
             // the header itself (see sectionHeader) — same key
             // (dropTargetSectionId, unassignedSectionKey for "Ohne
             // Abschnitt") for both cases, one visual, no competing target.
-            if dropTargetSectionId == (section?.id ?? unassignedSectionKey) {
-                Capsule()
-                    .fill(Color.accentColor)
-                    .frame(height: 3)
-                    .padding(.horizontal, 20)
-                    .transition(.opacity)
-            }
+            // Always present, opacity-only toggle — see
+            // sceneDropIndicatorCapsule's doc comment for why conditionally
+            // adding/removing this from the tree (the old `if` here) causes
+            // layout reflow during a drag that was very likely the actual
+            // cause of "muss die Linie super genau treffen" reports.
+            Capsule()
+                .fill(Color.accentColor)
+                .frame(height: 3)
+                .padding(.horizontal, 20)
+                .opacity(dropTargetSectionId == (section?.id ?? unassignedSectionKey) ? 1 : 0)
             sectionHeader(section: section)
             if let section {
                 sectionProjectInfoArea(section: section)
@@ -774,12 +777,26 @@ struct ShotListView: View {
 
     /// The landing-indicator line itself — used both above AND below the
     /// hovered tile now (see dragWillLandAfter), same visual either way.
-    private var sceneDropIndicatorCapsule: some View {
+    ///
+    /// `isActive` toggles opacity, NOT presence — this used to be wrapped
+    /// in `if dropTargetSceneId == scene.id { ... }` at every call site,
+    /// meaning the Capsule (with its own height + padding) was added to or
+    /// removed from the view tree on every hover change. That changes the
+    /// VStack's total layout height by a few points EVERY time hover
+    /// enters/leaves ANY tile during a drag — which reflows every tile
+    /// around the hover point mid-gesture, moving the actual drop target's
+    /// on-screen bounds out from under the finger continuously. That's
+    /// what "man muss die Linie super genau treffen" / "sonst springt
+    /// alles ein wenig herum" (2026-07-11) was actually describing — not
+    /// insufficient hit-testing tolerance, a self-inflicted moving target.
+    /// Always reserving this exact space and only changing opacity makes
+    /// every tile's height constant for the whole drag, so nothing shifts.
+    private func sceneDropIndicatorCapsule(isActive: Bool) -> some View {
         Capsule()
             .fill(Color.accentColor)
             .frame(height: 3)
             .padding(.horizontal, 4)
-            .transition(.opacity)
+            .opacity(isActive ? 1 : 0)
     }
 
     /// `columnLayout` is true whenever this card renders inside a 2+ column
@@ -816,14 +833,12 @@ struct ShotListView: View {
     private func projectInfoSceneCard(scene: Scene) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             // Direction-aware now — see dragWillLandAfter's doc comment for
-            // why this can't just always render above the target.
-            if dropTargetSceneId == scene.id, !dragWillLandAfter(scene) {
-                sceneDropIndicatorCapsule
-            }
+            // why this can't just always render above the target. Always
+            // present (isActive toggles opacity only) — see
+            // sceneDropIndicatorCapsule's own doc comment on why.
+            sceneDropIndicatorCapsule(isActive: dropTargetSceneId == scene.id && !dragWillLandAfter(scene))
             SceneProjectInfoTile(viewModel: viewModel, scene: scene, projectId: projectId)
-            if dropTargetSceneId == scene.id, dragWillLandAfter(scene) {
-                sceneDropIndicatorCapsule
-            }
+            sceneDropIndicatorCapsule(isActive: dropTargetSceneId == scene.id && dragWillLandAfter(scene))
         }
         .padding(.horizontal, ((isPad && isGridMode) || horizontalSizeClass == .regular) ? 0 : 16)
         .contextMenu {
@@ -870,9 +885,7 @@ struct ShotListView: View {
             // case pointed at the wrong spot ("die blaue Indikator Linie
             // stimmt überhaupt nicht mit dem überein wo die Kachel dann
             // landet", 2026-07-11).
-            if dropTargetSceneId == scene.id, !dragWillLandAfter(scene) {
-                sceneDropIndicatorCapsule
-            }
+            sceneDropIndicatorCapsule(isActive: dropTargetSceneId == scene.id && !dragWillLandAfter(scene))
             if collapsed {
                 sceneCollapsedRow(scene: scene)
             } else {
@@ -889,9 +902,7 @@ struct ShotListView: View {
                     addRow(sceneId: scene.id)
                 }
             }
-            if dropTargetSceneId == scene.id, dragWillLandAfter(scene) {
-                sceneDropIndicatorCapsule
-            }
+            sceneDropIndicatorCapsule(isActive: dropTargetSceneId == scene.id && dragWillLandAfter(scene))
         }
         .padding(collapsed ? 10 : 14)
         .background(scene.completed ? Color.green.opacity(0.18) : Color(.secondarySystemGroupedBackground))
@@ -1167,9 +1178,7 @@ struct ShotListView: View {
         VStack(alignment: .leading, spacing: 8) {
             // Landing indicator, same as the full sceneTile — direction-
             // aware now too (see dragWillLandAfter's doc comment).
-            if dropTargetSceneId == scene.id, !dragWillLandAfter(scene) {
-                sceneDropIndicatorCapsule
-            }
+            sceneDropIndicatorCapsule(isActive: dropTargetSceneId == scene.id && !dragWillLandAfter(scene))
             if let imageUrl = scene.imageUrl {
                 AsyncShotThumbnail(path: imageUrl, size: nil, lockAspectRatio: true)
                     .frame(maxWidth: .infinity)
@@ -1191,9 +1200,7 @@ struct ShotListView: View {
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(2)
             SceneTimerInfo(scene: scene, stacked: true)
-            if dropTargetSceneId == scene.id, dragWillLandAfter(scene) {
-                sceneDropIndicatorCapsule
-            }
+            sceneDropIndicatorCapsule(isActive: dropTargetSceneId == scene.id && dragWillLandAfter(scene))
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
