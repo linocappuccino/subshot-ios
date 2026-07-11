@@ -775,9 +775,18 @@ struct ShotListView: View {
     /// scene this gap sits directly before.
     private func sceneDropIndicator(before target: Scene) -> some View {
         let isActive = dropTargetSceneId == target.id
+        // NEVER truly zero height — a view with zero size has zero hit-
+        // testable area, so a drag could never hover over it in the first
+        // place to trigger the expansion to begin with (a real bug found
+        // live, 2026-07-11: "das Indikator Rechteck erscheint nie zwischen
+        // Kacheln" — it wasn't misplaced, it was permanently stuck
+        // collapsed with nothing able to ever activate it). Small but real
+        // (12pt) resting height keeps a genuine drop target always present
+        // in the gap, invisible via opacity/stroke alone, expanding to the
+        // full 60pt only once actually targeted.
         return RoundedRectangle(cornerRadius: 8)
             .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
-            .frame(height: isActive ? 60 : 0)
+            .frame(height: isActive ? 60 : 12)
             .padding(.horizontal, 4)
             .opacity(isActive ? 1 : 0)
             .contentShape(Rectangle())
