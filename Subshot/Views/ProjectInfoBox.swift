@@ -202,7 +202,7 @@ struct SceneProjectInfoTile: View {
             HStack {
                 Image(systemName: "info.circle.fill")
                     .foregroundStyle(.secondary)
-                Text("Projektinfo")
+                Text("Info")
                     .font(.headline)
                 Spacer()
                 Image(systemName: "chevron.right")

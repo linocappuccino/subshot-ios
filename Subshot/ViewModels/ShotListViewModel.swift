@@ -325,7 +325,15 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
+    /// Set when a scene's start time was just changed AND other same-day
+    /// scenes further along already have their own start+duration — the
+    /// view shows a confirmation sheet/alert off this, never cascades
+    /// silently (2026-07-11, Lino: "dies soll aber per Dialog gefragt und
+    /// bestätigt werden"). See applyTimeCascade for what happens on accept.
+    @Published var pendingTimeCascade: (updated: Scene, affected: [Scene])?
+
     func renameScene(_ scene: Scene, name: String, color: String, description: String, dialogue: String, scheduledAt: Date?, durationMinutes: Int?, priority: ShotPriority?) async {
+        let previousScheduledAt = scene.scheduledAt
         do {
             let updated = try await APIClient.shared.patchScene(
                 scene.id, name: name, color: color,
@@ -336,8 +344,51 @@ final class ShotListViewModel: ObservableObject {
             if let index = scenes.firstIndex(where: { $0.id == updated.id }) {
                 scenes[index] = updated
             }
+
+            // "Timing der App" (2026-07-11) — matches the web app's
+            // handleSceneUpdated exactly: only offers to cascade when an
+            // EXISTING start time actually changed (not on first-time set),
+            // and only to same-day scenes that already have both a start
+            // and duration of their own to chain from.
+            if let previousScheduledAt, let newStart = updated.scheduledAt, previousScheduledAt != newStart,
+               let duration = updated.durationMinutes {
+                let calendar = Calendar.current
+                let affected = scenes
+                    .filter { $0.id != updated.id }
+                    .filter { s in
+                        guard let sStart = s.scheduledAt, s.durationMinutes != nil else { return false }
+                        return calendar.isDate(sStart, inSameDayAs: newStart) && sStart > newStart
+                    }
+                    .sorted { ($0.scheduledAt ?? newStart) < ($1.scheduledAt ?? newStart) }
+                if !affected.isEmpty {
+                    pendingTimeCascade = (updated, affected)
+                }
+            }
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Chain-recomputes every affected scene's start as "previous scene's
+    /// (possibly just-updated) start + its own duration" — same logic as
+    /// createScene's own start-time suggestion, applied retroactively down
+    /// the rest of the day's chain instead of just once at creation.
+    func applyTimeCascade() async {
+        guard let (updated, affected) = pendingTimeCascade else { return }
+        pendingTimeCascade = nil
+        guard let seedStart = updated.scheduledAt else { return }
+        var cursor = seedStart.addingTimeInterval(TimeInterval((updated.durationMinutes ?? 0) * 60))
+        for s in affected {
+            do {
+                let patched = try await APIClient.shared.patchScene(s.id, scheduledAt: cursor)
+                if let index = scenes.firstIndex(where: { $0.id == patched.id }) {
+                    scenes[index] = patched
+                }
+                cursor = cursor.addingTimeInterval(TimeInterval((s.durationMinutes ?? 0) * 60))
+            } catch {
+                errorMessage = error.localizedDescription
+                break
+            }
         }
     }
 
@@ -448,6 +499,32 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
+    /// Corrects a dialogue line's text (2026-07-11, Lino: "Dialoge muss man
+    /// bearbeiten können / korrigieren können") — long-press → Bearbeiten on
+    /// the row (see dialogueRow's .contextMenu in ShotListView), matches the
+    /// web app's inline-edit-on-click in SceneEditModal.
+    func updateDialogue(_ dialogue: SceneDialogue, in scene: Scene, text: String) async {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != dialogue.text,
+              let sceneIndex = scenes.firstIndex(where: { $0.id == scene.id }),
+              let dialogueIndex = scenes[sceneIndex].dialogues.firstIndex(where: { $0.id == dialogue.id }) else { return }
+        let previousText = dialogue.text
+        scenes[sceneIndex].dialogues[dialogueIndex].text = trimmed
+        do {
+            let updated = try await APIClient.shared.patchSceneDialogue(dialogue.id, text: trimmed)
+            if let sIndex = scenes.firstIndex(where: { $0.id == scene.id }),
+               let dIndex = scenes[sIndex].dialogues.firstIndex(where: { $0.id == updated.id }) {
+                scenes[sIndex].dialogues[dIndex] = updated
+            }
+        } catch {
+            if let sIndex = scenes.firstIndex(where: { $0.id == scene.id }),
+               let dIndex = scenes[sIndex].dialogues.firstIndex(where: { $0.id == dialogue.id }) {
+                scenes[sIndex].dialogues[dIndex].text = previousText
+            }
+            errorMessage = error.localizedDescription
+        }
+    }
+
     /// Scenes in a deleted section fall back to "no section" server-side
     /// (see deleteSection above) — a deleted SCENE's own shots follow the
     /// same pattern (Shot.scene_id is ON DELETE SET NULL), landing in the
@@ -461,6 +538,22 @@ final class ShotListViewModel: ObservableObject {
         }
         do {
             try await APIClient.shared.deleteScene(scene.id)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Duplicates a scene (2026-07-11, matches the web app's
+    /// handleDuplicateScene) — full `load()` afterward rather than patching
+    /// `scenes` locally, same reasoning as the web version: the backend
+    /// shifts every sibling's sortOrder from the insertion point onward to
+    /// make room right next to the original, and re-deriving that shift
+    /// client-side is exactly the kind of drift-prone logic the drag-reorder
+    /// bugs earlier this project came from.
+    func duplicateScene(_ scene: Scene) async {
+        do {
+            _ = try await APIClient.shared.duplicateScene(scene.id)
+            await load()
         } catch {
             errorMessage = error.localizedDescription
         }

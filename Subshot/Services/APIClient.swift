@@ -364,6 +364,15 @@ final class APIClient {
         try await sendNoContent(req)
     }
 
+    /// Copies a scene server-side, landing right after the original in the
+    /// same section (see duplicate_scene in main.py — matches the web app's
+    /// api.duplicateScene exactly). No request body; the backend decides
+    /// what to copy vs. reset.
+    func duplicateScene(_ id: String) async throws -> Scene {
+        let req = try await authorizedRequest("scenes/\(id)/duplicate", method: "POST")
+        return try await send(req)
+    }
+
     // MARK: - Scene dialogues
 
     func createSceneDialogue(sceneId: String, text: String, sortOrder: Int = 0) async throws -> SceneDialogue {

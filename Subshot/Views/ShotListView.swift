@@ -118,6 +118,10 @@ struct ShotListView: View {
     /// full detail again. Deliberately session-local UI state, not persisted
     /// — a fresh load always starts every completed scene collapsed.
     @State private var expandedCompletedSceneIds: Set<String> = []
+    /// Dialog list on a scene tile, collapsed by tapping its "Dialog" label
+    /// (2026-07-11, matches the web app) — expanded by default (empty set),
+    /// same session-local-only reasoning as expandedCompletedSceneIds.
+    @State private var collapsedDialogSceneIds: Set<String> = []
     @State private var isExportingPdf = false
     @State private var exportedPdfURL: URL?
     @State private var showingNotionImport = false
@@ -148,6 +152,12 @@ struct ShotListView: View {
     /// sceneGoodTakeButton.
     @State private var editingGoodTakeScene: Scene?
     @State private var goodTakeText = ""
+    /// Dialog-line text correction (2026-07-11) — long-press a dialogue row
+    /// > Bearbeiten (see dialogueRow's .contextMenu). Needs both the
+    /// dialogue AND its owning scene (updateDialogue looks the scene up by
+    /// id), same two-piece-state shape as editingGoodTakeScene above.
+    @State private var editingDialogue: (dialogue: SceneDialogue, scene: Scene)?
+    @State private var editingDialogueText = ""
     @FocusState private var newRowFocused: Bool
     private let projectId: String
 
@@ -339,6 +349,41 @@ struct ShotListView: View {
         } message: {
             Text("Dateiname der guten Aufnahme für diese Szene.")
         }
+        .alert("Dialogzeile bearbeiten", isPresented: Binding(
+            get: { editingDialogue != nil },
+            set: { if !$0 { editingDialogue = nil } }
+        )) {
+            TextField("Dialogtext", text: $editingDialogueText)
+            Button("Abbrechen", role: .cancel) {}
+            Button("Speichern") {
+                if let (dialogue, scene) = editingDialogue {
+                    Task { await viewModel.updateDialogue(dialogue, in: scene, text: editingDialogueText) }
+                }
+            }
+        }
+        // "Timing der App" (2026-07-11) — offers to shift every later
+        // same-day scene's start (that already has its own start+duration)
+        // to follow the just-edited scene's new time, chained by duration.
+        // Never applied silently — see applyTimeCascade/pendingTimeCascade.
+        .confirmationDialog(
+            "Folgezeiten anpassen?",
+            isPresented: Binding(
+                get: { viewModel.pendingTimeCascade != nil },
+                set: { if !$0 { viewModel.pendingTimeCascade = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Anpassen") {
+                Task { await viewModel.applyTimeCascade() }
+            }
+            Button("Nicht anpassen", role: .cancel) {
+                viewModel.pendingTimeCascade = nil
+            }
+        } message: {
+            if let pending = viewModel.pendingTimeCascade {
+                Text("\(pending.affected.count) nachfolgende Szene\(pending.affected.count == 1 ? "" : "n") am selben Tag \(pending.affected.count == 1 ? "hat" : "haben") bereits eigene Zeiten. Entsprechend der neuen Startzeit von „\(pending.updated.name?.isEmpty == false ? pending.updated.name! : "dieser Szene")“ verschieben?")
+            }
+        }
         .alert("Alles im Kasten?", isPresented: $viewModel.showAllTimedScenesDoneConfirmation) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -451,7 +496,7 @@ struct ShotListView: View {
                 // matching the web app exactly.
                 Task { await viewModel.createProjectInfoScene() }
             } label: {
-                Label("Projektinfo", systemImage: "info.circle")
+                Label("Info", systemImage: "info.circle")
             }
             Button {
                 showingNotionImport = true
@@ -534,16 +579,36 @@ struct ShotListView: View {
             // being filed into a section via its header (see
             // sectionHeader) — same key (dropTargetSectionId,
             // unassignedSectionKey for "Ohne Abschnitt") for both cases.
-            // Collapses to zero height when inactive, same reasoning as
-            // sceneDropIndicator's own doc comment — a permanently
-            // reserved 44pt gap read as an "unschöner Abstand" between
-            // every section regardless of whether anything was being
-            // dragged (2026-07-11).
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
-                .frame(height: (dropTargetSectionId == (section?.id ?? unassignedSectionKey)) ? 60 : 0)
+            //
+            // CRITICAL fix (2026-07-11): this used to be a plain VStack
+            // sibling that grew 0→60pt in the layout itself. Since the
+            // actual .dropDestination/isTargeted lives on sectionHeader
+            // right below it (not on this rectangle), growing this sibling
+            // physically PUSHED the header down and out from under the
+            // finger the instant isTargeted flipped true — which
+            // immediately flipped isTargeted back to false, shrinking this
+            // back to 0, snapping the header back up under the finger,
+            // flipping isTargeted true again... an infinite feedback loop
+            // (Lino: "wackelt sehr stark herum und zerkleinert und
+            // vergrössert sich die ganze Zeit"), and a release landing
+            // mid-oscillation could miss the header's bounds entirely,
+            // which is why the whole section appeared to "spring back" to
+            // its original position instead of actually moving. Fix: keep
+            // a CONSTANT-height spacer in the layout flow (so the header
+            // below never moves, regardless of drag state) and render the
+            // growing rectangle as an `.overlay` on top of it — overlays
+            // don't affect their parent's layout size, so the visual
+            // grow/shrink animation no longer displaces the actual drop
+            // target underneath it.
+            Color.clear
+                .frame(height: 16)
+                .overlay(alignment: .center) {
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
+                        .frame(height: (dropTargetSectionId == (section?.id ?? unassignedSectionKey)) ? 60 : 12)
+                        .opacity(dropTargetSectionId == (section?.id ?? unassignedSectionKey) ? 1 : 0)
+                }
                 .padding(.horizontal, 16)
-                .opacity(dropTargetSectionId == (section?.id ?? unassignedSectionKey) ? 1 : 0)
                 .allowsHitTesting(false)
                 .animation(.spring(response: 0.3, dampingFraction: 0.8), value: dropTargetSectionId)
             sectionHeader(section: section)
@@ -780,16 +845,29 @@ struct ShotListView: View {
         // place to trigger the expansion to begin with (a real bug found
         // live, 2026-07-11: "das Indikator Rechteck erscheint nie zwischen
         // Kacheln" — it wasn't misplaced, it was permanently stuck
-        // collapsed with nothing able to ever activate it). Small but real
-        // (12pt) resting height keeps a genuine drop target always present
-        // in the gap, invisible via opacity/stroke alone, expanding to the
-        // full 60pt only once actually targeted.
+        // collapsed with nothing able to ever activate it).
+        //
+        // Resting height raised 12pt→28pt (2026-07-11, second pass) — 12pt
+        // forced you to hit within a hair of the indicator's exact top
+        // edge (Lino: "man muss den oberen Rand des Indikator Rechteckes
+        // treffen... sonst geht das Indikator Rechteck immer auf und zu").
+        // Growth is anchored at the TOP (VStack lays this out before
+        // `target`, so growing only pushes what's below it downward, never
+        // moves this view's own top edge) — every point that was inside
+        // the resting 12pt band is still inside the active 60pt one, so
+        // widening the resting band only ever makes the target easier to
+        // hit, it can't introduce the section-header-style feedback loop
+        // (see sectionGroup's indicator, which is a separate view from its
+        // own drop target and needed a different, structural fix).
+        // contentShape is padded an extra 6pt beyond the visible frame on
+        // top/bottom too, so the hit area is generously bigger than what's
+        // actually drawn, not just a taller visible rectangle.
         return RoundedRectangle(cornerRadius: 8)
             .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
-            .frame(height: isActive ? 60 : 12)
+            .frame(height: isActive ? 60 : 28)
             .padding(.horizontal, 4)
             .opacity(isActive ? 1 : 0)
-            .contentShape(Rectangle())
+            .contentShape(Rectangle().inset(by: -6))
             .dropDestination(for: String.self) { ids, _ in
                 guard let raw = ids.first, raw.hasPrefix("scene:") else { return false }
                 let draggedId = String(raw.dropFirst("scene:".count))
@@ -847,7 +925,7 @@ struct ShotListView: View {
             }
         }
         .draggable("scene:\(scene.id)") {
-            Label("Projektinfo", systemImage: "info.circle.fill")
+            Label("Info", systemImage: "info.circle.fill")
                 .font(.subheadline.weight(.semibold))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
@@ -976,6 +1054,11 @@ struct ShotListView: View {
             } label: {
                 Label("Nicht mehr im Kasten", systemImage: "arrow.uturn.backward")
             }
+            Button {
+                Task { await viewModel.duplicateScene(scene) }
+            } label: {
+                Label("Duplizieren", systemImage: "plus.square.on.square")
+            }
             Button(role: .destructive) {
                 sceneToDelete = scene
             } label: {
@@ -1060,16 +1143,41 @@ struct ShotListView: View {
                 // sheet. Capped to the first 2 in column layout, same
                 // reasoning as description/dialogue above.
                 if !scene.isIntermediateStep, !scene.dialogues.isEmpty {
-                    Label("Dialog", systemImage: "quote.bubble")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    ForEach(columnLayout ? Array(scene.dialogues.prefix(2)) : scene.dialogues) { dialogue in
-                        dialogueRow(dialogue: dialogue, scene: scene)
+                    let dialogCollapsed = collapsedDialogSceneIds.contains(scene.id)
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            if dialogCollapsed {
+                                collapsedDialogSceneIds.remove(scene.id)
+                            } else {
+                                collapsedDialogSceneIds.insert(scene.id)
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            Label("Dialog", systemImage: "quote.bubble")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Text("\(scene.dialogues.count)")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.tertiary)
+                                .rotationEffect(.degrees(dialogCollapsed ? 0 : 90))
+                        }
+                        .contentShape(Rectangle())
                     }
-                    if columnLayout && scene.dialogues.count > 2 {
-                        Text("+\(scene.dialogues.count - 2) weitere")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    .buttonStyle(.plain)
+                    if !dialogCollapsed {
+                        ForEach(columnLayout ? Array(scene.dialogues.prefix(2)) : scene.dialogues) { dialogue in
+                            dialogueRow(dialogue: dialogue, scene: scene)
+                        }
+                        if columnLayout && scene.dialogues.count > 2 {
+                            Text("+\(scene.dialogues.count - 2) weitere")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
                 if let address = scene.locationAddress, let lat = scene.locationLat, let lng = scene.locationLng {
@@ -1122,6 +1230,11 @@ struct ShotListView: View {
                 } label: {
                     Label("Nicht mehr im Kasten", systemImage: "arrow.uturn.backward")
                 }
+            }
+            Button {
+                Task { await viewModel.duplicateScene(scene) }
+            } label: {
+                Label("Duplizieren", systemImage: "plus.square.on.square")
             }
             Button(role: .destructive) {
                 sceneToDelete = scene
@@ -1215,6 +1328,11 @@ struct ShotListView: View {
                     editingScene = .some(scene)
                 } label: {
                     Label("Bearbeiten", systemImage: "pencil")
+                }
+                Button {
+                    Task { await viewModel.duplicateScene(scene) }
+                } label: {
+                    Label("Duplizieren", systemImage: "plus.square.on.square")
                 }
                 Button(role: .destructive) {
                     sceneToDelete = scene
@@ -1450,6 +1568,12 @@ struct ShotListView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .contextMenu {
+            Button {
+                editingDialogueText = dialogue.text
+                editingDialogue = (dialogue, scene)
+            } label: {
+                Label("Bearbeiten", systemImage: "pencil")
+            }
             Button(role: .destructive) {
                 Task { await viewModel.deleteDialogue(dialogue, in: scene) }
             } label: {
