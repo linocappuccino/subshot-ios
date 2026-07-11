@@ -89,20 +89,19 @@ struct ShotListView: View {
     /// sceneCard). Not "which scene is being dragged": .draggable() doesn't
     /// expose a drag-started callback, only drop-target hover does.
     @State private var dropTargetSceneId: String?
-    // draggedSceneId (source-tile-collapse-during-drag) was here briefly,
-    // 2026-07-11 — reverted the same day: collapsing/animating the source
-    // tile's height WHILE a drag is active shifts every other tile's
-    // on-screen position mid-gesture, which very plausibly explains a
-    // regression reported right after. Re-added below in a DIFFERENT,
-    // layout-inert form (purely informational, drives which SIDE of the
-    // target tile the indicator renders on, never touches any tile's own
-    // size/opacity) — not the same risk as the reverted version.
-    /// Tracked purely to compute drag DIRECTION for the landing indicator
-    /// (see dragWillLandAfter below) — never used for any visual effect on
-    /// the dragged tile itself, unlike the reverted attempt above. Same
-    /// onAppear/onDisappear-on-the-drag-preview mechanism (.draggable()
-    /// itself has no drag-started callback).
-    @State private var draggedSceneId: String?
+    // draggedSceneId + direction-aware indicator (before/after the target,
+    // depending on drag direction) were here briefly, 2026-07-11 — both
+    // reverted the same day. Tracking "which scene is being dragged" via
+    // onAppear/onDisappear on the drag-lift preview view was NOT reliable
+    // in practice (the indicator ended up always showing "before"
+    // regardless of actual direction, and the extra state churn made the
+    // pick-up animation itself feel broken). reorderScene is back to
+    // always-insert-before-the-target (see its own doc comment) — simple,
+    // no direction/state tracking needed, indicator always matches exactly
+    // what happens. Also switched from a thin line to a dashed rectangle
+    // placeholder per Lino's explicit request (2026-07-11: "ich möchte das
+    // blau gestrichelte Rechteck... zeigt wo die Kachel landet, das ist
+    // übersichtlicher") — see sceneDropIndicator below.
     /// Same idea as dropTargetSceneId, for section headers — drives the one
     /// blue-line indicator in sectionGroup for BOTH a section being dragged
     /// (reorder) AND a scene being dragged onto a section's header to file
@@ -527,32 +526,21 @@ struct ShotListView: View {
     @ViewBuilder
     private func sectionGroup(section: SceneSection?) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Landing indicator — ONE indicator type everywhere now
-            // (2026-07-11: "wir haben jetzt irgendwie einen Indikator oder
-            // Dropzone Mix-up... ich hätte gerne die blaue Linie"). Used to
-            // be this capsule (only for a dragged SECTION) PLUS a second,
-            // separate dashed-rectangle drop zone below the scene grid
-            // (only for a dragged SCENE being filed in) — two different
-            // views with two independent .dropDestinations sitting right
-            // next to each other, which SwiftUI's drop hit-testing could
-            // resolve to either one somewhat unpredictably near the
-            // boundary between them, routing some scene drops to the zone's
-            // assign-only handler instead of a tile's reorder-capable one
-            // (looked like "kann Kacheln nicht nach unten schieben" even
-            // after the reorderScene math fix). Now covers both a dragged
-            // section AND a scene being filed into an empty/any section via
-            // the header itself (see sectionHeader) — same key
-            // (dropTargetSectionId, unassignedSectionKey for "Ohne
-            // Abschnitt") for both cases, one visual, no competing target.
-            // Always present, opacity-only toggle — see
-            // sceneDropIndicatorCapsule's doc comment for why conditionally
-            // adding/removing this from the tree (the old `if` here) causes
-            // layout reflow during a drag that was very likely the actual
-            // cause of "muss die Linie super genau treffen" reports.
-            Capsule()
-                .fill(Color.accentColor)
-                .frame(height: 3)
-                .padding(.horizontal, 20)
+            // Landing indicator — ONE indicator type everywhere now, same
+            // dashed-rectangle style as scenes (see sceneDropIndicator's
+            // doc comment for the full history: was a thin capsule line,
+            // before that a second competing dashed-rectangle drop zone).
+            // Covers both a dragged SECTION being reordered AND a scene
+            // being filed into a section via its header (see
+            // sectionHeader) — same key (dropTargetSectionId,
+            // unassignedSectionKey for "Ohne Abschnitt") for both cases.
+            // Always present, opacity-only toggle (see sceneDropIndicator's
+            // doc comment on why presence-toggling causes layout reflow
+            // during a drag).
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
+                .frame(height: 44)
+                .padding(.horizontal, 16)
                 .opacity(dropTargetSectionId == (section?.id ?? unassignedSectionKey) ? 1 : 0)
             sectionHeader(section: section)
             if let section {
@@ -750,51 +738,30 @@ struct ShotListView: View {
         scene.completed && !expandedCompletedSceneIds.contains(scene.id)
     }
 
-    /// Does the scene currently being dragged land AFTER `target` (below
-    /// it) instead of before (above it)? Matters because the indicator
-    /// line always used to render ABOVE the hovered tile, implying "you'll
-    /// land right before this one" — true for upward drags, but FALSE for
-    /// downward ones. reorderScene's own math (see its doc comment)
-    /// deliberately lands a downward drag right AFTER the target — that's
-    /// what makes dragging onto the very next tile actually move it
-    /// instead of being a silent no-op. The visual indicator never
-    /// reflected that asymmetry: it just always drew above, so for
-    /// downward drags it was showing the wrong side ("die blaue Indikator
-    /// Linie stimmt überhaupt nicht mit dem überein wo die Kachel dann
-    /// landet", 2026-07-11) — not a hit-testing bug, a genuine mismatch
-    /// between what the line claimed and what the algorithm actually does.
-    /// Only considers same-section drags (cross-section drags land in a
-    /// section the dragged scene wasn't in yet, so "before/after" relative
-    /// to its OLD sort_order isn't a meaningful comparison) — defaults to
-    /// "before" (the existing, unchanged behavior) for those.
-    private func dragWillLandAfter(_ target: Scene) -> Bool {
-        guard let draggedId = draggedSceneId, draggedId != target.id,
-              let dragged = viewModel.scenes.first(where: { $0.id == draggedId }),
-              dragged.sectionId == target.sectionId
-        else { return false }
-        return dragged.sortOrder < target.sortOrder
-    }
-
-    /// The landing-indicator line itself — used both above AND below the
-    /// hovered tile now (see dragWillLandAfter), same visual either way.
+    /// Landing placeholder — a dashed rectangle instead of a thin line
+    /// (2026-07-11, Lino's explicit preference: "ich möchte das blau
+    /// gestrichelte Rechteck... das ist übersichtlicher"), always rendered
+    /// ABOVE the hovered tile, matching reorderScene's own always-insert-
+    /// before behavior exactly (see its doc comment) — no direction
+    /// tracking needed, so nothing here depends on knowing which scene is
+    /// being dragged (that turned out to have no reliable signal — see the
+    /// removed draggedSceneId/dragWillLandAfter, reverted the same day).
     ///
-    /// `isActive` toggles opacity, NOT presence — this used to be wrapped
-    /// in `if dropTargetSceneId == scene.id { ... }` at every call site,
-    /// meaning the Capsule (with its own height + padding) was added to or
-    /// removed from the view tree on every hover change. That changes the
-    /// VStack's total layout height by a few points EVERY time hover
-    /// enters/leaves ANY tile during a drag — which reflows every tile
-    /// around the hover point mid-gesture, moving the actual drop target's
-    /// on-screen bounds out from under the finger continuously. That's
-    /// what "man muss die Linie super genau treffen" / "sonst springt
-    /// alles ein wenig herum" (2026-07-11) was actually describing — not
-    /// insufficient hit-testing tolerance, a self-inflicted moving target.
-    /// Always reserving this exact space and only changing opacity makes
-    /// every tile's height constant for the whole drag, so nothing shifts.
-    private func sceneDropIndicatorCapsule(isActive: Bool) -> some View {
-        Capsule()
-            .fill(Color.accentColor)
-            .frame(height: 3)
+    /// `isActive` toggles opacity, NOT presence — conditionally adding/
+    /// removing this from the view tree (the old `if dropTargetSceneId ==
+    /// scene.id { ... }` at every call site) changes the VStack's total
+    /// layout height every time hover enters/leaves ANY tile during a
+    /// drag, reflowing every tile around the hover point mid-gesture and
+    /// moving the actual drop target's on-screen bounds out from under the
+    /// finger continuously ("man muss die Linie super genau treffen...
+    /// sonst springt alles ein wenig herum", 2026-07-11) — not insufficient
+    /// hit-testing tolerance, a self-inflicted moving target. Always
+    /// reserving this exact space keeps every tile's height constant for
+    /// the whole drag.
+    private func sceneDropIndicator(isActive: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 8)
+            .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
+            .frame(height: 44)
             .padding(.horizontal, 4)
             .opacity(isActive ? 1 : 0)
     }
@@ -832,13 +799,8 @@ struct ShotListView: View {
     @ViewBuilder
     private func projectInfoSceneCard(scene: Scene) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            // Direction-aware now — see dragWillLandAfter's doc comment for
-            // why this can't just always render above the target. Always
-            // present (isActive toggles opacity only) — see
-            // sceneDropIndicatorCapsule's own doc comment on why.
-            sceneDropIndicatorCapsule(isActive: dropTargetSceneId == scene.id && !dragWillLandAfter(scene))
+            sceneDropIndicator(isActive: dropTargetSceneId == scene.id)
             SceneProjectInfoTile(viewModel: viewModel, scene: scene, projectId: projectId)
-            sceneDropIndicatorCapsule(isActive: dropTargetSceneId == scene.id && dragWillLandAfter(scene))
         }
         .padding(.horizontal, ((isPad && isGridMode) || horizontalSizeClass == .regular) ? 0 : 16)
         .contextMenu {
@@ -856,8 +818,6 @@ struct ShotListView: View {
                 .background(Color(.secondarySystemGroupedBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
-                .onAppear { draggedSceneId = scene.id }
-                .onDisappear { if draggedSceneId == scene.id { draggedSceneId = nil } }
         }
         .dropDestination(for: String.self) { ids, _ in
             // Shared with sceneTile/sceneCompactTile now — see
@@ -877,15 +837,10 @@ struct ShotListView: View {
     private func regularSceneCard(scene: Scene, columnLayout: Bool) -> some View {
         let collapsed = isCollapsed(scene)
         VStack(alignment: .leading, spacing: 14) {
-            // Landing indicator: shows exactly where a dragged scene will
-            // insert if dropped right now — direction-aware (see
-            // dragWillLandAfter's doc comment), NOT always "before this
-            // tile" like it used to be: a downward drag actually lands
-            // right after the target, so showing the line above it in that
-            // case pointed at the wrong spot ("die blaue Indikator Linie
-            // stimmt überhaupt nicht mit dem überein wo die Kachel dann
-            // landet", 2026-07-11).
-            sceneDropIndicatorCapsule(isActive: dropTargetSceneId == scene.id && !dragWillLandAfter(scene))
+            // Landing placeholder: shows exactly where a dragged scene will
+            // insert if dropped right now — see sceneDropIndicator's own
+            // doc comment.
+            sceneDropIndicator(isActive: dropTargetSceneId == scene.id)
             if collapsed {
                 sceneCollapsedRow(scene: scene)
             } else {
@@ -902,7 +857,6 @@ struct ShotListView: View {
                     addRow(sceneId: scene.id)
                 }
             }
-            sceneDropIndicatorCapsule(isActive: dropTargetSceneId == scene.id && dragWillLandAfter(scene))
         }
         .padding(collapsed ? 10 : 14)
         .background(scene.completed ? Color.green.opacity(0.18) : Color(.secondarySystemGroupedBackground))
@@ -1176,9 +1130,8 @@ struct ShotListView: View {
     @ViewBuilder
     private func sceneCompactTile(scene: Scene) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Landing indicator, same as the full sceneTile — direction-
-            // aware now too (see dragWillLandAfter's doc comment).
-            sceneDropIndicatorCapsule(isActive: dropTargetSceneId == scene.id && !dragWillLandAfter(scene))
+            // Landing placeholder, same as the full sceneTile.
+            sceneDropIndicator(isActive: dropTargetSceneId == scene.id)
             if let imageUrl = scene.imageUrl {
                 AsyncShotThumbnail(path: imageUrl, size: nil, lockAspectRatio: true)
                     .frame(maxWidth: .infinity)
@@ -1200,7 +1153,6 @@ struct ShotListView: View {
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(2)
             SceneTimerInfo(scene: scene, stacked: true)
-            sceneDropIndicatorCapsule(isActive: dropTargetSceneId == scene.id && dragWillLandAfter(scene))
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1291,8 +1243,6 @@ struct ShotListView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
         .rotationEffect(.degrees(-2))
-        .onAppear { draggedSceneId = scene.id }
-        .onDisappear { if draggedSceneId == scene.id { draggedSceneId = nil } }
     }
 
     /// Two rows, not one: the title used to be squeezed between a drag handle

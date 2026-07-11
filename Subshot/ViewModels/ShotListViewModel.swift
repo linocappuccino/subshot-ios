@@ -555,6 +555,24 @@ final class ShotListViewModel: ObservableObject {
     /// (screenplay-style) and reassigns every sibling's sort_order in one
     /// transaction; locally we just optimistically relocate it in `scenes`
     /// and then reconcile with whatever the server returns.
+    /// Deliberately the simplest correct version, after several rounds of
+    /// trying to also make "drag onto the immediate next neighbor" produce
+    /// a visible move (inserting AFTER the target for downward drags) —
+    /// that required knowing drag direction, which needed tracking WHICH
+    /// scene is being dragged during an active hover, which turned out to
+    /// have no reliable signal (.draggable() has no drag-started callback;
+    /// approximating it via onAppear/onDisappear on the drag-lift preview
+    /// view was NOT reliable in practice — the indicator ended up always
+    /// showing "before" regardless of actual direction, and the extra
+    /// state churn made the pick-up animation itself feel broken, reported
+    /// live 2026-07-11). Reverted that whole layer. This version ALWAYS
+    /// inserts before the literal drop target, using the target's index in
+    /// the POST-removal sibling list — the one thing this can't do is move
+    /// a scene to be right after its own immediate current neighbor
+    /// (removing it and reinserting "before" that neighbor cancels out to
+    /// the same position, a no-op) — accepted as a known, narrow
+    /// limitation in exchange for the indicator ALWAYS being correct and
+    /// nothing about this depending on unreliable state.
     func reorderScene(_ sceneId: String, before targetId: String?) async {
         guard let scene = scenes.first(where: { $0.id == sceneId }) else { return }
         // Scoped to the dragged scene's OWN section — by the time this runs
@@ -569,27 +587,12 @@ final class ShotListViewModel: ObservableObject {
         // to different sections routinely share the same sort_order value —
         // sorting/indexing the flat array as if it were one ordered
         // sequence meant the computed before_scene_id could end up
-        // referencing a scene in a totally different section. The
-        // backend's siblings query (itself correctly section-scoped) then
-        // silently couldn't find that id among the real siblings and fell
-        // back to appending at the very end of the section instead of the
-        // intended position. Found live, 2026-07-11 ("kann Projektinfo
-        // nicht in einen Abschnitt mit Szenen verschieben", scenes still
-        // not reliably movable downward even after the earlier, narrower
-        // before_scene_id-direction fix below).
+        // referencing a scene in a totally different section. Found live,
+        // 2026-07-11 ("kann Projektinfo nicht in einen Abschnitt mit
+        // Szenen verschieben").
         var siblings = scenes.filter { $0.sectionId == scene.sectionId }.sorted { $0.sortOrder < $1.sortOrder }
-        // Target's position is read from the ORIGINAL, pre-removal sibling
-        // list, not after removing the dragged scene — finding it post-
-        // removal made "insert before target" a silent no-op for the single
-        // most common drag gesture (dragging onto the very next scene
-        // below): removing the dragged scene already shifts every later
-        // scene's index down by one, so re-finding the target after that
-        // and inserting "before" it landed the scene right back where it
-        // started ("kann Kacheln nach oben verschieben aber nicht nach
-        // unten"). Same fix already applied to reorderSection below.
-        let targetIndex = targetId.flatMap { id in siblings.firstIndex(where: { $0.id == id }) }
         siblings.removeAll { $0.id == sceneId }
-        let insertIndex = targetIndex.map { min($0, siblings.count) } ?? siblings.count
+        let insertIndex = targetId.flatMap { id in siblings.firstIndex(where: { $0.id == id }) } ?? siblings.count
         siblings.insert(scene, at: insertIndex)
 
         // Real optimistic feedback, not just an array shuffle — scenes(in:)
@@ -605,22 +608,8 @@ final class ShotListViewModel: ObservableObject {
             }
         }
 
-        // IMPORTANT: do NOT send the raw drop-target id as before_scene_id
-        // — the backend's /move endpoint takes it completely literally
-        // ("insert right before this id" in ITS OWN post-removal sibling
-        // list), with none of the original-pre-removal-index adjustment
-        // used above. For a downward drag, this view's own local math
-        // effectively lands the scene right AFTER the drop target (reusing
-        // the target's stale pre-removal index overshoots by exactly one
-        // once the dragged scene itself is gone) — asking the server for
-        // the opposite ("insert before target") is then a no-op for the
-        // single most common gesture. Deriving before_scene_id from
-        // whoever now sits right after the dragged scene in the already-
-        // correct, section-scoped `siblings` sidesteps the mismatch
-        // entirely and needs no direction detection of its own.
-        let apiBeforeId = siblings.indices.contains(insertIndex + 1) ? siblings[insertIndex + 1].id : nil
         do {
-            let updated = try await APIClient.shared.moveScene(sceneId, beforeSceneId: apiBeforeId)
+            let updated = try await APIClient.shared.moveScene(sceneId, beforeSceneId: targetId)
             if let index = scenes.firstIndex(where: { $0.id == updated.id }) {
                 scenes[index] = updated
             }
