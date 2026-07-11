@@ -89,6 +89,18 @@ struct ShotListView: View {
     /// sceneCard). Not "which scene is being dragged": .draggable() doesn't
     /// expose a drag-started callback, only drop-target hover does.
     @State private var dropTargetSceneId: String?
+    /// Debounces dropTargetSceneId's CLEARING only (never its activation,
+    /// which stays instant) — 2026-07-11, Lino: "wenn die Drop-Zone
+    /// angezeigt wird, muss man mit dem ganzen Finger in der Dropzone
+    /// herumfahren können... erst wenn man eine gewisse Distanz von der
+    /// Dropzone weg geht, schliesst die Dropzone". SwiftUI's own
+    /// `isTargeted` is a hard boundary crossing (in/out of the current hit
+    /// area, no margin) — without this, brushing the exact edge of an
+    /// already-expanded indicator toggles it shut and immediately reopens
+    /// it as the finger wobbles by even a point, reading as constant
+    /// flicker. Cancelled on every re-entry, so a genuine "moved away and
+    /// stayed away" is still the only thing that actually closes it.
+    @State private var pendingSceneClearWork: DispatchWorkItem?
     // draggedSceneId + direction-aware indicator (before/after the target,
     // depending on drag direction) were here briefly, 2026-07-11 — both
     // reverted the same day. Tracking "which scene is being dragged" via
@@ -112,6 +124,9 @@ struct ShotListView: View {
     /// unassignedSectionKey for "Ohne Abschnitt", same sentinel convention
     /// as isSectionCollapsed.
     @State private var dropTargetSectionId: String?
+    /// Same debounced-clear idea as pendingSceneClearWork, for the section
+    /// header's own indicator.
+    @State private var pendingSectionClearWork: DispatchWorkItem?
     /// Which completed ("im Kasten") scenes are temporarily expanded back to
     /// full detail — collapsed is the default for any completed scene (see
     /// sceneCard/sceneCollapsedRow), tapping one adds it here to "peek" at
@@ -600,8 +615,20 @@ struct ShotListView: View {
             // don't affect their parent's layout size, so the visual
             // grow/shrink animation no longer displaces the actual drop
             // target underneath it.
+            // Height is a CONSTANT 0 always — not just "small at rest" — so
+            // the header below it never moves by so much as a point,
+            // whether idle, hovered, or mid-animation (2026-07-11, second
+            // pass: a nonzero resting height here, even a small one, is a
+            // permanent gap between every section whether anything is being
+            // dragged or not, which Lino explicitly does NOT want — "ich
+            // will keine Abstände sondern die sollen breiter werden wenn
+            // ein Indikator dazwischen rutscht"). The whole visual (dashed
+            // rectangle growing to 60pt on hover) lives entirely in the
+            // `.overlay`, which — unlike `.frame` — never contributes to
+            // this view's own layout size, so it can render taller than its
+            // own 0pt box without pushing anything.
             Color.clear
-                .frame(height: 16)
+                .frame(height: 0)
                 .overlay(alignment: .center) {
                     RoundedRectangle(cornerRadius: 8)
                         .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
@@ -713,9 +740,7 @@ struct ShotListView: View {
                     }
                     return false
                 } isTargeted: { targeted in
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        dropTargetSectionId = targeted ? section.id : (dropTargetSectionId == section.id ? nil : dropTargetSectionId)
-                    }
+                    setSectionDropTarget(section.id, targeted: targeted)
                 }
         } else {
             // "Ohne Abschnitt" — no rename/delete/reorder (not a real
@@ -729,10 +754,43 @@ struct ShotListView: View {
                     Task { await viewModel.assignSceneToSection(dragged, sectionId: nil) }
                     return true
                 } isTargeted: { targeted in
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        dropTargetSectionId = targeted ? unassignedSectionKey : (dropTargetSectionId == unassignedSectionKey ? nil : dropTargetSectionId)
-                    }
+                    setSectionDropTarget(unassignedSectionKey, targeted: targeted)
                 }
+        }
+    }
+
+    /// Debounced-activation helper for the section header's indicator — see
+    /// pendingSectionClearWork's own doc comment for why the CLEAR (not the
+    /// activate) side needs the delay. Shared by both the named-section and
+    /// "Ohne Abschnitt" header branches above.
+    private func setSectionDropTarget(_ key: String, targeted: Bool) {
+        pendingSectionClearWork?.cancel()
+        if targeted {
+            withAnimation(.easeOut(duration: 0.15)) { dropTargetSectionId = key }
+        } else {
+            let work = DispatchWorkItem {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    if dropTargetSectionId == key { dropTargetSectionId = nil }
+                }
+            }
+            pendingSectionClearWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
+        }
+    }
+
+    /// Same idea as setSectionDropTarget, for scene-tile drop gaps.
+    private func setSceneDropTarget(_ id: String, targeted: Bool) {
+        pendingSceneClearWork?.cancel()
+        if targeted {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { dropTargetSceneId = id }
+        } else {
+            let work = DispatchWorkItem {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    if dropTargetSceneId == id { dropTargetSceneId = nil }
+                }
+            }
+            pendingSceneClearWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
         }
     }
 
@@ -847,36 +905,33 @@ struct ShotListView: View {
         // Kacheln" — it wasn't misplaced, it was permanently stuck
         // collapsed with nothing able to ever activate it).
         //
-        // Resting height raised 12pt→28pt (2026-07-11, second pass) — 12pt
-        // forced you to hit within a hair of the indicator's exact top
-        // edge (Lino: "man muss den oberen Rand des Indikator Rechteckes
-        // treffen... sonst geht das Indikator Rechteck immer auf und zu").
-        // Growth is anchored at the TOP (VStack lays this out before
-        // `target`, so growing only pushes what's below it downward, never
-        // moves this view's own top edge) — every point that was inside
-        // the resting 12pt band is still inside the active 60pt one, so
-        // widening the resting band only ever makes the target easier to
-        // hit, it can't introduce the section-header-style feedback loop
-        // (see sectionGroup's indicator, which is a separate view from its
-        // own drop target and needed a different, structural fix).
-        // contentShape is padded an extra 6pt beyond the visible frame on
-        // top/bottom too, so the hit area is generously bigger than what's
-        // actually drawn, not just a taller visible rectangle.
+        // Resting height stays 12pt (2026-07-11, second pass tried 28pt to
+        // address "man muss den oberen Rand exakt treffen" — that DID
+        // widen the hit area, but a taller RESTING frame is also a bigger
+        // permanent gap between every tile even when nothing is being
+        // dragged, which Lino explicitly rejected: "ich will keine
+        // Abstände sondern die sollen breiter werden wenn ein Indikator
+        // dazwischen rutscht"). Fixed properly instead by widening ONLY the
+        // invisible hit-test region (contentShape, 10pt beyond the visible
+        // frame on every side) without touching the frame itself — that
+        // costs nothing in idle layout, since contentShape never
+        // contributes to a view's own size. Combined with
+        // setSceneDropTarget's debounced-clear (a genuine "moved away and
+        // stayed away" grace period, not just a bigger boundary), that's
+        // the actual fix for "geht immer auf und zu".
         return RoundedRectangle(cornerRadius: 8)
             .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
-            .frame(height: isActive ? 60 : 28)
+            .frame(height: isActive ? 60 : 12)
             .padding(.horizontal, 4)
             .opacity(isActive ? 1 : 0)
-            .contentShape(Rectangle().inset(by: -6))
+            .contentShape(Rectangle().inset(by: -10))
             .dropDestination(for: String.self) { ids, _ in
                 guard let raw = ids.first, raw.hasPrefix("scene:") else { return false }
                 let draggedId = String(raw.dropFirst("scene:".count))
                 Task { await viewModel.handleSceneDroppedOnTile(draggedId, targetScene: target) }
                 return true
             } isTargeted: { targeted in
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    dropTargetSceneId = targeted ? target.id : (dropTargetSceneId == target.id ? nil : dropTargetSceneId)
-                }
+                setSceneDropTarget(target.id, targeted: targeted)
             }
     }
 
