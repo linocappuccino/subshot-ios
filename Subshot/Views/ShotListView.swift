@@ -877,29 +877,23 @@ struct ShotListView: View {
         // the gap between the two columns would be twice as wide as the gap
         // above/below.
         .padding(.horizontal, ((isPad && isGridMode) || horizontalSizeClass == .regular) ? 0 : 16)
-        // Was the plain void-returning dropDestination overload — that
-        // overload has NO way to say "not for me, try something else": it
-        // just runs its closure (or the guard inside it silently no-ops)
-        // for whatever drop SwiftUI resolves to this view's bounds,
-        // regardless of payload. This view sits AROUND sceneTile (nested,
-        // not siblings — see the VStack above), and sceneTile has its OWN
-        // dropDestination for scene reordering. A "scene:"-prefixed drop
-        // that SwiftUI resolves to THIS outer view (rather than the inner
-        // sceneTile) used to just vanish here — accepted by the outer
-        // dropDestination's mere presence, then no-op'd by the guard, never
-        // falling through to the inner handler that would have actually
-        // reordered it. That's very likely why scene drops "landeten
-        // irgendwo" / did nothing even after the reorder-math fixes
-        // (2026-07-11) — this was never a math problem for at least some
-        // fraction of drops, it was drops never reaching reorderScene at
-        // all. The Bool-returning isTargeted overload (used everywhere else
-        // in this file already) DOES let SwiftUI try another candidate when
-        // a handler returns false for a payload it doesn't want.
-        .dropDestination(for: String.self) { ids, _ in
-            guard let dragged = ids.first, !dragged.hasPrefix("scene:") else { return false }
-            Task { await viewModel.moveShot(dragged, toScene: scene.id) }
-            return true
-        } isTargeted: { _ in }
+        // No dropDestination here anymore (2026-07-11) — this view wraps
+        // AROUND sceneTile (nested, not siblings — see the VStack above),
+        // and sceneTile has its OWN .contextMenu/.draggable/.dropDestination
+        // for scene reordering. Stacking a SECOND, independent drop
+        // interaction on the ENCLOSING view on top of that turned out to be
+        // a real problem on-device, not just a "which one wins the drop"
+        // ambiguity: reported live as long-press/.contextMenu itself no
+        // longer responding AT ALL, even after fixing the drop-swallowing
+        // issue this used to have (a Bool-returning dropDestination should
+        // in principle coexist fine with an inner one, but two nested
+        // UIDropInteraction-backed recognizers plus a UIContextMenuInteraction
+        // plus a UIDragInteraction all stacked across two view levels in the
+        // same touch region is exactly the kind of thing that can silently
+        // break UIKit gesture arbitration in ways that don't show up from
+        // reading the SwiftUI code). Filing a shot into this scene by drag
+        // now goes through sceneTile's own single dropDestination instead
+        // (see its own doc comment) — one recognizer per tile, not two.
     }
 
     /// Collapsed "im Kasten" summary — just number/title/priority plus the
@@ -1112,15 +1106,26 @@ struct ShotListView: View {
         .draggable("scene:\(scene.id)") {
             sceneDragPreview(scene: scene)
         }
+        // Single dropDestination for the whole tile now (2026-07-11) —
+        // handles BOTH a scene being reordered onto this tile ("scene:"
+        // prefix) AND a shot being filed into this scene (plain, unprefixed
+        // id — see shotCardView's .draggable(shot.id)). Used to be two
+        // separate dropDestinations, one here and one on the enclosing
+        // regularSceneCard wrapping this view — see that function's own
+        // doc comment for why stacking two nested drop interactions (on
+        // top of this view's own .contextMenu/.draggable) turned out to be
+        // a real on-device problem, not just an abstract "which one wins"
+        // question.
         .dropDestination(for: String.self) { ids, _ in
-            // The isTargeted-overload's action closure returns Bool (did
-            // this view accept the drop), unlike the plain overload used
-            // everywhere else in this file for shots. See
-            // handleSceneDroppedOnTile's doc comment for the shared logic.
-            guard let raw = ids.first, raw.hasPrefix("scene:") else { return false }
-            let draggedId = String(raw.dropFirst("scene:".count))
-            Task { await viewModel.handleSceneDroppedOnTile(draggedId, targetScene: scene) }
-            return true
+            guard let raw = ids.first else { return false }
+            if raw.hasPrefix("scene:") {
+                let draggedId = String(raw.dropFirst("scene:".count))
+                Task { await viewModel.handleSceneDroppedOnTile(draggedId, targetScene: scene) }
+                return true
+            } else {
+                Task { await viewModel.moveShot(raw, toScene: scene.id) }
+                return true
+            }
         } isTargeted: { targeted in
             withAnimation(.easeOut(duration: 0.15)) {
                 dropTargetSceneId = targeted ? scene.id : (dropTargetSceneId == scene.id ? nil : dropTargetSceneId)
