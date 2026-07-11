@@ -1134,18 +1134,30 @@ struct ShotListView: View {
         .draggable("scene:\(scene.id)") {
             sceneDragPreview(scene: scene)
         }
-        // Only handles a SHOT being filed into this scene now (2026-07-11)
-        // — scene reordering moved to sceneDropIndicator's own
-        // dropDestination exclusively (the gap before a tile, not the tile
-        // itself — see that function's doc comment: "man muss sie genau
-        // über das blaue Rechteck draggen"). Rejecting "scene:"-prefixed
-        // payloads here isn't strictly required for correctness anymore
-        // (the indicator is a sibling, not nested with this view, so there
-        // is no competing-recognizer risk either way), but keeps this
-        // dropDestination's purpose singular and matches what it actually
-        // does now.
+        // Handles a SHOT being filed into this scene (unprefixed id), PLUS
+        // a Projektinfo scene being refiled into THIS scene's section
+        // specifically (2026-07-11: "die Projektinfo kann man wieder in
+        // keinen Abschnitt schieben" — the thin indicator gap and the
+        // section header were technically both still valid targets, but
+        // evidently too easy to miss in practice; a Projektinfo doesn't
+        // care about exact position within a section at all, since it
+        // always sorts first regardless (see scenes(in:)'s own sort rule)
+        // — so ANY tile already in the target section is a perfectly
+        // valid, much larger, much easier-to-hit place to drop it, not
+        // just the header or the gap). Deliberately NOT extended to
+        // regular (non-Projektinfo) scene drags — those still need exact
+        // position, which only the indicator gap can express; broadening
+        // this to accept ALL scene reordering here again would resurrect
+        // the earlier nested-dropDestination gesture-conflict bug this
+        // same view already had fixed for it once today.
         .dropDestination(for: String.self) { ids, _ in
-            guard let raw = ids.first, !raw.hasPrefix("scene:") else { return false }
+            guard let raw = ids.first else { return false }
+            if raw.hasPrefix("scene:") {
+                let draggedId = String(raw.dropFirst("scene:".count))
+                guard let dragged = viewModel.scenes.first(where: { $0.id == draggedId }), dragged.isProjectInfo else { return false }
+                Task { await viewModel.handleSceneDroppedOnTile(draggedId, targetScene: scene) }
+                return true
+            }
             Task { await viewModel.moveShot(raw, toScene: scene.id) }
             return true
         }
