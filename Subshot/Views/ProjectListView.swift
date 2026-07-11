@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import ClerkKit
 
 /// Root project screen AND every folder's contents use this same view —
@@ -180,37 +181,31 @@ struct ProjectListView: View {
                     //    colors. .compositingGroup() flattens the badge into
                     //    one opaque layer BEFORE that effect applies.
                     //
-                    // 4. Still saw some transparency after (3) — 2026-07-11,
-                    //    "KEINE TRANSPARENTS BEI DEM ZAHLEN ICON". The first
-                    //    .compositingGroup() only flattens the badge's OWN
-                    //    sublayers (text+fill+clip) against each other —
-                    //    it doesn't exempt the RESULTING single layer from
-                    //    an effect applied further up the tree, and the
-                    //    bell+badge combo together is still just the content
-                    //    of a Button's label inside a ToolbarItem, which is
-                    //    exactly the kind of ancestor that applies its own
-                    //    template/vibrancy rendering. A second
-                    //    .compositingGroup() around the WHOLE bell+badge
-                    //    overlay (not just the badge alone) flattens that
-                    //    combined result into one opaque layer too, before
-                    //    the toolbar gets a chance to touch it.
+                    // 4. Still saw some transparency after (3), AND again
+                    //    after a second, wider .compositingGroup() around
+                    //    the whole bell+badge combo (2026-07-11, "KEINE
+                    //    TRANSPARENTS BEI DEM ZAHLEN ICON", asked twice).
+                    //    Giving up on fighting the toolbar's own vibrancy/
+                    //    template rendering from inside SwiftUI's view tree
+                    //    — whatever exactly is causing it, it survived two
+                    //    different compositing fixes, so it's evidently not
+                    //    fully addressable with SwiftUI layer-flattening
+                    //    alone. NotificationBadgeView below is a raw UIKit
+                    //    UILabel bridged in via UIViewRepresentable instead
+                    //    — a genuine UIView's own compositing is NOT subject
+                    //    to SwiftUI's toolbar-label vibrancy pipeline at
+                    //    all, which sidesteps the whole question rather
+                    //    than trying to counteract it a third time.
                     Image(systemName: "bell")
                         .frame(width: 30, height: 30)
                         .overlay(alignment: .topTrailing) {
                             if !viewModel.notifications.isEmpty {
-                                Text(viewModel.notifications.count > 99 ? "99+" : "\(viewModel.notifications.count)")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 4)
-                                    .frame(minWidth: 16, minHeight: 16)
-                                    .background(Color.red)
-                                    .clipShape(Capsule())
-                                    .compositingGroup()
+                                NotificationBadgeView(count: viewModel.notifications.count)
+                                    .frame(width: 18, height: 18)
                                     .alignmentGuide(.top) { d in d.height * 0.7 }
                                     .alignmentGuide(.trailing) { d in d.width * 0.3 }
                             }
                         }
-                        .compositingGroup()
                 }
             }
         }
@@ -512,5 +507,36 @@ private struct GridSheets: ViewModifier {
             }
         }
         .preferredColorScheme(.dark)
+    }
+}
+
+/// Raw UIKit badge (see toolbarContent's own comment on why) — a UILabel
+/// with an opaque background drawn via CoreGraphics-backed UIView
+/// compositing, entirely outside SwiftUI's view tree and whatever's been
+/// causing the toolbar-button-label transparency two SwiftUI-side fixes
+/// didn't resolve.
+private struct NotificationBadgeView: UIViewRepresentable {
+    let count: Int
+
+    func makeUIView(context: Context) -> UILabel {
+        let label = UILabel()
+        label.textAlignment = .center
+        label.font = .systemFont(ofSize: 10, weight: .bold)
+        label.textColor = .white
+        label.backgroundColor = .systemRed
+        // isOpaque + explicit backgroundColor (not just a clear label over
+        // a colored superview) so this layer has no alpha channel at all
+        // to begin with, not just "alpha 1 for now."
+        label.isOpaque = true
+        label.layer.masksToBounds = true
+        // Fixed radius matching the fixed 18x18 SwiftUI .frame() this is
+        // wrapped in (see toolbarContent) — not derived from label.bounds,
+        // which isn't reliably laid out yet the first time updateUIView runs.
+        label.layer.cornerRadius = 9
+        return label
+    }
+
+    func updateUIView(_ label: UILabel, context: Context) {
+        label.text = count > 99 ? "99+" : "\(count)"
     }
 }

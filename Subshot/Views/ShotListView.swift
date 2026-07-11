@@ -727,9 +727,14 @@ struct ShotListView: View {
         }
         .padding(.horizontal, 16)
         .dropDestination(for: String.self) { ids, _ in
-            guard let dragged = ids.first else { return }
+            // Same fix as regularSceneCard's own shot dropDestination —
+            // explicitly reject non-shot payloads instead of silently
+            // no-op'ing them, so a "scene:"-prefixed drop that resolves
+            // here can fall through instead of vanishing.
+            guard let dragged = ids.first, !dragged.hasPrefix("scene:") else { return false }
             Task { await viewModel.moveShot(dragged, toScene: nil) }
-        }
+            return true
+        } isTargeted: { _ in }
     }
 
     /// A completed scene that isn't currently expanded (see
@@ -855,10 +860,29 @@ struct ShotListView: View {
         // the gap between the two columns would be twice as wide as the gap
         // above/below.
         .padding(.horizontal, ((isPad && isGridMode) || horizontalSizeClass == .regular) ? 0 : 16)
+        // Was the plain void-returning dropDestination overload — that
+        // overload has NO way to say "not for me, try something else": it
+        // just runs its closure (or the guard inside it silently no-ops)
+        // for whatever drop SwiftUI resolves to this view's bounds,
+        // regardless of payload. This view sits AROUND sceneTile (nested,
+        // not siblings — see the VStack above), and sceneTile has its OWN
+        // dropDestination for scene reordering. A "scene:"-prefixed drop
+        // that SwiftUI resolves to THIS outer view (rather than the inner
+        // sceneTile) used to just vanish here — accepted by the outer
+        // dropDestination's mere presence, then no-op'd by the guard, never
+        // falling through to the inner handler that would have actually
+        // reordered it. That's very likely why scene drops "landeten
+        // irgendwo" / did nothing even after the reorder-math fixes
+        // (2026-07-11) — this was never a math problem for at least some
+        // fraction of drops, it was drops never reaching reorderScene at
+        // all. The Bool-returning isTargeted overload (used everywhere else
+        // in this file already) DOES let SwiftUI try another candidate when
+        // a handler returns false for a payload it doesn't want.
         .dropDestination(for: String.self) { ids, _ in
-            guard let dragged = ids.first, !dragged.hasPrefix("scene:") else { return }
+            guard let dragged = ids.first, !dragged.hasPrefix("scene:") else { return false }
             Task { await viewModel.moveShot(dragged, toScene: scene.id) }
-        }
+            return true
+        } isTargeted: { _ in }
     }
 
     /// Collapsed "im Kasten" summary — just number/title/priority plus the
