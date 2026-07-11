@@ -179,6 +179,21 @@ struct ProjectListView: View {
                     //    whole content, which bleeds through plain solid
                     //    colors. .compositingGroup() flattens the badge into
                     //    one opaque layer BEFORE that effect applies.
+                    //
+                    // 4. Still saw some transparency after (3) — 2026-07-11,
+                    //    "KEINE TRANSPARENTS BEI DEM ZAHLEN ICON". The first
+                    //    .compositingGroup() only flattens the badge's OWN
+                    //    sublayers (text+fill+clip) against each other —
+                    //    it doesn't exempt the RESULTING single layer from
+                    //    an effect applied further up the tree, and the
+                    //    bell+badge combo together is still just the content
+                    //    of a Button's label inside a ToolbarItem, which is
+                    //    exactly the kind of ancestor that applies its own
+                    //    template/vibrancy rendering. A second
+                    //    .compositingGroup() around the WHOLE bell+badge
+                    //    overlay (not just the badge alone) flattens that
+                    //    combined result into one opaque layer too, before
+                    //    the toolbar gets a chance to touch it.
                     Image(systemName: "bell")
                         .frame(width: 30, height: 30)
                         .overlay(alignment: .topTrailing) {
@@ -195,6 +210,7 @@ struct ProjectListView: View {
                                     .alignmentGuide(.trailing) { d in d.width * 0.3 }
                             }
                         }
+                        .compositingGroup()
                 }
             }
         }

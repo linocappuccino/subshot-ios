@@ -89,6 +89,17 @@ struct ShotListView: View {
     /// sceneCard). Not "which scene is being dragged": .draggable() doesn't
     /// expose a drag-started callback, only drop-target hover does.
     @State private var dropTargetSceneId: String?
+    /// Which scene tile's OWN source row should collapse to zero height
+    /// while it's the one being dragged (2026-07-11: "im Hintergrund ist
+    /// die Kachel aber immer noch gross... so muss man nicht so lange nach
+    /// unten scrollen"). Plain .draggable() has no "drag started" callback
+    /// at all (see dropTargetSceneId's own doc comment — only drop-target
+    /// HOVER fires) — this is set instead via .onAppear on the drag
+    /// preview view itself (the preview view only exists/appears for the
+    /// duration of an active drag session, so its onAppear/onDisappear are
+    /// a safe, standard-SwiftUI stand-in for a drag-start/end hook that
+    /// doesn't otherwise exist).
+    @State private var draggedSceneId: String?
     /// Same idea as dropTargetSceneId, for section headers — drives the one
     /// blue-line indicator in sectionGroup for BOTH a section being dragged
     /// (reorder) AND a scene being dragged onto a section's header to file
@@ -786,6 +797,8 @@ struct ShotListView: View {
                 .background(Color(.secondarySystemGroupedBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
+                .onAppear { draggedSceneId = scene.id }
+                .onDisappear { if draggedSceneId == scene.id { draggedSceneId = nil } }
         }
         .dropDestination(for: String.self) { ids, _ in
             // Identical logic to sceneTile's own dropDestination below —
@@ -806,6 +819,12 @@ struct ShotListView: View {
                 dropTargetSceneId = targeted ? scene.id : (dropTargetSceneId == scene.id ? nil : dropTargetSceneId)
             }
         }
+        // Same source-tile collapse as regularSceneCard — see draggedSceneId.
+        .frame(maxHeight: draggedSceneId == scene.id ? 0 : nil)
+        .opacity(draggedSceneId == scene.id ? 0 : 1)
+        .clipped()
+        .allowsHitTesting(draggedSceneId != scene.id)
+        .animation(.easeInOut(duration: 0.2), value: draggedSceneId)
     }
 
     @ViewBuilder
@@ -851,6 +870,16 @@ struct ShotListView: View {
         // the gap between the two columns would be twice as wide as the gap
         // above/below.
         .padding(.horizontal, ((isPad && isGridMode) || horizontalSizeClass == .regular) ? 0 : 16)
+        // Collapse the SOURCE tile's own space while it's the one being
+        // dragged (see draggedSceneId's doc comment) — used to stay full
+        // size in the background the whole time, forcing extra scrolling
+        // to reach a target further down ("im Hintergrund ist die Kachel
+        // aber immer noch gross", 2026-07-11).
+        .frame(maxHeight: draggedSceneId == scene.id ? 0 : nil)
+        .opacity(draggedSceneId == scene.id ? 0 : 1)
+        .clipped()
+        .allowsHitTesting(draggedSceneId != scene.id)
+        .animation(.easeInOut(duration: 0.2), value: draggedSceneId)
         .dropDestination(for: String.self) { ids, _ in
             guard let dragged = ids.first, !dragged.hasPrefix("scene:") else { return }
             Task { await viewModel.moveShot(dragged, toScene: scene.id) }
@@ -1171,6 +1200,12 @@ struct ShotListView: View {
                 dropTargetSceneId = targeted ? scene.id : (dropTargetSceneId == scene.id ? nil : dropTargetSceneId)
             }
         }
+        // Same source-tile collapse as regularSceneCard — see draggedSceneId.
+        .frame(maxHeight: draggedSceneId == scene.id ? 0 : nil)
+        .opacity(draggedSceneId == scene.id ? 0 : 1)
+        .clipped()
+        .allowsHitTesting(draggedSceneId != scene.id)
+        .animation(.easeInOut(duration: 0.2), value: draggedSceneId)
     }
 
     /// Preview shown while holding for the Bearbeiten/Löschen menu — used to
@@ -1224,6 +1259,8 @@ struct ShotListView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
         .rotationEffect(.degrees(-2))
+        .onAppear { draggedSceneId = scene.id }
+        .onDisappear { if draggedSceneId == scene.id { draggedSceneId = nil } }
     }
 
     /// Two rows, not one: the title used to be squeezed between a drag handle
