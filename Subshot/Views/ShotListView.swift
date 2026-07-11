@@ -50,13 +50,6 @@ struct ShotListView: View {
     /// SceneEditSheet is purely a creation-time UI choice, see its own doc
     /// comment.
     @State private var creatingIntermediateStep = false
-    /// Set right before opening SectionEditSheet from the "Projektinfo"
-    /// entry in addSceneButton's menu (2026-07-10, Lino: wants Projektinfo
-    /// reachable from the same "+" menu as Neue Szene/Zwischenschritt/
-    /// Abschnitt, not only via the small per-section button once a section
-    /// already exists) — creates a section AND immediately gives it a
-    /// project-info box in one step, see the sheet's onSave closure below.
-    @State private var creatingSectionWithProjectInfo = false
     @State private var editingSection: SceneSection??  // same nesting convention as editingScene
     @State private var sectionToDelete: SceneSection?
     /// "Ohne Abschnitt" has no SceneSection id of its own to key off of (see
@@ -376,17 +369,14 @@ struct ShotListView: View {
         }
         .sheet(isPresented: Binding(
             get: { editingSection != nil },
-            set: { if !$0 { editingSection = nil; creatingSectionWithProjectInfo = false } }
+            set: { if !$0 { editingSection = nil } }
         )) {
             if case .some(let existing) = editingSection {
                 SectionEditSheet(existing: existing) { name in
                     if let existing {
                         await viewModel.renameSection(existing, name: name)
-                    } else if let created = await viewModel.createSection(name: name) {
-                        if creatingSectionWithProjectInfo {
-                            await viewModel.addSectionProjectInfo(created)
-                        }
-                        creatingSectionWithProjectInfo = false
+                    } else {
+                        await viewModel.createSection(name: name)
                     }
                 }
             }
@@ -437,8 +427,14 @@ struct ShotListView: View {
                 Label("Neuer Abschnitt", systemImage: "folder.badge.plus")
             }
             Button {
-                creatingSectionWithProjectInfo = true
-                editingSection = .some(nil)
+                // NEVER auto-creates a Section (2026-07-11 fix — used to
+                // create a Section with add_project_info set, which is
+                // wrong: "möchte man eine Projektinfo hinzufügen, wird ein
+                // Abschnitt hinzugefügt, das ist falsch"). A Projektinfo is
+                // just a scene tile now (see Scene.isProjectInfo), created
+                // directly with no section (lands in "Ohne Abschnitt"),
+                // matching the web app exactly.
+                Task { await viewModel.createProjectInfoScene() }
             } label: {
                 Label("Projektinfo", systemImage: "info.circle")
             }
@@ -472,7 +468,17 @@ struct ShotListView: View {
         if isCompactTileMode {
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
                 ForEach(scenes) { scene in
-                    sceneCompactTile(scene: scene)
+                    // A Projektinfo tile has no name/priority/image to show
+                    // in the reduced compact layout — same full-width card
+                    // as every other mode instead (LazyVGrid has no column-
+                    // span, so this still only occupies one of the two
+                    // cells; a pre-existing limitation of this grid, not
+                    // something 2026-07-11's stacking/drag fixes address).
+                    if scene.isProjectInfo {
+                        projectInfoSceneCard(scene: scene)
+                    } else {
+                        sceneCompactTile(scene: scene)
+                    }
                 }
             }
             .padding(.horizontal, 16)
@@ -615,9 +621,14 @@ struct ShotListView: View {
                         Label("Löschen", systemImage: "trash")
                     }
                 } preview: {
-                    Text(section.name)
-                        .font(.subheadline.weight(.semibold))
-                        .padding(12)
+                    // Was just Text(name) — read as the row "collapsing"
+                    // down to a bare label on hold, same complaint/fix as
+                    // sceneContextMenuPreview above. Reusing the actual row
+                    // at natural width keeps holding visually a no-op aside
+                    // from the lift.
+                    sectionHeaderRow(section: section)
+                        .frame(width: 320)
+                        .background(Color(.secondarySystemGroupedBackground))
                 }
                 .draggable("section:\(section.id)")
                 .dropDestination(for: String.self) { ids, _ in
@@ -664,6 +675,15 @@ struct ShotListView: View {
             Spacer()
         }
         .padding(.horizontal, 16)
+        // Was sized purely by its content (~30pt, just the chevron's own
+        // frame) — well under the 44pt tap target this app uses everywhere
+        // else (see e.g. MemberAvatar/initialsCircle comments), and far
+        // smaller than a whole scene tile. A long-press-to-drag gesture
+        // needs the initial press to land and hold on the target; a strip
+        // this thin made that unreliable, which likely explains "Abschnitte
+        // haben nie einen Indikator" (2026-07-11) — scenes, with their much
+        // bigger tile area, don't have this problem.
+        .frame(minHeight: 44)
         .contentShape(Rectangle())
         .onTapGesture { toggleSectionCollapse(section) }
     }
@@ -708,6 +728,73 @@ struct ShotListView: View {
     /// away via the edit sheet, same reasoning sceneCompactTile already uses.
     @ViewBuilder
     private func sceneCard(scene: Scene, columnLayout: Bool) -> some View {
+        if scene.isProjectInfo {
+            projectInfoSceneCard(scene: scene)
+        } else {
+            regularSceneCard(scene: scene, columnLayout: columnLayout)
+        }
+    }
+
+    /// A "Projektinfo" tile (2026-07-11 redesign, see Scene.isProjectInfo) —
+    /// reuses the ordinary scene drag/reorder/delete machinery (same
+    /// .draggable/.dropDestination/.contextMenu shape as sceneTile below),
+    /// but renders SceneProjectInfoTile's own content/chrome instead of a
+    /// normal scene card — no image/priority/timer/shots/dialogue apply
+    /// here, so none of sceneTile's/regularSceneCard's machinery for those
+    /// is reused (would need its own padding/background double-applied on
+    /// top of SceneProjectInfoTile's, which already looks like a tile).
+    @ViewBuilder
+    private func projectInfoSceneCard(scene: Scene) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if dropTargetSceneId == scene.id {
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(height: 3)
+                    .padding(.horizontal, 4)
+                    .transition(.opacity)
+            }
+            SceneProjectInfoTile(viewModel: viewModel, scene: scene, projectId: projectId)
+        }
+        .padding(.horizontal, ((isPad && isGridMode) || horizontalSizeClass == .regular) ? 0 : 16)
+        .contextMenu {
+            Button(role: .destructive) {
+                sceneToDelete = scene
+            } label: {
+                Label("Löschen", systemImage: "trash")
+            }
+        }
+        .draggable("scene:\(scene.id)") {
+            Label("Projektinfo", systemImage: "info.circle.fill")
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color(.secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
+        }
+        .dropDestination(for: String.self) { ids, _ in
+            // Identical logic to sceneTile's own dropDestination below —
+            // dropping another scene onto this Projektinfo tile inserts it
+            // right before, refiling into this tile's section if different.
+            guard let raw = ids.first, raw.hasPrefix("scene:") else { return false }
+            let draggedId = String(raw.dropFirst("scene:".count))
+            guard draggedId != scene.id, let dragged = viewModel.scenes.first(where: { $0.id == draggedId }) else { return false }
+            Task {
+                if dragged.sectionId != scene.sectionId {
+                    await viewModel.assignSceneToSection(dragged, sectionId: scene.sectionId)
+                }
+                await viewModel.reorderScene(draggedId, before: scene.id)
+            }
+            return true
+        } isTargeted: { targeted in
+            withAnimation(.easeOut(duration: 0.15)) {
+                dropTargetSceneId = targeted ? scene.id : (dropTargetSceneId == scene.id ? nil : dropTargetSceneId)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func regularSceneCard(scene: Scene, columnLayout: Bool) -> some View {
         let collapsed = isCollapsed(scene)
         VStack(alignment: .leading, spacing: 14) {
             // Landing indicator: shows exactly where a dragged scene will
@@ -960,7 +1047,7 @@ struct ShotListView: View {
                 Label("Löschen", systemImage: "trash")
             }
         } preview: {
-            sceneDragPreview(scene: scene)
+            sceneContextMenuPreview(scene: scene)
         }
         .draggable("scene:\(scene.id)") {
             sceneDragPreview(scene: scene)
@@ -996,25 +1083,37 @@ struct ShotListView: View {
     @ViewBuilder
     private func sceneCompactTile(scene: Scene) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            // Landing indicator, same as the full sceneTile below — this
+            // mode never had one at all before, "kann man IMMER NOCH NICHT
+            // VERSCHIEBEN" (2026-07-11): there was no .draggable/
+            // .dropDestination here whatsoever, not even a broken one.
+            if dropTargetSceneId == scene.id {
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(height: 3)
+                    .transition(.opacity)
+            }
             if let imageUrl = scene.imageUrl {
                 AsyncShotThumbnail(path: imageUrl, size: nil, lockAspectRatio: true)
                     .frame(maxWidth: .infinity)
                     .frame(height: 100)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
             }
-            HStack(alignment: .top, spacing: 6) {
-                Text(scene.displayNumber)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(sceneAccentColor(scene.priority))
-                    .clipShape(Capsule())
-                Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(2)
-            }
-            SceneTimerInfo(scene: scene)
+            // Was an HStack (badge next to name) — "NICHTS ist IN einer
+            // Kachel nebeneinander, ALLES IST UNTEREINANDER" (2026-07-11,
+            // explicitly repeated) applies to every piece of side-by-side
+            // content in this mode, not just the date/duration row below.
+            Text(scene.displayNumber)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(sceneAccentColor(scene.priority))
+                .clipShape(Capsule())
+            Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(2)
+            SceneTimerInfo(scene: scene, stacked: true)
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1023,6 +1122,68 @@ struct ShotListView: View {
         .modifier(ScenePulseOnElapse(scene: scene))
         .contentShape(Rectangle())
         .onTapGesture { editingScene = .some(scene) }
+        .contextMenu {
+            Button {
+                editingScene = .some(scene)
+            } label: {
+                Label("Bearbeiten", systemImage: "pencil")
+            }
+            Button(role: .destructive) {
+                sceneToDelete = scene
+            } label: {
+                Label("Löschen", systemImage: "trash")
+            }
+        } preview: {
+            sceneContextMenuPreview(scene: scene)
+        }
+        .draggable("scene:\(scene.id)") {
+            sceneDragPreview(scene: scene)
+        }
+        // Same reorder/refile logic as sceneTile's own dropDestination below.
+        .dropDestination(for: String.self) { ids, _ in
+            guard let raw = ids.first, raw.hasPrefix("scene:") else { return false }
+            let draggedId = String(raw.dropFirst("scene:".count))
+            guard draggedId != scene.id, let dragged = viewModel.scenes.first(where: { $0.id == draggedId }) else { return false }
+            Task {
+                if dragged.sectionId != scene.sectionId {
+                    await viewModel.assignSceneToSection(dragged, sectionId: scene.sectionId)
+                }
+                await viewModel.reorderScene(draggedId, before: scene.id)
+            }
+            return true
+        } isTargeted: { targeted in
+            withAnimation(.easeOut(duration: 0.15)) {
+                dropTargetSceneId = targeted ? scene.id : (dropTargetSceneId == scene.id ? nil : dropTargetSceneId)
+            }
+        }
+    }
+
+    /// Preview shown while holding for the Bearbeiten/Löschen menu — used to
+    /// reuse sceneDragPreview (the small pill below), which visually read as
+    /// the whole tile shrinking down into that pill the instant you started
+    /// holding ("die Kachel soll sich dann nicht zusammenklappen, sondern
+    /// einfach so bleiben", 2026-07-11). Mirrors the tile's own top section
+    /// (image/header/timer) at natural width instead, so holding reads as a
+    /// subtle lift, not a squash. Deliberately not the WHOLE card (shot
+    /// list/dialogue/etc.) — a contextMenu preview isn't scrollable, so it
+    /// stays to the identifying portion, same amount of content the
+    /// collapsed row already shows.
+    @ViewBuilder
+    private func sceneContextMenuPreview(scene: Scene) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let imageUrl = scene.imageUrl {
+                AsyncShotThumbnail(path: imageUrl, size: nil, lockAspectRatio: true)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 160)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            sceneHeader(scene: scene)
+            SceneTimerInfo(scene: scene)
+        }
+        .padding(14)
+        .frame(width: 320)
+        .background(scene.completed ? Color.green.opacity(0.18) : Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
     /// Custom drag preview instead of the system's plain view snapshot — a
@@ -1339,18 +1500,15 @@ private struct TileActionDialogs: ViewModifier {
             }
     }
 
-    // Scenes are NOT deleted when a section is (backend: Scene.section_id is
-    // ON DELETE SET NULL) — they fall back to "Ohne Abschnitt". But if this
-    // section carries its own Projektinfo (Drehdatum/Ort/Todo-Listen, see
-    // SectionInfoBox), that IS deleted for good (TodoList.section_id is
-    // ON DELETE CASCADE) — worth spelling out explicitly rather than leaving
-    // it implied, since visually that info box reads as its own tile too.
+    // Scenes ARE deleted along with their section now (2026-07-11, Lino) —
+    // backend deletes every Scene with this section_id (and their shots)
+    // before deleting the section itself, no more falling back to "Ohne
+    // Abschnitt". A section's own Projektinfo (Drehdatum/Ort/Todo-Listen)
+    // was already deleted for good either way (TodoList.section_id is
+    // ON DELETE CASCADE).
     private var sectionDeleteMessage: String {
         guard let section = sectionToDelete else { return "" }
-        if section.hasProjectInfo {
-            return "\"\(section.name)\" wird gelöscht. Enthaltene Szenen bleiben erhalten und landen unter \"Ohne Abschnitt\" — die Projektinfo dieses Abschnitts (Drehdatum, Ort, Todo-Listen) wird aber endgültig gelöscht."
-        }
-        return "\"\(section.name)\" wird gelöscht. Enthaltene Szenen bleiben erhalten und landen unter \"Ohne Abschnitt\"."
+        return "\"\(section.name)\" wird gelöscht. Jegliche Szenen oder Kacheln im Abschnitt werden auch gelöscht."
     }
 
     private var sceneDeleteMessage: String {
@@ -1476,6 +1634,14 @@ private struct ShotCard: View {
 ///   not here.
 private struct SceneTimerInfo: View {
     let scene: Scene
+    /// True only in the 2-column compact tile overview (see
+    /// sceneCompactTile) — date and planned/remaining time side-by-side in
+    /// an HStack was reported as wrong specifically there ("NICHTS ist IN
+    /// einer Kachel nebeneinander, ALLES IST UNTEREINANDER", 2026-07-11,
+    /// asked for repeatedly) — a half-width compact tile has much less
+    /// horizontal room than the full single-column card, where the HStack
+    /// stays as-is (not requested/needed there).
+    var stacked: Bool = false
 
     var body: some View {
         if let scheduledAt = scene.scheduledAt {
@@ -1484,26 +1650,40 @@ private struct SceneTimerInfo: View {
                 let end = scene.durationMinutes.map { scheduledAt.addingTimeInterval(TimeInterval($0) * 60) }
                 let isRunning = end.map { now >= scheduledAt && now < $0 } ?? false
 
-                HStack(alignment: .center, spacing: 8) {
-                    Label("Start: \(scheduledAt.formatted(date: .abbreviated, time: .shortened))", systemImage: "calendar")
-                        .font(.caption)
-                        .foregroundStyle(isRunning ? Color.yellow : Color(.secondaryLabel))
-                        .animation(.easeInOut(duration: 0.4), value: isRunning)
+                let startLabel = Label("Start: \(scheduledAt.formatted(date: .abbreviated, time: .shortened))", systemImage: "calendar")
+                    .font(.caption)
+                    .foregroundStyle(isRunning ? Color.yellow : Color(.secondaryLabel))
+                    .animation(.easeInOut(duration: 0.4), value: isRunning)
 
-                    Spacer(minLength: 8)
-
-                    if let end {
-                        if now < scheduledAt {
+                let durationView: AnyView = {
+                    guard let end else { return AnyView(EmptyView()) }
+                    if now < scheduledAt {
+                        return AnyView(
                             Label("Geplante Drehzeit: \(scene.durationMinutes.map { "\($0) Min." } ?? "")", systemImage: "timer")
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(.secondary)
-                        } else if isRunning {
-                            LiveSceneBadge(remaining: end.timeIntervalSince(now))
-                        } else {
+                        )
+                    } else if isRunning {
+                        return AnyView(LiveSceneBadge(remaining: end.timeIntervalSince(now)))
+                    } else {
+                        return AnyView(
                             Label("Drehzeit abgelaufen", systemImage: "timer")
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(.secondary)
-                        }
+                        )
+                    }
+                }()
+
+                if stacked {
+                    VStack(alignment: .leading, spacing: 4) {
+                        startLabel
+                        durationView
+                    }
+                } else {
+                    HStack(alignment: .center, spacing: 8) {
+                        startLabel
+                        Spacer(minLength: 8)
+                        durationView
                     }
                 }
             }

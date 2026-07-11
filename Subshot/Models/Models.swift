@@ -21,6 +21,9 @@ struct Project: Codable, Identifiable, Hashable {
     var name: String
     var color: String
     var emoji: String?
+    /// Manual drag-to-reorder position on the home screen grid (2026-07-11)
+    /// — same idea as ProjectFolder.sortOrder.
+    var sortOrder: Int = 0
     var shootDate: Date?
     var locationAddress: String?
     var locationLat: Double?
@@ -32,6 +35,7 @@ struct Project: Codable, Identifiable, Hashable {
 
     enum CodingKeys: String, CodingKey {
         case id, name, color, emoji
+        case sortOrder = "sort_order"
         case shootDate = "shoot_date"
         case locationAddress = "location_address"
         case locationLat = "location_lat"
@@ -158,6 +162,19 @@ struct Scene: Codable, Identifiable, Hashable {
     /// separate from `dialogue` above, which stays the single free-text
     /// quick-entry field for a brand-new scene that doesn't have an id yet.
     var dialogues: [SceneDialogue] = []
+    /// A "Projektinfo" tile (2026-07-10 redesign, matches the web app's
+    /// ProjectInfoTile) — a scene that drags/reorders/moves-between-sections
+    /// exactly like any other scene (reuses the same drag machinery on
+    /// purpose), but always renders full-width and always sorts first
+    /// within whichever section (or "Ohne Abschnitt") it's in — see
+    /// ShotListViewModel.scenes(in:). Never auto-creates a Section: the "+"
+    /// menu's "Projektinfo" option creates this directly with no section_id
+    /// (lands in "Ohne Abschnitt"), same as the web app.
+    var isProjectInfo: Bool = false
+    /// Only populated/used for a Projektinfo scene — its own todo lists, same
+    /// idea as SceneSection.todoLists but scene-scoped (see
+    /// Scene.isProjectInfo doc above; the section-scoped mechanism is legacy).
+    var todoLists: [TodoList] = []
 
     enum CodingKeys: String, CodingKey {
         case id, name, color, description, dialogue, completed, number, letter, priority, dialogues
@@ -173,6 +190,8 @@ struct Scene: Codable, Identifiable, Hashable {
         case locationLng = "location_lng"
         case goodTakeFilename = "good_take_filename"
         case isIntermediateStep = "is_intermediate_step"
+        case isProjectInfo = "is_project_info"
+        case todoLists = "todo_lists"
     }
 
     /// "3A" / "12" — the display label shown on the scene tile.
@@ -282,9 +301,13 @@ struct TodoItem: Codable, Identifiable, Hashable {
 struct TodoList: Codable, Identifiable, Hashable {
     let id: String
     let projectId: String
-    /// Set when this list belongs to a section's own project-info box
-    /// (multi-day shoots) rather than the project-level one.
+    /// Old attached-to-section mechanism (superseded by sceneId below, see
+    /// Scene.isProjectInfo) — kept only so any pre-existing section-owned
+    /// lists still decode.
     var sectionId: String?
+    /// Set when this list belongs to a "Projektinfo" scene tile's own todo
+    /// section (2026-07-10 redesign) — see Scene.isProjectInfo.
+    var sceneId: String?
     var name: String
     var sortOrder: Int
     var items: [TodoItem]
@@ -293,6 +316,7 @@ struct TodoList: Codable, Identifiable, Hashable {
         case id, name, items
         case projectId = "project_id"
         case sectionId = "section_id"
+        case sceneId = "scene_id"
         case sortOrder = "sort_order"
     }
 }

@@ -127,9 +127,16 @@ final class ShotListViewModel: ObservableObject {
     /// per project are small enough that re-scanning per render is cheap.
     /// No longer sorts completed scenes to the end — "im Kasten" now
     /// collapses a scene in place instead of moving it, see
-    /// setSceneCompleted's doc comment. Natural (insertion/sort_order) order.
+    /// setSceneCompleted's doc comment. A Projektinfo scene (isProjectInfo)
+    /// always sorts first within its bucket, mirroring the web app's
+    /// scenesIn (Lino: "die Projektinfo ist immer die erste Kachel in einem
+    /// Abschnitt") — everything else keeps its natural sort_order.
     func scenes(in section: SceneSection?) -> [Scene] {
         scenes.filter { $0.sectionId == section?.id }
+            .sorted { a, b in
+                if a.isProjectInfo != b.isProjectInfo { return a.isProjectInfo }
+                return a.sortOrder < b.sortOrder
+            }
     }
 
     // MARK: - Sections
@@ -162,9 +169,15 @@ final class ShotListViewModel: ObservableObject {
     /// (ON DELETE SET NULL) — mirrored locally so the scene tiles don't
     /// vanish from the list.
     func deleteSection(_ section: SceneSection) async {
+        // Contained scenes (and their shots) are deleted along with the
+        // section now, not bumped to "Ohne Abschnitt" — matches the backend,
+        // which does the same real deletion (2026-07-11).
+        let removedSceneIds = Set(scenes.filter { $0.sectionId == section.id }.map(\.id))
         sections.removeAll { $0.id == section.id }
-        for index in scenes.indices where scenes[index].sectionId == section.id {
-            scenes[index].sectionId = nil
+        scenes.removeAll { removedSceneIds.contains($0.id) }
+        shots.removeAll { shot in
+            guard let sceneId = shot.sceneId else { return false }
+            return removedSceneIds.contains(sceneId)
         }
         do {
             try await APIClient.shared.deleteSection(section.id)
@@ -246,6 +259,42 @@ final class ShotListViewModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
             return nil
+        }
+    }
+
+    /// "Projektinfo" from the "+" menu (2026-07-11: was wrongly creating a
+    /// Section before, see addSceneButton in ShotListView) — NEVER auto-
+    /// creates a section, matches the web app exactly. Just a scene with
+    /// isProjectInfo set, no name, no section (lands in "Ohne Abschnitt");
+    /// from there it's dragged into whichever section it belongs to using
+    /// the ordinary scene drag mechanism, same as any other tile.
+    @discardableResult
+    func createProjectInfoScene() async -> Scene? {
+        do {
+            let sortOrder = (scenes.map(\.sortOrder).max() ?? -1) + 1
+            let scene = try await APIClient.shared.createScene(
+                projectId: projectId, name: nil, color: "#3875bd",
+                sortOrder: sortOrder, isProjectInfo: true
+            )
+            scenes.append(scene)
+            return scene
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// Same idea as updateSectionShootDate, for a Projektinfo scene — just a
+    /// plain scheduledAt patch on the scene itself (no separate endpoint,
+    /// unlike Section which has its own dedicated shoot_date field).
+    func updateSceneShootDate(_ scene: Scene, date: Date?) async {
+        do {
+            let updated = try await APIClient.shared.patchScene(scene.id, scheduledAt: date)
+            if let index = scenes.firstIndex(where: { $0.id == updated.id }) {
+                scenes[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 
@@ -498,16 +547,33 @@ final class ShotListViewModel: ObservableObject {
         // reorderSection below, and to the web client's reorderSections.
         let targetIndex = targetId.flatMap { id in scenes.firstIndex(where: { $0.id == id }) }
         list.removeAll { $0.id == sceneId }
-        if let targetIndex {
-            list.insert(scene, at: min(targetIndex, list.count))
-        } else {
-            list.append(scene)
-        }
+        let insertIndex = targetIndex.map { min($0, list.count) } ?? list.count
+        list.insert(scene, at: insertIndex)
         withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
             scenes = list
         }
+        // IMPORTANT: do NOT send the raw drop-target id as before_scene_id
+        // here — that's what the code did until 2026-07-11 and it silently
+        // undid every downward drag onto an adjacent neighbor. The backend's
+        // /move endpoint takes before_scene_id completely literally ("insert
+        // right before this id" in ITS OWN post-removal sibling list), with
+        // none of the original-pre-removal-index adjustment used above. For
+        // a downward drag, this view's own local math effectively lands the
+        // scene right AFTER the drop target (see the comment above — reusing
+        // the target's stale pre-removal index overshoots by exactly one
+        // once the dragged scene itself is gone) — asking the server for the
+        // opposite ("insert before target") is then a no-op for the single
+        // most common gesture (dragging onto the very next scene), which is
+        // why the tile "sprang wieder an den alten Punkt" once load() below
+        // overwrote the correct-looking optimistic preview with the
+        // server's (unchanged) real order. Deriving before_scene_id from
+        // whoever now sits right after the dragged scene in the ALREADY-
+        // CORRECT local `list` sidesteps the mismatch entirely and needs no
+        // direction detection of its own — it's automatically right for
+        // both upward and downward drags because `list` already is.
+        let apiBeforeId = list.indices.contains(insertIndex + 1) ? list[insertIndex + 1].id : nil
         do {
-            let updated = try await APIClient.shared.moveScene(sceneId, beforeSceneId: targetId)
+            let updated = try await APIClient.shared.moveScene(sceneId, beforeSceneId: apiBeforeId)
             if let index = scenes.firstIndex(where: { $0.id == updated.id }) {
                 scenes[index] = updated
             }
@@ -593,12 +659,26 @@ final class ShotListViewModel: ObservableObject {
                 return
             }
         }
+        // Projektinfo-scene-owned lists (see Scene.isProjectInfo) — same
+        // trap as the section case above: every todo-item method funnels
+        // through here, so a Projektinfo scene's lists would otherwise
+        // silently no-op (item toggles/assigns/deletes doing nothing) with
+        // no error, exactly like the section omission this already fixed.
+        for sceneIndex in scenes.indices {
+            if let listIndex = scenes[sceneIndex].todoLists.firstIndex(where: { $0.id == id }) {
+                mutate(&scenes[sceneIndex].todoLists[listIndex])
+                return
+            }
+        }
     }
 
     private func findTodoList(_ id: String) -> TodoList? {
         if let list = todoLists.first(where: { $0.id == id }) { return list }
         for section in sections {
             if let list = section.todoLists.first(where: { $0.id == id }) { return list }
+        }
+        for scene in scenes {
+            if let list = scene.todoLists.first(where: { $0.id == id }) { return list }
         }
         return nil
     }
@@ -628,6 +708,24 @@ final class ShotListViewModel: ObservableObject {
             let sortOrder = (sections[sectionIndex].todoLists.map(\.sortOrder).max() ?? -1) + 1
             let list = try await APIClient.shared.createSectionTodoList(sectionId: section.id, name: name, sortOrder: sortOrder)
             sections[sectionIndex].todoLists.append(list)
+            return list
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// Same as createSectionTodoList above, but for a Projektinfo scene's own
+    /// todo lists (see Scene.isProjectInfo) — the current, non-legacy
+    /// mechanism.
+    @discardableResult
+    func createSceneTodoList(scene: Scene, name: String) async -> TodoList? {
+        guard let sceneIndex = scenes.firstIndex(where: { $0.id == scene.id }),
+              scenes[sceneIndex].todoLists.count < Self.maxTodoLists else { return nil }
+        do {
+            let sortOrder = (scenes[sceneIndex].todoLists.map(\.sortOrder).max() ?? -1) + 1
+            let list = try await APIClient.shared.createSceneTodoList(sceneId: scene.id, name: name, sortOrder: sortOrder)
+            scenes[sceneIndex].todoLists.append(list)
             return list
         } catch {
             errorMessage = error.localizedDescription
@@ -714,19 +812,11 @@ final class ShotListViewModel: ObservableObject {
     }
 
     // MARK: - Section project-info boxes (multi-day shoots)
-
-    /// Idempotent — no-op (still returns success) if the section already has
-    /// one, matching the backend's own idempotent add_project_info handling.
-    func addSectionProjectInfo(_ section: SceneSection) async {
-        do {
-            let updated = try await APIClient.shared.patchSection(section.id, addProjectInfo: true)
-            if let index = sections.firstIndex(where: { $0.id == updated.id }) {
-                sections[index] = updated
-            }
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
+    // Creating new ones this way is retired (2026-07-11: the "+" menu's
+    // "Projektinfo" now creates a Scene directly, see createProjectInfoScene
+    // above, matching the web app) — removeSectionProjectInfo below stays,
+    // existing section-owned boxes from before this redesign still need to
+    // be deletable.
 
     /// Removes the section's info box entirely — clears its date/location
     /// and deletes its todo lists server-side (see patch_section's

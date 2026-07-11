@@ -21,6 +21,15 @@ struct ShareLinkSheet: View {
     @State private var isProtecting = false
     @State private var passwordText = ""
     @State private var isSavingPassword = false
+    /// Both "Link kopieren" and "Passwort setzen" gave zero visible feedback
+    /// on success before — the state change (clipboard contents, hasPassword
+    /// flipping) isn't itself visible, so both read as doing nothing
+    /// ("passiert nichts", 2026-07-11: "man muss eine Bestätigung kriegen
+    /// wenn man auf 'Link kopieren' drückt"). A transient inline confirmation
+    /// (not a native alert — this app avoids those for anything short of an
+    /// error, see feedback_no_native_popups) auto-clears itself after 2s.
+    @State private var showCopiedConfirmation = false
+    @State private var showPasswordSavedConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -39,8 +48,18 @@ struct ShareLinkSheet: View {
                             .lineLimit(2)
                         Button {
                             UIPasteboard.general.string = url.absoluteString
+                            withAnimation(.easeInOut(duration: 0.2)) { showCopiedConfirmation = true }
+                            Task {
+                                try? await Task.sleep(for: .seconds(2))
+                                withAnimation(.easeInOut(duration: 0.2)) { showCopiedConfirmation = false }
+                            }
                         } label: {
-                            Label("Link kopieren", systemImage: "doc.on.doc")
+                            if showCopiedConfirmation {
+                                Label("Kopiert", systemImage: "checkmark")
+                                    .foregroundStyle(.green)
+                            } else {
+                                Label("Link kopieren", systemImage: "doc.on.doc")
+                            }
                         }
                         Button {
                             onShare(url)
@@ -78,6 +97,9 @@ struct ShareLinkSheet: View {
                         } label: {
                             if isSavingPassword {
                                 ProgressView()
+                            } else if showPasswordSavedConfirmation {
+                                Label("Gespeichert", systemImage: "checkmark")
+                                    .foregroundStyle(.green)
                             } else {
                                 Text(hasPassword ? "Passwort ändern" : "Passwort setzen")
                             }
@@ -138,6 +160,11 @@ struct ShareLinkSheet: View {
             url = URL(string: result.url)
             hasPassword = result.has_password
             passwordText = ""
+            withAnimation(.easeInOut(duration: 0.2)) { showPasswordSavedConfirmation = true }
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                withAnimation(.easeInOut(duration: 0.2)) { showPasswordSavedConfirmation = false }
+            }
         } catch {
             errorMessage = error.localizedDescription
         }

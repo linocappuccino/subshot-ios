@@ -138,11 +138,11 @@ final class APIClient {
         return try await send(req)
     }
 
-    func createProject(name: String, color: String, emoji: String? = nil, folderId: String? = nil) async throws -> Project {
+    func createProject(name: String, color: String, emoji: String? = nil, folderId: String? = nil, sortOrder: Int = 0) async throws -> Project {
         var req = try await authorizedRequest("projects", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        struct Body: Encodable { let name: String; let color: String; let emoji: String? }
-        req.httpBody = try encoder.encode(Body(name: name, color: color, emoji: emoji))
+        struct Body: Encodable { let name: String; let color: String; let emoji: String?; let sort_order: Int }
+        req.httpBody = try encoder.encode(Body(name: name, color: color, emoji: emoji, sort_order: sortOrder))
         let project: Project = try await send(req)
         // Creation has no folder_id param server-side (ProjectCreate doesn't
         // carry one) — a second patch is the simplest way to land a new
@@ -161,7 +161,7 @@ final class APIClient {
         emoji: String? = nil, clearEmoji: Bool = false,
         shootDate: Date? = nil, locationAddress: String? = nil,
         locationLat: Double? = nil, locationLng: Double? = nil,
-        folderId: String? = nil, clearFolder: Bool = false
+        folderId: String? = nil, clearFolder: Bool = false, sortOrder: Int? = nil
     ) async throws -> Project {
         var req = try await authorizedRequest("projects/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -171,11 +171,12 @@ final class APIClient {
             let shoot_date: Date?
             let location_address: String?; let location_lat: Double?; let location_lng: Double?
             let folder_id: String?; let clear_folder: Bool
+            let sort_order: Int?
         }
         req.httpBody = try encoder.encode(Body(
             name: name, color: color, emoji: emoji, clear_emoji: clearEmoji, shoot_date: shootDate,
             location_address: locationAddress, location_lat: locationLat, location_lng: locationLng,
-            folder_id: folderId, clear_folder: clearFolder
+            folder_id: folderId, clear_folder: clearFolder, sort_order: sortOrder
         ))
         return try await send(req)
     }
@@ -276,7 +277,7 @@ final class APIClient {
         scheduledAt: Date? = nil, durationMinutes: Int? = nil,
         assigneeId: String? = nil, sectionId: String? = nil, sortOrder: Int = 0,
         locationAddress: String? = nil, locationLat: Double? = nil, locationLng: Double? = nil,
-        priority: ShotPriority? = nil, isIntermediateStep: Bool = false
+        priority: ShotPriority? = nil, isIntermediateStep: Bool = false, isProjectInfo: Bool = false
     ) async throws -> Scene {
         var req = try await authorizedRequest("projects/\(projectId)/scenes", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -288,6 +289,7 @@ final class APIClient {
             let location_address: String?; let location_lat: Double?; let location_lng: Double?
             let priority: String?
             let is_intermediate_step: Bool
+            let is_project_info: Bool
         }
         req.httpBody = try encoder.encode(Body(
             name: name, color: color, description: description,
@@ -295,7 +297,8 @@ final class APIClient {
             duration_minutes: durationMinutes, assignee_id: assigneeId, section_id: sectionId,
             sort_order: sortOrder,
             location_address: locationAddress, location_lat: locationLat, location_lng: locationLng,
-            priority: priority?.rawValue, is_intermediate_step: isIntermediateStep
+            priority: priority?.rawValue, is_intermediate_step: isIntermediateStep,
+            is_project_info: isProjectInfo
         ))
         return try await send(req)
     }
@@ -603,6 +606,17 @@ final class APIClient {
     /// — see POST /sections/{id}/todo-lists on the backend.
     func createSectionTodoList(sectionId: String, name: String, sortOrder: Int) async throws -> TodoList {
         var req = try await authorizedRequest("sections/\(sectionId)/todo-lists", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let name: String; let sort_order: Int }
+        req.httpBody = try encoder.encode(Body(name: name, sort_order: sortOrder))
+        return try await send(req)
+    }
+
+    /// Same shape as createTodoList/createSectionTodoList above, but scoped
+    /// to a "Projektinfo" scene tile's own todo section — see
+    /// POST /scenes/{id}/todo-lists on the backend.
+    func createSceneTodoList(sceneId: String, name: String, sortOrder: Int) async throws -> TodoList {
+        var req = try await authorizedRequest("scenes/\(sceneId)/todo-lists", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         struct Body: Encodable { let name: String; let sort_order: Int }
         req.httpBody = try encoder.encode(Body(name: name, sort_order: sortOrder))

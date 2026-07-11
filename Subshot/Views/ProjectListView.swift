@@ -19,6 +19,14 @@ struct ProjectListView: View {
     @State private var editingProject: Project?
     @State private var editingFolder: ProjectFolder?
     @State private var showingNotifications = false
+    /// Landing indicator while dragging a project tile onto another project
+    /// tile to reorder — same idea as ShotListView's dropTargetSceneId.
+    @State private var dropTargetProjectId: String?
+    /// Blue outline on a folder tile being dragged over — shown for BOTH a
+    /// project being filed into it AND another folder being reordered onto
+    /// it (Lino, 2026-07-11: "wenn man ein Projekt oder Ordner über einen
+    /// anderen Ordner legt... soll der Ziel-Ordner blau umrandet werden").
+    @State private var dropTargetFolderId: String?
 
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 16)]
 
@@ -196,17 +204,28 @@ struct ProjectListView: View {
 
     @ViewBuilder
     private func projectTile(_ project: Project) -> some View {
-        NavigationLink(value: project) {
-            tileBody(
-                title: project.name,
-                subtitle: "Wird gelöscht in \(project.daysUntilDeletion) Tagen",
-                color: project.color,
-                thumbnailPath: project.thumbnailUrl,
-                fallbackIcon: "film.stack",
-                emoji: project.emoji
-            )
+        VStack(spacing: 4) {
+            // Landing indicator — same idea as ShotListView's scene tiles
+            // ("die Projekte und Ordner müssen genau so verschoben werden
+            // können wie jede Kachel in der Szenenübersicht", 2026-07-11).
+            if dropTargetProjectId == project.id {
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(height: 3)
+                    .transition(.opacity)
+            }
+            NavigationLink(value: project) {
+                tileBody(
+                    title: project.name,
+                    subtitle: "Wird gelöscht in \(project.daysUntilDeletion) Tagen",
+                    color: project.color,
+                    thumbnailPath: project.thumbnailUrl,
+                    fallbackIcon: "film.stack",
+                    emoji: project.emoji
+                )
+            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
         .contextMenu {
             Button { editingProject = project } label: {
                 Label("Bearbeiten", systemImage: "pencil")
@@ -218,8 +237,23 @@ struct ProjectListView: View {
             }
         }
         // Long-press-and-hold picks the tile up (standard iOS drag haptic) —
-        // dropping it on a folder tile files it there.
-        .draggable(project.id)
+        // dropping it on a folder tile files it there, dropping it on
+        // another project tile reorders. "project:"-prefixed so folderTile's
+        // dropDestination below can tell a project drop apart from a folder
+        // being dragged onto it (reorder), same prefix convention
+        // ShotListView already uses for "scene:"/"section:".
+        .draggable("project:\(project.id)")
+        .dropDestination(for: String.self) { ids, _ in
+            guard let raw = ids.first, raw.hasPrefix("project:") else { return false }
+            let draggedId = String(raw.dropFirst("project:".count))
+            guard draggedId != project.id else { return false }
+            Task { await viewModel.reorderProject(draggedId, before: project.id) }
+            return true
+        } isTargeted: { targeted in
+            withAnimation(.easeOut(duration: 0.15)) {
+                dropTargetProjectId = targeted ? project.id : (dropTargetProjectId == project.id ? nil : dropTargetProjectId)
+            }
+        }
     }
 
     @ViewBuilder
@@ -246,9 +280,34 @@ struct ProjectListView: View {
                 Label("Löschen", systemImage: "trash")
             }
         }
+        .overlay {
+            if dropTargetFolderId == folder.id {
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(Color.accentColor, lineWidth: 3)
+            }
+        }
+        // Also draggable now (2026-07-11) — folders could be dropped ONTO
+        // but never picked up themselves, so they could never be reordered
+        // among each other, only ever receive a filed-in project.
+        .draggable("folder:\(folder.id)")
         .dropDestination(for: String.self) { ids, _ in
-            guard let projectId = ids.first, let project = viewModel.projects.first(where: { $0.id == projectId }) else { return }
-            Task { await viewModel.moveProject(project, toFolder: folder.id) }
+            guard let raw = ids.first else { return false }
+            if raw.hasPrefix("project:") {
+                let projectId = String(raw.dropFirst("project:".count))
+                guard let project = viewModel.projects.first(where: { $0.id == projectId }) else { return false }
+                Task { await viewModel.moveProject(project, toFolder: folder.id) }
+                return true
+            } else if raw.hasPrefix("folder:") {
+                let draggedId = String(raw.dropFirst("folder:".count))
+                guard draggedId != folder.id else { return false }
+                Task { await viewModel.reorderFolder(draggedId, before: folder.id) }
+                return true
+            }
+            return false
+        } isTargeted: { targeted in
+            withAnimation(.easeOut(duration: 0.15)) {
+                dropTargetFolderId = targeted ? folder.id : (dropTargetFolderId == folder.id ? nil : dropTargetFolderId)
+            }
         }
     }
 
@@ -266,15 +325,18 @@ struct ProjectListView: View {
                 .frame(maxWidth: .infinity)
                 .overlay {
                     ZStack {
-                        // Near-solid fill, not a translucent tint — at the old 0.25
-                        // opacity, this app's pastel palette all washed out to roughly
-                        // the same pale shade against the system background, so picking
-                        // a different color in the edit sheet looked like it did
-                        // nothing. Solid fill makes every palette color unmistakably
-                        // distinct (matters most for folder tiles, which never have a
-                        // thumbnail to look at instead).
+                        // An image always wins if there is one — the picked
+                        // color no longer fills the background in that case
+                        // (2026-07-11: "die Farben... färben dann den Rahmen
+                        // der Kachel, aber nicht mehr den Hintergrund, nur
+                        // wenn ein Bild vorhanden ist"). Plain neutral fill
+                        // here is just a placeholder behind the photo (covers
+                        // any transparent/unloaded edges), not a color choice.
+                        // Without an image, the color fill is unchanged from
+                        // before (solid, not a translucent tint — see prior
+                        // comment on why: pastel palette washed out otherwise).
                         RoundedRectangle(cornerRadius: 14)
-                            .fill(Color(hex: color).opacity(0.9))
+                            .fill(thumbnailPath != nil ? AnyShapeStyle(Color(.tertiarySystemFill)) : AnyShapeStyle(Color(hex: color).opacity(0.9)))
                         if let thumbnailPath {
                             AsyncShotThumbnail(path: thumbnailPath, size: nil, lockAspectRatio: false, focusPoint: thumbnailFocusPoint)
                             // Diagonal light-reflection streak — the classic
@@ -293,6 +355,24 @@ struct ProjectListView: View {
                                 .blur(radius: 6)
                             }
                             .allowsHitTesting(false)
+                            // Emoji still shows even with an image now — laid
+                            // over the photo as a small corner badge instead
+                            // of the two being mutually exclusive as before
+                            // ("ein Emoji kann dann noch über das Bild gelegt
+                            // werden").
+                            if let emoji, !emoji.isEmpty {
+                                VStack {
+                                    Spacer()
+                                    HStack {
+                                        Spacer()
+                                        Text(emoji)
+                                            .font(.system(size: 22))
+                                            .padding(6)
+                                            .background(Circle().fill(.black.opacity(0.35)))
+                                            .padding(6)
+                                    }
+                                }
+                            }
                         } else if let emoji, !emoji.isEmpty {
                             Text(emoji)
                                 .font(.system(size: 48))
@@ -314,8 +394,14 @@ struct ProjectListView: View {
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 14))
                 .overlay {
+                    // The frame is where the picked color shows once there's
+                    // an image (see the background-fill comment above) —
+                    // without an image, the border stays the previous plain
+                    // subtle white (the fill itself already carries the
+                    // color in that case, a colored border too would be
+                    // redundant).
                     RoundedRectangle(cornerRadius: 14)
-                        .strokeBorder(Color.white.opacity(0.15), lineWidth: 1)
+                        .strokeBorder(thumbnailPath != nil ? Color(hex: color) : Color.white.opacity(0.15), lineWidth: thumbnailPath != nil ? 2.5 : 1)
                 }
                 .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
 

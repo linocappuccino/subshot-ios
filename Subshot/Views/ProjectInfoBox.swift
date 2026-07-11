@@ -135,6 +135,116 @@ struct SectionInfoBox: View {
     }
 }
 
+/// Scene-scoped counterpart to SectionInfoBox/ProjectInfoBox (2026-07-11
+/// redesign, matches the web app's ProjectInfoTile) — a "Projektinfo" tile is
+/// just a Scene with isProjectInfo set (see Scene.isProjectInfo's doc
+/// comment), so it drags/reorders/deletes through the ordinary scene
+/// machinery in ShotListView (long-press .contextMenu → sceneToDelete,
+/// .draggable/.dropDestination on the wrapping card there) — this view is
+/// purely the expandable content, no delete UI of its own (unlike
+/// SectionInfoBox, which removes just the info box and keeps its section;
+/// here the scene IS the tile, so "delete" is the ordinary scene delete).
+struct SceneProjectInfoTile: View {
+    @ObservedObject var viewModel: ShotListViewModel
+    let scene: Scene
+    let projectId: String
+
+    @State private var isExpanded = false
+    @State private var showingTeamSheet = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 16) {
+                    Divider()
+                    ShootDateSection(
+                        shootDate: scene.scheduledAt,
+                        onUpdate: { date in await viewModel.updateSceneShootDate(scene, date: date) }
+                    )
+                    Divider()
+                    LocationSection(
+                        address: scene.locationAddress, lat: scene.locationLat, lng: scene.locationLng,
+                        onUpdate: { address, lat, lng in
+                            await viewModel.updateSceneLocation(scene, address: address, lat: lat, lng: lng)
+                        },
+                        completer: viewModel.locationCompleter
+                    )
+                    Divider()
+                    peopleSection
+                    Divider()
+                    TodoListsSection(
+                        lists: scene.todoLists, maxLists: ShotListViewModel.maxTodoLists,
+                        viewModel: viewModel,
+                        onCreate: { name in await viewModel.createSceneTodoList(scene: scene, name: name) }
+                    )
+                }
+                .padding(.top, 12)
+                .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
+            }
+        }
+        .padding(14)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .sheet(isPresented: $showingTeamSheet, onDismiss: {
+            Task { await viewModel.refreshMembers() }
+        }) {
+            TeamSheet(projectId: projectId)
+        }
+    }
+
+    private var header: some View {
+        Button {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+                isExpanded.toggle()
+            }
+        } label: {
+            HStack {
+                Image(systemName: "info.circle.fill")
+                    .foregroundStyle(.secondary)
+                Text("Projektinfo")
+                    .font(.headline)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Same as SectionInfoBox.peopleSection — reuses the project's member
+    /// list rather than duplicating it.
+    private var peopleSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Personen", systemImage: "person.2")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            HStack(spacing: -8) {
+                ForEach(viewModel.members) { member in
+                    MemberAvatar(member: member, size: 44)
+                        .overlay(Circle().stroke(Color(.secondarySystemGroupedBackground), lineWidth: 2))
+                }
+                Button {
+                    showingTeamSheet = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44)
+                        .background(Color(.tertiarySystemGroupedBackground))
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(Color(.secondarySystemGroupedBackground), lineWidth: 2))
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 8)
+            }
+        }
+    }
+}
+
 /// Collapsible info panel at the top of the scene overview: shoot date,
 /// location (MapKit address autocomplete + a plain icon tile — deliberately
 /// no rendered map, see LocationSection — tapping it opens Google Maps), and
@@ -443,10 +553,11 @@ private struct TodoListsSection: View {
                     Label("Liste hinzufügen", systemImage: "plus")
                         .font(.body.weight(.semibold))
                         .frame(maxWidth: .infinity, minHeight: 46)
+                        .background(Color(.tertiarySystemGroupedBackground))
+                        .foregroundStyle(Color.accentColor)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Color(.tertiarySystemGroupedBackground))
-                .foregroundStyle(Color.accentColor)
+                .buttonStyle(.plain)
             }
         }
     }
@@ -530,6 +641,16 @@ private struct TodoListCard: View {
                     .buttonStyle(.plain)
                 }
             } else {
+                // Was .buttonStyle(.borderedProminent) + .tint(a near-
+                // transparent systemFill) — borderedProminent computes its
+                // own high-contrast label color FROM the tint, and a system
+                // *fill* color (meant to composite over content, not serve
+                // as a base tint) can make that computation land on a label
+                // color that blends into the background depending on light/
+                // dark mode. Reported as the button being invisible/hidden
+                // ("nie ausblenden für den Bearbeiter", 2026-07-11). Explicit
+                // background+foreground (same pattern as e.g. imKastenButton
+                // in ShotListView) has no such ambiguity.
                 Button {
                     newItemText = ""
                     isAddingItem = true
@@ -538,10 +659,11 @@ private struct TodoListCard: View {
                     Label("Punkt hinzufügen", systemImage: "plus")
                         .font(.body.weight(.semibold))
                         .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(Color(.quaternarySystemFill))
+                        .foregroundStyle(Color.accentColor)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Color(.quaternarySystemFill))
-                .foregroundStyle(Color.accentColor)
+                .buttonStyle(.plain)
             }
         }
         .padding(16)

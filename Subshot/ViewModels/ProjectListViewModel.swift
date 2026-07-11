@@ -133,12 +133,65 @@ final class ProjectListViewModel: ObservableObject {
         guard !trimmed.isEmpty else { return nil }
         let color = Color.subshotPalette[projects.count % Color.subshotPalette.count]
         do {
-            let project = try await APIClient.shared.createProject(name: trimmed, color: color, folderId: folderId)
+            // Below the current minimum (not appended at the max+1 like
+            // scenes/sections/folders) — this view inserts new projects at
+            // the very TOP of the grid (see the local .insert(at: 0) below),
+            // so the sort_order needs to sort BEFORE everything already
+            // there, not after.
+            let sortOrder = (projects.map(\.sortOrder).min() ?? 0) - 1
+            let project = try await APIClient.shared.createProject(name: trimmed, color: color, folderId: folderId, sortOrder: sortOrder)
             projects.insert(project, at: 0)
             return project
         } catch {
             errorMessage = error.localizedDescription
             return nil
+        }
+    }
+
+    /// Drag & drop reorder for project tiles — same pattern as
+    /// ShotListViewModel.reorderSection (per-item absolute sort_order PATCH,
+    /// not a relative "before" endpoint like scenes have, so there's no
+    /// risk of the client/server semantic mismatch that bug had).
+    func reorderProject(_ projectId: String, before targetId: String?) async {
+        var list = projects
+        guard let project = list.first(where: { $0.id == projectId }) else { return }
+        let targetIndex = targetId.flatMap { id in projects.firstIndex(where: { $0.id == id }) }
+        list.removeAll { $0.id == projectId }
+        list.insert(project, at: targetIndex.map { min($0, list.count) } ?? list.count)
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+            projects = list
+        }
+        do {
+            for (index, p) in list.enumerated() where p.sortOrder != index {
+                let updated = try await APIClient.shared.patchProject(p.id, sortOrder: index)
+                if let i = projects.firstIndex(where: { $0.id == updated.id }) {
+                    projects[i] = updated
+                }
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Same as reorderProject above, for folder tiles.
+    func reorderFolder(_ folderId: String, before targetId: String?) async {
+        var list = folders
+        guard let folder = list.first(where: { $0.id == folderId }) else { return }
+        let targetIndex = targetId.flatMap { id in folders.firstIndex(where: { $0.id == id }) }
+        list.removeAll { $0.id == folderId }
+        list.insert(folder, at: targetIndex.map { min($0, list.count) } ?? list.count)
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+            folders = list
+        }
+        do {
+            for (index, f) in list.enumerated() where f.sortOrder != index {
+                let updated = try await APIClient.shared.patchFolder(f.id, sortOrder: index)
+                if let i = folders.firstIndex(where: { $0.id == updated.id }) {
+                    folders[i] = updated
+                }
+            }
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 
