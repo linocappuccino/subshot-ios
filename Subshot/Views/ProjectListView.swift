@@ -510,33 +510,74 @@ private struct GridSheets: ViewModifier {
     }
 }
 
-/// Raw UIKit badge (see toolbarContent's own comment on why) — a UILabel
-/// with an opaque background drawn via CoreGraphics-backed UIView
-/// compositing, entirely outside SwiftUI's view tree and whatever's been
-/// causing the toolbar-button-label transparency two SwiftUI-side fixes
-/// didn't resolve.
+/// Raw UIKit badge (see toolbarContent's own comment on why) — after the
+/// first UILabel-based version STILL rendered wrong (2026-07-11, this time
+/// as a plain white circle instead of red — a different symptom than the
+/// earlier transparency reports, which points at the SIZE/bounds SwiftUI
+/// hands this view being unreliable rather than any color-resolution
+/// issue: a mismatched size would make cornerRadius-based circular
+/// clipping land wrong, and/or leave an unclipped rectangular remainder
+/// showing whatever's behind it, i.e. plausibly a white hosting-view
+/// background). This version removes every source of that ambiguity:
+/// - A dedicated BadgeShapeView subclass overrides intrinsicContentSize to
+///   always report exactly 18x18, so UIKit's own layout has no reason to
+///   size this any other way regardless of what SwiftUI's bridging layer
+///   does with the .frame() modifier.
+/// - Draws the circle itself in draw(rect:) with explicit CoreGraphics
+///   fill using bounds read AT DRAW TIME (always current/correct, unlike
+///   a cornerRadius set once in makeUIView before layout has necessarily
+///   run) instead of relying on layer.cornerRadius + masksToBounds.
+/// - A literal, non-dynamic RGB red (not .systemRed / UIColor.red, both of
+///   which are dynamic/adaptive colors) — eliminates any chance of a
+///   color asset or dark/light-mode resolution issue, however unlikely,
+///   given two previous attempts using dynamic-adjacent styling already
+///   failed for unclear reasons.
 private struct NotificationBadgeView: UIViewRepresentable {
     let count: Int
 
-    func makeUIView(context: Context) -> UILabel {
-        let label = UILabel()
-        label.textAlignment = .center
-        label.font = .systemFont(ofSize: 10, weight: .bold)
-        label.textColor = .white
-        label.backgroundColor = .systemRed
-        // isOpaque + explicit backgroundColor (not just a clear label over
-        // a colored superview) so this layer has no alpha channel at all
-        // to begin with, not just "alpha 1 for now."
-        label.isOpaque = true
-        label.layer.masksToBounds = true
-        // Fixed radius matching the fixed 18x18 SwiftUI .frame() this is
-        // wrapped in (see toolbarContent) — not derived from label.bounds,
-        // which isn't reliably laid out yet the first time updateUIView runs.
-        label.layer.cornerRadius = 9
-        return label
+    final class BadgeShapeView: UIView {
+        var text: String = "" {
+            didSet { setNeedsDisplay() }
+        }
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            backgroundColor = .clear
+            isOpaque = false
+        }
+
+        required init?(coder: NSCoder) { fatalError("unused") }
+
+        override var intrinsicContentSize: CGSize { CGSize(width: 18, height: 18) }
+
+        override func draw(_ rect: CGRect) {
+            guard let ctx = UIGraphicsGetCurrentContext() else { return }
+            let solidRed = CGColor(red: 1, green: 0.0, blue: 0.0, alpha: 1)
+            ctx.setFillColor(solidRed)
+            ctx.fillEllipse(in: bounds)
+
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.alignment = .center
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 10, weight: .bold),
+                .foregroundColor: UIColor.white,
+                .paragraphStyle: paragraph,
+            ]
+            let textSize = text.size(withAttributes: attributes)
+            let textRect = CGRect(
+                x: bounds.midX - textSize.width / 2,
+                y: bounds.midY - textSize.height / 2,
+                width: textSize.width, height: textSize.height
+            )
+            text.draw(in: textRect, withAttributes: attributes)
+        }
     }
 
-    func updateUIView(_ label: UILabel, context: Context) {
-        label.text = count > 99 ? "99+" : "\(count)"
+    func makeUIView(context: Context) -> BadgeShapeView {
+        BadgeShapeView()
+    }
+
+    func updateUIView(_ view: BadgeShapeView, context: Context) {
+        view.text = count > 99 ? "99+" : "\(count)"
     }
 }
