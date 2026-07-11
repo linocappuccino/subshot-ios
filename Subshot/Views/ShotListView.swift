@@ -542,6 +542,7 @@ struct ShotListView: View {
                 .frame(height: 44)
                 .padding(.horizontal, 16)
                 .opacity(dropTargetSectionId == (section?.id ?? unassignedSectionKey) ? 1 : 0)
+                .allowsHitTesting(false)
             sectionHeader(section: section)
             if let section {
                 sectionProjectInfoArea(section: section)
@@ -764,6 +765,13 @@ struct ShotListView: View {
             .frame(height: 44)
             .padding(.horizontal, 4)
             .opacity(isActive ? 1 : 0)
+            // Purely decorative — SwiftUI shapes still register for hit-
+            // testing by default even at opacity 0, which could intercept
+            // touches meant for the tile's own long-press/drag gesture
+            // recognizers sitting on the surrounding VStack. Explicit
+            // opt-out, should never have participated in hit-testing at
+            // all given it has no gesture of its own.
+            .allowsHitTesting(false)
     }
 
     /// `columnLayout` is true whenever this card renders inside a 2+ column
