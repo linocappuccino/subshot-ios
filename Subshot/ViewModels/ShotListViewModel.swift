@@ -128,15 +128,13 @@ final class ShotListViewModel: ObservableObject {
     /// No longer sorts completed scenes to the end — "im Kasten" now
     /// collapses a scene in place instead of moving it, see
     /// setSceneCompleted's doc comment. A Projektinfo scene (isProjectInfo)
-    /// always sorts first within its bucket, mirroring the web app's
-    /// scenesIn (Lino: "die Projektinfo ist immer die erste Kachel in einem
-    /// Abschnitt") — everything else keeps its natural sort_order.
+    /// no longer sorts first either (2026-07-11, Lino: "die Info-Kachel
+    /// kann man jetzt überall platzieren... wie eine normale Szenenkachel
+    /// von der Platzierung her") — plain sort_order for everything, same
+    /// as the web app's scenesIn.
     func scenes(in section: SceneSection?) -> [Scene] {
         scenes.filter { $0.sectionId == section?.id }
-            .sorted { a, b in
-                if a.isProjectInfo != b.isProjectInfo { return a.isProjectInfo }
-                return a.sortOrder < b.sortOrder
-            }
+            .sorted { $0.sortOrder < $1.sortOrder }
     }
 
     // MARK: - Sections
@@ -595,7 +593,9 @@ final class ShotListViewModel: ObservableObject {
         if dragged.sectionId != targetScene.sectionId {
             await assignSceneToSection(dragged, sectionId: targetScene.sectionId)
         }
-        guard !dragged.isProjectInfo else { return }
+        // is_project_info no longer skips positioning (2026-07-11, matches
+        // scenes(in:)'s own removal of "Info tile always sorts first") — it
+        // reorders exactly like any other scene now.
         await reorderScene(draggedId, before: targetScene.id)
     }
 

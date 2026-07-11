@@ -1307,11 +1307,12 @@ struct ShotListView: View {
         // specifically (2026-07-11: "die Projektinfo kann man wieder in
         // keinen Abschnitt schieben" — the thin indicator gap and the
         // section header were technically both still valid targets, but
-        // evidently too easy to miss in practice; a Projektinfo doesn't
-        // care about exact position within a section at all, since it
-        // always sorts first regardless (see scenes(in:)'s own sort rule)
-        // — so ANY tile already in the target section is a perfectly
-        // valid, much larger, much easier-to-hit place to drop it, not
+        // evidently too easy to miss in practice) — so ANY tile already in
+        // the target section is a perfectly valid, much larger, much
+        // easier-to-hit place to drop an Info tile onto, landing right
+        // before whichever tile it's dropped on (handleSceneDroppedOnTile
+        // positions it exactly like any other scene now — see its own
+        // updated doc comment — this is purely a wider TARGET, not
         // just the header or the gap). Deliberately NOT extended to
         // regular (non-Projektinfo) scene drags — those still need exact
         // position, which only the indicator gap can express; broadening
