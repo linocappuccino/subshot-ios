@@ -844,34 +844,41 @@ struct ShotListView: View {
     @ViewBuilder
     private func regularSceneCard(scene: Scene, columnLayout: Bool) -> some View {
         let collapsed = isCollapsed(scene)
-        VStack(alignment: .leading, spacing: 14) {
-            // Landing placeholder: shows exactly where a dragged scene will
-            // insert if dropped right now — see sceneDropIndicator's own
-            // doc comment.
+        // Indicator is a SIBLING of the card now, not a child sharing its
+        // background/clipShape (2026-07-11: "das blaue Rechteck wird beim
+        // Verschieben immer IN EINER KACHEL dargestellt, es muss aber
+        // zwischen Kacheln... dargestellt werden") — it used to be the
+        // first child INSIDE the same VStack the card's own
+        // .background()/.clipShape(RoundedRectangle) applied to, so it
+        // visually rendered as part of that one tile's own rounded card
+        // instead of a distinct placeholder sitting in the gap before it.
+        VStack(alignment: .leading, spacing: 8) {
             sceneDropIndicator(isActive: dropTargetSceneId == scene.id)
-            if collapsed {
-                sceneCollapsedRow(scene: scene)
-            } else {
-                sceneTile(scene: scene, columnLayout: columnLayout)
-                // Zwischenschritt: no shot list at all, not even the add-row
-                // — it's a lightweight connective beat, not a shootable
-                // scene. Also hidden while collapsed above, along with
-                // everything else — a collapsed "im Kasten" row is meant to
-                // be a one-line summary, not a partial card.
-                if !scene.isIntermediateStep, !columnLayout {
-                    ForEach(viewModel.shots(in: scene)) { shot in
-                        shotCardView(shot: shot, sceneId: scene.id)
+            VStack(alignment: .leading, spacing: 14) {
+                if collapsed {
+                    sceneCollapsedRow(scene: scene)
+                } else {
+                    sceneTile(scene: scene, columnLayout: columnLayout)
+                    // Zwischenschritt: no shot list at all, not even the add-row
+                    // — it's a lightweight connective beat, not a shootable
+                    // scene. Also hidden while collapsed above, along with
+                    // everything else — a collapsed "im Kasten" row is meant to
+                    // be a one-line summary, not a partial card.
+                    if !scene.isIntermediateStep, !columnLayout {
+                        ForEach(viewModel.shots(in: scene)) { shot in
+                            shotCardView(shot: shot, sceneId: scene.id)
+                        }
+                        addRow(sceneId: scene.id)
                     }
-                    addRow(sceneId: scene.id)
                 }
             }
+            .padding(collapsed ? 10 : 14)
+            .background(scene.completed ? Color.green.opacity(0.18) : Color(.secondarySystemGroupedBackground))
+            .animation(.easeInOut(duration: 0.3), value: scene.completed)
+            .animation(.easeInOut(duration: 0.25), value: collapsed)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .modifier(ScenePulseOnElapse(scene: scene))
         }
-        .padding(collapsed ? 10 : 14)
-        .background(scene.completed ? Color.green.opacity(0.18) : Color(.secondarySystemGroupedBackground))
-        .animation(.easeInOut(duration: 0.3), value: scene.completed)
-        .animation(.easeInOut(duration: 0.25), value: collapsed)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .modifier(ScenePulseOnElapse(scene: scene))
         // Grid mode owns its own outer horizontal padding + inter-column gap
         // (see sceneGrid) — a card shouldn't also pad itself in that case, or
         // the gap between the two columns would be twice as wide as the gap
@@ -1142,65 +1149,72 @@ struct ShotListView: View {
     /// as-is rather than duplicating the countdown/elapse logic.
     @ViewBuilder
     private func sceneCompactTile(scene: Scene) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Landing placeholder, same as the full sceneTile.
+        // Indicator pulled out into a sibling, same reasoning as
+        // regularSceneCard's own restructure — see its doc comment. Used
+        // to be the first child inside the SAME VStack the tile's own
+        // .background()/.clipShape() applied to, so it rendered as part of
+        // that tile's own card instead of a distinct placeholder in the
+        // gap before it.
+        VStack(alignment: .leading, spacing: 6) {
             sceneDropIndicator(isActive: dropTargetSceneId == scene.id)
-            if let imageUrl = scene.imageUrl {
-                AsyncShotThumbnail(path: imageUrl, size: nil, lockAspectRatio: true)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 100)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            VStack(alignment: .leading, spacing: 8) {
+                if let imageUrl = scene.imageUrl {
+                    AsyncShotThumbnail(path: imageUrl, size: nil, lockAspectRatio: true)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 100)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                // Was an HStack (badge next to name) — "NICHTS ist IN einer
+                // Kachel nebeneinander, ALLES IST UNTEREINANDER" (2026-07-11,
+                // explicitly repeated) applies to every piece of side-by-side
+                // content in this mode, not just the date/duration row below.
+                Text(scene.displayNumber)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(sceneAccentColor(scene.priority))
+                    .clipShape(Capsule())
+                Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(2)
+                SceneTimerInfo(scene: scene, stacked: true)
             }
-            // Was an HStack (badge next to name) — "NICHTS ist IN einer
-            // Kachel nebeneinander, ALLES IST UNTEREINANDER" (2026-07-11,
-            // explicitly repeated) applies to every piece of side-by-side
-            // content in this mode, not just the date/duration row below.
-            Text(scene.displayNumber)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(sceneAccentColor(scene.priority))
-                .clipShape(Capsule())
-            Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(2)
-            SceneTimerInfo(scene: scene, stacked: true)
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(scene.completed ? Color.green.opacity(0.18) : Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .modifier(ScenePulseOnElapse(scene: scene))
-        .contentShape(Rectangle())
-        .onTapGesture { editingScene = .some(scene) }
-        .contextMenu {
-            Button {
-                editingScene = .some(scene)
-            } label: {
-                Label("Bearbeiten", systemImage: "pencil")
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(scene.completed ? Color.green.opacity(0.18) : Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .modifier(ScenePulseOnElapse(scene: scene))
+            .contentShape(Rectangle())
+            .onTapGesture { editingScene = .some(scene) }
+            .contextMenu {
+                Button {
+                    editingScene = .some(scene)
+                } label: {
+                    Label("Bearbeiten", systemImage: "pencil")
+                }
+                Button(role: .destructive) {
+                    sceneToDelete = scene
+                } label: {
+                    Label("Löschen", systemImage: "trash")
+                }
+            } preview: {
+                sceneContextMenuPreview(scene: scene)
             }
-            Button(role: .destructive) {
-                sceneToDelete = scene
-            } label: {
-                Label("Löschen", systemImage: "trash")
+            .draggable("scene:\(scene.id)") {
+                sceneDragPreview(scene: scene)
             }
-        } preview: {
-            sceneContextMenuPreview(scene: scene)
-        }
-        .draggable("scene:\(scene.id)") {
-            sceneDragPreview(scene: scene)
-        }
-        // Same reorder/refile logic as sceneTile's own dropDestination —
-        // see handleSceneDroppedOnTile's doc comment.
-        .dropDestination(for: String.self) { ids, _ in
-            guard let raw = ids.first, raw.hasPrefix("scene:") else { return false }
-            let draggedId = String(raw.dropFirst("scene:".count))
-            Task { await viewModel.handleSceneDroppedOnTile(draggedId, targetScene: scene) }
-            return true
-        } isTargeted: { targeted in
-            withAnimation(.easeOut(duration: 0.15)) {
-                dropTargetSceneId = targeted ? scene.id : (dropTargetSceneId == scene.id ? nil : dropTargetSceneId)
+            // Same reorder/refile logic as sceneTile's own dropDestination —
+            // see handleSceneDroppedOnTile's doc comment.
+            .dropDestination(for: String.self) { ids, _ in
+                guard let raw = ids.first, raw.hasPrefix("scene:") else { return false }
+                let draggedId = String(raw.dropFirst("scene:".count))
+                Task { await viewModel.handleSceneDroppedOnTile(draggedId, targetScene: scene) }
+                return true
+            } isTargeted: { targeted in
+                withAnimation(.easeOut(duration: 0.15)) {
+                    dropTargetSceneId = targeted ? scene.id : (dropTargetSceneId == scene.id ? nil : dropTargetSceneId)
+                }
             }
         }
     }
