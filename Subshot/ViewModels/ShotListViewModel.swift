@@ -482,6 +482,30 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
+    /// Shared by every "scene tile dropped onto another tile" drop target
+    /// (sceneTile, sceneCompactTile, projectInfoSceneCard) — was duplicated
+    /// three times almost identically before, and the duplication was
+    /// itself part of the problem: refile-then-reorder for a Projektinfo
+    /// scene was going through the SAME section-scoped reorderScene math
+    /// as a normal scene, and that specific combination ("kann Projektinfo
+    /// nicht in einen Abschnitt verschieben", 2026-07-11) was the last
+    /// thing still failing after the reorder fixes for normal scenes
+    /// landed. A Projektinfo scene always sorts first within its section
+    /// regardless of sort_order (see scenes(in:)) — computing/sending a
+    /// specific "before" position for it is pointless AND was one more
+    /// place for the reorder math to go wrong; refiling the section alone
+    /// is both correct and simpler ("soll sie direkt automatisch ganz oben
+    /// im gewählten Abschnitt platziert werden" — that's exactly what
+    /// scenes(in:)'s sort already guarantees for free).
+    func handleSceneDroppedOnTile(_ draggedId: String, targetScene: Scene) async {
+        guard draggedId != targetScene.id, let dragged = scenes.first(where: { $0.id == draggedId }) else { return }
+        if dragged.sectionId != targetScene.sectionId {
+            await assignSceneToSection(dragged, sectionId: targetScene.sectionId)
+        }
+        guard !dragged.isProjectInfo else { return }
+        await reorderScene(draggedId, before: targetScene.id)
+    }
+
     #if canImport(UIKit)
     func uploadSceneImage(_ scene: Scene, image: UIImage) async {
         do {

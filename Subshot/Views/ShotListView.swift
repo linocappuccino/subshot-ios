@@ -89,17 +89,17 @@ struct ShotListView: View {
     /// sceneCard). Not "which scene is being dragged": .draggable() doesn't
     /// expose a drag-started callback, only drop-target hover does.
     @State private var dropTargetSceneId: String?
-    /// Which scene tile's OWN source row should collapse to zero height
-    /// while it's the one being dragged (2026-07-11: "im Hintergrund ist
-    /// die Kachel aber immer noch gross... so muss man nicht so lange nach
-    /// unten scrollen"). Plain .draggable() has no "drag started" callback
-    /// at all (see dropTargetSceneId's own doc comment — only drop-target
-    /// HOVER fires) — this is set instead via .onAppear on the drag
-    /// preview view itself (the preview view only exists/appears for the
-    /// duration of an active drag session, so its onAppear/onDisappear are
-    /// a safe, standard-SwiftUI stand-in for a drag-start/end hook that
-    /// doesn't otherwise exist).
-    @State private var draggedSceneId: String?
+    // draggedSceneId (source-tile-collapse-during-drag) was here briefly,
+    // 2026-07-11 — reverted the same day: collapsing/animating the source
+    // tile's height WHILE a drag is active shifts every other tile's
+    // on-screen position mid-gesture, which very plausibly explains the
+    // regression reported right after ("man muss die blaue Indikator Linie
+    // super genau treffen", "die Kachel landet nicht am richtigen Ort,
+    // verschwindet in einen anderen Abschnitt") — a drop target's geometry
+    // moving under the finger mid-drag is exactly the kind of thing that
+    // breaks precise hit-testing. Reverted to isolate/fix the core reorder
+    // bug first; revisit the cosmetic "background tile stays big" ask
+    // separately, later, and verify on-device before trusting it next time.
     /// Same idea as dropTargetSceneId, for section headers — drives the one
     /// blue-line indicator in sectionGroup for BOTH a section being dragged
     /// (reorder) AND a scene being dragged onto a section's header to file
@@ -797,34 +797,19 @@ struct ShotListView: View {
                 .background(Color(.secondarySystemGroupedBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
-                .onAppear { draggedSceneId = scene.id }
-                .onDisappear { if draggedSceneId == scene.id { draggedSceneId = nil } }
         }
         .dropDestination(for: String.self) { ids, _ in
-            // Identical logic to sceneTile's own dropDestination below —
-            // dropping another scene onto this Projektinfo tile inserts it
-            // right before, refiling into this tile's section if different.
+            // Shared with sceneTile/sceneCompactTile now — see
+            // handleSceneDroppedOnTile's doc comment.
             guard let raw = ids.first, raw.hasPrefix("scene:") else { return false }
             let draggedId = String(raw.dropFirst("scene:".count))
-            guard draggedId != scene.id, let dragged = viewModel.scenes.first(where: { $0.id == draggedId }) else { return false }
-            Task {
-                if dragged.sectionId != scene.sectionId {
-                    await viewModel.assignSceneToSection(dragged, sectionId: scene.sectionId)
-                }
-                await viewModel.reorderScene(draggedId, before: scene.id)
-            }
+            Task { await viewModel.handleSceneDroppedOnTile(draggedId, targetScene: scene) }
             return true
         } isTargeted: { targeted in
             withAnimation(.easeOut(duration: 0.15)) {
                 dropTargetSceneId = targeted ? scene.id : (dropTargetSceneId == scene.id ? nil : dropTargetSceneId)
             }
         }
-        // Same source-tile collapse as regularSceneCard — see draggedSceneId.
-        .frame(maxHeight: draggedSceneId == scene.id ? 0 : nil)
-        .opacity(draggedSceneId == scene.id ? 0 : 1)
-        .clipped()
-        .allowsHitTesting(draggedSceneId != scene.id)
-        .animation(.easeInOut(duration: 0.2), value: draggedSceneId)
     }
 
     @ViewBuilder
@@ -870,16 +855,6 @@ struct ShotListView: View {
         // the gap between the two columns would be twice as wide as the gap
         // above/below.
         .padding(.horizontal, ((isPad && isGridMode) || horizontalSizeClass == .regular) ? 0 : 16)
-        // Collapse the SOURCE tile's own space while it's the one being
-        // dragged (see draggedSceneId's doc comment) — used to stay full
-        // size in the background the whole time, forcing extra scrolling
-        // to reach a target further down ("im Hintergrund ist die Kachel
-        // aber immer noch gross", 2026-07-11).
-        .frame(maxHeight: draggedSceneId == scene.id ? 0 : nil)
-        .opacity(draggedSceneId == scene.id ? 0 : 1)
-        .clipped()
-        .allowsHitTesting(draggedSceneId != scene.id)
-        .animation(.easeInOut(duration: 0.2), value: draggedSceneId)
         .dropDestination(for: String.self) { ids, _ in
             guard let dragged = ids.first, !dragged.hasPrefix("scene:") else { return }
             Task { await viewModel.moveShot(dragged, toScene: scene.id) }
@@ -1099,16 +1074,11 @@ struct ShotListView: View {
         .dropDestination(for: String.self) { ids, _ in
             // The isTargeted-overload's action closure returns Bool (did
             // this view accept the drop), unlike the plain overload used
-            // everywhere else in this file for shots.
+            // everywhere else in this file for shots. See
+            // handleSceneDroppedOnTile's doc comment for the shared logic.
             guard let raw = ids.first, raw.hasPrefix("scene:") else { return false }
             let draggedId = String(raw.dropFirst("scene:".count))
-            guard draggedId != scene.id, let dragged = viewModel.scenes.first(where: { $0.id == draggedId }) else { return false }
-            Task {
-                if dragged.sectionId != scene.sectionId {
-                    await viewModel.assignSceneToSection(dragged, sectionId: scene.sectionId)
-                }
-                await viewModel.reorderScene(draggedId, before: scene.id)
-            }
+            Task { await viewModel.handleSceneDroppedOnTile(draggedId, targetScene: scene) }
             return true
         } isTargeted: { targeted in
             withAnimation(.easeOut(duration: 0.15)) {
@@ -1183,29 +1153,18 @@ struct ShotListView: View {
         .draggable("scene:\(scene.id)") {
             sceneDragPreview(scene: scene)
         }
-        // Same reorder/refile logic as sceneTile's own dropDestination below.
+        // Same reorder/refile logic as sceneTile's own dropDestination —
+        // see handleSceneDroppedOnTile's doc comment.
         .dropDestination(for: String.self) { ids, _ in
             guard let raw = ids.first, raw.hasPrefix("scene:") else { return false }
             let draggedId = String(raw.dropFirst("scene:".count))
-            guard draggedId != scene.id, let dragged = viewModel.scenes.first(where: { $0.id == draggedId }) else { return false }
-            Task {
-                if dragged.sectionId != scene.sectionId {
-                    await viewModel.assignSceneToSection(dragged, sectionId: scene.sectionId)
-                }
-                await viewModel.reorderScene(draggedId, before: scene.id)
-            }
+            Task { await viewModel.handleSceneDroppedOnTile(draggedId, targetScene: scene) }
             return true
         } isTargeted: { targeted in
             withAnimation(.easeOut(duration: 0.15)) {
                 dropTargetSceneId = targeted ? scene.id : (dropTargetSceneId == scene.id ? nil : dropTargetSceneId)
             }
         }
-        // Same source-tile collapse as regularSceneCard — see draggedSceneId.
-        .frame(maxHeight: draggedSceneId == scene.id ? 0 : nil)
-        .opacity(draggedSceneId == scene.id ? 0 : 1)
-        .clipped()
-        .allowsHitTesting(draggedSceneId != scene.id)
-        .animation(.easeInOut(duration: 0.2), value: draggedSceneId)
     }
 
     /// Preview shown while holding for the Bearbeiten/Löschen menu — used to
@@ -1259,8 +1218,6 @@ struct ShotListView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
         .rotationEffect(.degrees(-2))
-        .onAppear { draggedSceneId = scene.id }
-        .onDisappear { if draggedSceneId == scene.id { draggedSceneId = nil } }
     }
 
     /// Two rows, not one: the title used to be squeezed between a drag handle
