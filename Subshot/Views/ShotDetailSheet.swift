@@ -6,22 +6,21 @@ struct ShotDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var description: String
-    @State private var durationText: String
-    @State private var cameraAngle: CameraAngle
-    @State private var customAngleText: String
     @State private var priority: ShotPriority?
     @State private var goodTake: String
     @State private var uploadedImage: UIImage?
     @State private var isSaving = false
 
+    // camera_angle/duration_seconds are still on the model/API (existing
+    // values are preserved — patchShotFull below simply stops sending
+    // these two fields) but no longer editable here (Lino: "nicht so viel
+    // informationen die man eingeben kann. Es reicht wenn man ein Bild und
+    // eine Beschreibung, Prio und einen Good Take eingeben kann"), mirrors
+    // the web app's ShotEditModal.tsx simplification.
     init(shot: Shot, viewModel: ShotListViewModel) {
         _shot = State(initialValue: shot)
         self.viewModel = viewModel
         _description = State(initialValue: shot.description ?? "")
-        _durationText = State(initialValue: shot.durationSeconds.map(String.init) ?? "")
-        let known = CameraAngle.allCases.first { $0.rawValue == shot.cameraAngle }
-        _cameraAngle = State(initialValue: known ?? (shot.cameraAngle == nil ? .wide : .other))
-        _customAngleText = State(initialValue: known == nil ? (shot.cameraAngle ?? "") : "")
         _priority = State(initialValue: shot.priority)
         _goodTake = State(initialValue: shot.goodTakeFilename ?? "")
     }
@@ -57,22 +56,6 @@ struct ShotDetailSheet: View {
                 Section("Beschreibung") {
                     TextField("z.B. Weitwinkel Establishing Shot", text: $description, axis: .vertical)
                         .lineLimit(3...6)
-                }
-
-                Section("Kamerawinkel") {
-                    Picker("Winkel", selection: $cameraAngle) {
-                        ForEach(CameraAngle.allCases) { angle in
-                            Text(angle.rawValue).tag(angle)
-                        }
-                    }
-                    if cameraAngle == .other {
-                        TextField("Eigener Winkel", text: $customAngleText)
-                    }
-                }
-
-                Section("Dauer (Sekunden)") {
-                    TextField("z.B. 8", text: $durationText)
-                        .keyboardType(.numberPad)
                 }
 
                 Section("Priorität") {
@@ -122,14 +105,19 @@ struct ShotDetailSheet: View {
     private func save() async {
         isSaving = true
         defer { isSaving = false }
-        let angleValue: String? = cameraAngle == .other ? customAngleText : cameraAngle.rawValue
         do {
             let trimmedGoodTake = goodTake.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Passes the shot's EXISTING durationSeconds/cameraAngle back
+            // unchanged (not nil) — patchShotFull always includes both keys
+            // in its JSON body, and the backend treats a present-but-null
+            // field as "clear it" (see app/main.py's patch_shot), so nil
+            // here would silently wipe any value a shot already had even
+            // though this sheet no longer offers a way to edit them.
             let updated = try await APIClient.shared.patchShotFull(
                 shot.id,
                 description: description,
-                durationSeconds: Int(durationText),
-                cameraAngle: angleValue,
+                durationSeconds: shot.durationSeconds,
+                cameraAngle: shot.cameraAngle,
                 priority: priority?.rawValue,
                 goodTakeFilename: trimmedGoodTake.isEmpty ? nil : trimmedGoodTake
             )

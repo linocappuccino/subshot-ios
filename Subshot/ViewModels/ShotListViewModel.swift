@@ -263,16 +263,20 @@ final class ShotListViewModel: ObservableObject {
     /// "Projektinfo" from the "+" menu (2026-07-11: was wrongly creating a
     /// Section before, see addSceneButton in ShotListView) — NEVER auto-
     /// creates a section, matches the web app exactly. Just a scene with
-    /// isProjectInfo set, no name, no section (lands in "Ohne Abschnitt");
-    /// from there it's dragged into whichever section it belongs to using
-    /// the ordinary scene drag mechanism, same as any other tile.
+    /// isProjectInfo set, no name.
+    ///
+    /// sectionId (2026-07-12 addition): previously always nil, landing in
+    /// "Ohne Abschnitt" and requiring a manual drag afterward — Lino asked
+    /// for every "+"-menu creation (Szene/Zwischenschritt/Info) to instead
+    /// land at the end of whichever section is currently open, see
+    /// ShotListView's lastOpenedSectionKey/targetSectionIdForNewScene.
     @discardableResult
-    func createProjectInfoScene() async -> Scene? {
+    func createProjectInfoScene(sectionId: String? = nil) async -> Scene? {
         do {
             let sortOrder = (scenes.map(\.sortOrder).max() ?? -1) + 1
             let scene = try await APIClient.shared.createScene(
                 projectId: projectId, name: nil, color: "#3875bd",
-                sortOrder: sortOrder, isProjectInfo: true
+                sectionId: sectionId, sortOrder: sortOrder, isProjectInfo: true
             )
             scenes.append(scene)
             return scene

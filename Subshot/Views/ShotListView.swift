@@ -58,6 +58,13 @@ struct ShotListView: View {
     /// including the unsectioned bucket.
     private let unassignedSectionKey = "__unassigned__"
     @State private var collapsedSections: Set<String> = []
+    /// The section the user most recently expanded (unassignedSectionKey for
+    /// "Ohne Abschnitt", nil if none has been opened this session) — "the
+    /// section you currently have open and are looking at" (Lino), used so
+    /// the bottom-right "+" button's new Szene/Zwischenschritt/Info lands at
+    /// the end of THAT section instead of always in "Ohne Abschnitt". Set in
+    /// toggleSectionCollapse whenever a section transitions collapsed→open.
+    @State private var lastOpenedSectionKey: String?
     /// Delete-confirmation target — the actual Bearbeiten/Löschen menu itself
     /// is .contextMenu now (see sceneTile etc.), triggered by the same
     /// long-press. Two custom approaches were tried and rejected before
@@ -137,9 +144,10 @@ struct ShotListView: View {
     /// (2026-07-11, matches the web app) — expanded by default (empty set),
     /// same session-local-only reasoning as expandedCompletedSceneIds.
     @State private var collapsedDialogSceneIds: Set<String> = []
+    @State private var collapsedDescriptionSceneIds: Set<String> = []
+    @State private var collapsedShotsSceneIds: Set<String> = []
     @State private var isExportingPdf = false
     @State private var exportedPdfURL: URL?
-    @State private var showingNotionImport = false
     @State private var shareLinkURL: URL?
     @State private var isPresentingShareSheet = false
     @State private var showingShareLinkSheet = false
@@ -184,7 +192,7 @@ struct ShotListView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 24) {
+            LazyVStack(alignment: .leading, spacing: 16) {
                 // Scrolls with the rest of the content again — the earlier
                 // hang/crash turned out to be the general iOS-26.5-Simulator
                 // rendering bug (see project memory), not MapKit itself, so
@@ -330,11 +338,6 @@ struct ShotListView: View {
                 isPresentingShareSheet = true
             }
         }
-        .sheet(isPresented: $showingNotionImport) {
-            NotionImportSheet(projectId: projectId) {
-                await viewModel.load()
-            }
-        }
         // Every failed API call in this screen (including a scene/shot image
         // upload that didn't make it — e.g. a dropped connection mid-upload)
         // only ever set viewModel.errorMessage; nothing displayed it, so
@@ -433,6 +436,7 @@ struct ShotListView: View {
                             dialogue: dialogue.isEmpty ? nil : dialogue,
                             scheduledAt: scheduledAt,
                             durationMinutes: durationMinutes,
+                            sectionId: targetSectionIdForNewScene,
                             priority: priority,
                             isIntermediateStep: creatingIntermediateStep
                         )
@@ -506,17 +510,13 @@ struct ShotListView: View {
                 // create a Section with add_project_info set, which is
                 // wrong: "möchte man eine Projektinfo hinzufügen, wird ein
                 // Abschnitt hinzugefügt, das ist falsch"). A Projektinfo is
-                // just a scene tile now (see Scene.isProjectInfo), created
-                // directly with no section (lands in "Ohne Abschnitt"),
-                // matching the web app exactly.
-                Task { await viewModel.createProjectInfoScene() }
+                // just a scene tile now (see Scene.isProjectInfo) — lands at
+                // the end of the currently-open section (see
+                // targetSectionIdForNewScene), "Ohne Abschnitt" only if none
+                // is open, same as Neue Szene/Zwischenschritt below.
+                Task { await viewModel.createProjectInfoScene(sectionId: targetSectionIdForNewScene) }
             } label: {
                 Label("Info", systemImage: "info.circle")
-            }
-            Button {
-                showingNotionImport = true
-            } label: {
-                Label("Von Notion importieren", systemImage: "square.and.arrow.down.on.square")
             }
         } label: {
             Image(systemName: "plus")
@@ -541,7 +541,7 @@ struct ShotListView: View {
     @ViewBuilder
     private func sceneGrid(_ scenes: [Scene]) -> some View {
         if isCompactTileMode {
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                 ForEach(scenes) { scene in
                     // A Projektinfo tile has no name/priority/image to show
                     // in the reduced compact layout — same full-width card
@@ -558,14 +558,14 @@ struct ShotListView: View {
             }
             .padding(.horizontal, 16)
         } else if horizontalSizeClass == .regular {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: ipadColumnCount), spacing: 16) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: ipadColumnCount), spacing: 12) {
                 ForEach(scenes) { scene in
                     sceneCard(scene: scene, columnLayout: ipadColumnCount > 1)
                 }
             }
             .padding(.horizontal, 16)
         } else if isPad && isGridMode {
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                 ForEach(scenes) { scene in
                     sceneCard(scene: scene, columnLayout: true)
                 }
@@ -652,11 +652,21 @@ struct ShotListView: View {
         collapsedSections.contains(section?.id ?? unassignedSectionKey)
     }
 
+    /// Resolves lastOpenedSectionKey to an actual section id for new-scene
+    /// creation (nil for "Ohne Abschnitt" — createScene's own default — and
+    /// also nil if nothing's been opened yet this session, or the
+    /// previously-opened section was deleted meanwhile/no longer exists).
+    private var targetSectionIdForNewScene: String? {
+        guard let key = lastOpenedSectionKey, key != unassignedSectionKey else { return nil }
+        return viewModel.sections.contains { $0.id == key } ? key : nil
+    }
+
     private func toggleSectionCollapse(_ section: SceneSection?) {
         let key = section?.id ?? unassignedSectionKey
         withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
             if collapsedSections.contains(key) {
                 collapsedSections.remove(key)
+                lastOpenedSectionKey = key
             } else {
                 collapsedSections.insert(key)
             }
@@ -810,7 +820,7 @@ struct ShotListView: View {
                 .rotationEffect(.degrees(isSectionCollapsed(section) ? 0 : 90))
                 .frame(width: 30, height: 30)
             Text(section?.name ?? "Ohne Abschnitt")
-                .font(.subheadline.weight(.semibold))
+                .font(.headline.weight(.semibold))
                 .foregroundStyle(.secondary)
             if let section {
                 let scenes = viewModel.scenes(in: section)
@@ -1019,18 +1029,61 @@ struct ShotListView: View {
                     // everything else — a collapsed "im Kasten" row is meant to
                     // be a one-line summary, not a partial card.
                     if !scene.isIntermediateStep, !columnLayout {
-                        ForEach(viewModel.shots(in: scene)) { shot in
-                            shotCardView(shot: shot, sceneId: scene.id)
+                        let shots = viewModel.shots(in: scene)
+                        if !shots.isEmpty {
+                            // Same collapsible-header idea as "Beschreibung"/
+                            // "Dialog" above (Lino: "die Einstellungen muss
+                            // man dann aber auch auf und zuklappen können"),
+                            // mirrors the web app's shots-list collapse.
+                            let shotsCollapsed = collapsedShotsSceneIds.contains(scene.id)
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    if shotsCollapsed {
+                                        collapsedShotsSceneIds.remove(scene.id)
+                                    } else {
+                                        collapsedShotsSceneIds.insert(scene.id)
+                                    }
+                                }
+                            } label: {
+                                HStack {
+                                    Text("Einstellungen")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                    Text("\(shots.count)")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundStyle(.tertiary)
+                                        .rotationEffect(.degrees(shotsCollapsed ? 0 : 90))
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            if !shotsCollapsed {
+                                ForEach(shots) { shot in
+                                    shotCardView(shot: shot, sceneId: scene.id)
+                                }
+                            }
                         }
                         addRow(sceneId: scene.id)
                     }
                 }
             }
             .padding(collapsed ? 10 : 14)
-            .background(scene.completed ? Color.green.opacity(0.18) : Color(.secondarySystemGroupedBackground))
+            // Real Apple "Liquid Glass" material (iOS 26), not an imitation
+            // via gradients/blur — deliberately a DIFFERENT look than the
+            // folder/project tiles' opaque colored-glow treatment
+            // (ProjectListView.tileBody): Lino explicitly asked for "den
+            // typischen schaumigen Glaseffekt mit Glaskanten, typische
+            // Apple" on scene cards specifically, not the same effect
+            // reused. glassEffect(in:) supplies its own frosted background,
+            // refractive edge highlight, AND shape/clipping all at once —
+            // no separate .background()/.clipShape() needed underneath.
+            .glassEffect(scene.completed ? .regular.tint(.green.opacity(0.35)) : .regular, in: RoundedRectangle(cornerRadius: 16))
             .animation(.easeInOut(duration: 0.3), value: scene.completed)
             .animation(.easeInOut(duration: 0.25), value: collapsed)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
             .modifier(ScenePulseOnElapse(scene: scene))
         }
         // Grid mode owns its own outer horizontal padding + inter-column gap
@@ -1139,7 +1192,7 @@ struct ShotListView: View {
     /// reorder rather than debugging blind from this server.
     @ViewBuilder
     private func sceneTile(scene: Scene, columnLayout: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             if let imageUrl = scene.imageUrl {
                 AsyncShotThumbnail(path: imageUrl, size: nil, lockAspectRatio: true)
                     .frame(maxWidth: .infinity)
@@ -1172,11 +1225,39 @@ struct ShotListView: View {
                 // that mode reaches a similar, predictable size (full detail
                 // is always one tap away via the edit sheet regardless).
                 if let description = scene.description, !description.isEmpty {
-                    Text(description)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(columnLayout ? 3 : nil)
-                        .fixedSize(horizontal: false, vertical: !columnLayout)
+                    // Same collapsible-header idea as "Dialog" below (Lino:
+                    // Titel "Beschreibung" darüber, auf-/zuklappbar wie bei
+                    // Dialoge).
+                    let descriptionCollapsed = collapsedDescriptionSceneIds.contains(scene.id)
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            if descriptionCollapsed {
+                                collapsedDescriptionSceneIds.remove(scene.id)
+                            } else {
+                                collapsedDescriptionSceneIds.insert(scene.id)
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            Label("Beschreibung", systemImage: "text.alignleft")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.tertiary)
+                                .rotationEffect(.degrees(descriptionCollapsed ? 0 : 90))
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    if !descriptionCollapsed {
+                        Text(description)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(columnLayout ? 3 : nil)
+                            .fixedSize(horizontal: false, vertical: !columnLayout)
+                    }
                 }
                 if let description = scene.description, !description.isEmpty,
                    let dialogue = scene.dialogue, !dialogue.isEmpty {
@@ -1356,17 +1437,27 @@ struct ShotListView: View {
                         .frame(height: 100)
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
-                // Was an HStack (badge next to name) — "NICHTS ist IN einer
-                // Kachel nebeneinander, ALLES IST UNTEREINANDER" (2026-07-11,
-                // explicitly repeated) applies to every piece of side-by-side
-                // content in this mode, not just the date/duration row below.
-                Text(scene.displayNumber)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(sceneAccentColor(scene.priority))
-                    .clipShape(Capsule())
+                // "NICHTS ist IN einer Kachel nebeneinander, ALLES IST
+                // UNTEREINANDER" (2026-07-11) still applies below — EXCEPT
+                // this one row, which Lino explicitly asked to make an
+                // exception for in the 2-column redesign ("Prio... rechts-
+                // bündig zur Identifikationsnummer legen") — spelled-out
+                // priority, right-aligned against the ID badge.
+                HStack {
+                    Text(scene.displayNumber)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(sceneAccentColor(scene.priority))
+                        .clipShape(Capsule())
+                    Spacer()
+                    if let priority = scene.priority {
+                        Text(priority.label)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(sceneAccentColor(scene.priority))
+                    }
+                }
                 Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(2)
@@ -1374,9 +1465,22 @@ struct ShotListView: View {
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(scene.completed ? Color.green.opacity(0.18) : Color(.secondarySystemGroupedBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 14))
+            // Same Liquid Glass material as regularSceneCard — see its doc
+            // comment for why this differs from the folder/project tiles'
+            // treatment.
+            .glassEffect(scene.completed ? .regular.tint(.green.opacity(0.35)) : .regular, in: RoundedRectangle(cornerRadius: 14))
             .modifier(ScenePulseOnElapse(scene: scene))
+            // Uniform card size across the 2-column grid, format 4:5 (Lino:
+            // "jede Kachel die gleiche Grösse in der Höhe... Format von
+            // 4:5"). .fit against a fixed grid-column width fixes the
+            // height identically for every card in the common case. NOT
+            // combined with .clipped() — a scene with an unusually long
+            // 2-line name + full timer info could still need more than the
+            // strict 4:5 height, and silently cutting text off mid-word
+            // would be a worse failure mode than that one tile being
+            // marginally taller than its neighbors. Worth an on-device
+            // check with a deliberately long scene name.
+            .aspectRatio(4.0 / 5.0, contentMode: .fit)
             .contentShape(Rectangle())
             .onTapGesture { editingScene = .some(scene) }
             .contextMenu {
@@ -1883,7 +1987,7 @@ private struct ShotCard: View {
 /// scheduledAt is the shoot's START time now (not a deadline) — durationMinutes
 /// is how long the shoot is expected to take. Three states, all driven off
 /// one 1s TimelineView in the parent:
-/// - before start: static "Geplante Drehzeit: Xmin"
+/// - before start: static "Geplante Zeit: Xmin"
 /// - during [start, start+duration): live mm:ss countdown, grey more than
 ///   15min out, fading through yellow at 15min, red at 10min
 /// - after end: "Drehzeit abgelaufen" — the one-time whole-card pulse on
@@ -1916,7 +2020,7 @@ private struct SceneTimerInfo: View {
                     guard let end else { return AnyView(EmptyView()) }
                     if now < scheduledAt {
                         return AnyView(
-                            Label("Geplante Drehzeit: \(scene.durationMinutes.map { "\($0) Min." } ?? "")", systemImage: "timer")
+                            Label("Geplante Zeit: \(scene.durationMinutes.map { "\($0) Min." } ?? "")", systemImage: "timer")
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(.secondary)
                         )

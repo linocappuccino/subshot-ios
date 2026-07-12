@@ -404,16 +404,17 @@ struct ProjectListView: View {
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 14))
-                .overlay {
-                    // The frame is where the picked color shows once there's
-                    // an image (see the background-fill comment above) —
-                    // without an image, the border stays the previous plain
-                    // subtle white (the fill itself already carries the
-                    // color in that case, a colored border too would be
-                    // redundant).
-                    RoundedRectangle(cornerRadius: 14)
-                        .strokeBorder(thumbnailPath != nil ? Color(hex: color) : Color.white.opacity(0.15), lineWidth: thumbnailPath != nil ? 2.5 : 1)
-                }
+                // Real Apple Liquid Glass material (iOS 26) on every tile now
+                // (Lino: "der apple glas effekt soll auf ALLEN Kacheln
+                // sein!" — folder/project AND scene tiles, see
+                // ShotListView's regularSceneCard/sceneCompactTile for the
+                // same treatment there). Supersedes the plain white
+                // strokeBorder this used to have — glassEffect renders its
+                // own refractive edge highlight natively. The picked-color
+                // glow (the two .shadow() calls below) is a separate cue
+                // (which project/folder this is), kept alongside the glass.
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
+                .shadow(color: thumbnailPath != nil ? Color(hex: color).opacity(0.55) : .clear, radius: 10)
                 .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
 
             Text(title)

@@ -53,8 +53,9 @@ struct SectionInfoBox: View {
             }
         }
         .padding(14)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        // Same Liquid Glass material as every other tile now (Lino: "der
+        // apple glas effekt soll auf ALLEN Kacheln sein!").
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
         .sheet(isPresented: $showingTeamSheet, onDismiss: {
             Task { await viewModel.refreshMembers() }
         }) {
@@ -184,8 +185,9 @@ struct SceneProjectInfoTile: View {
             }
         }
         .padding(14)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        // Same Liquid Glass material as every other tile now (Lino: "der
+        // apple glas effekt soll auf ALLEN Kacheln sein!").
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
         .sheet(isPresented: $showingTeamSheet, onDismiss: {
             Task { await viewModel.refreshMembers() }
         }) {
@@ -292,8 +294,9 @@ struct ProjectInfoBox: View {
             }
         }
         .padding(14)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        // Same Liquid Glass material as every other tile now (Lino: "der
+        // apple glas effekt soll auf ALLEN Kacheln sein!").
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
         .padding(.horizontal, 16)
         .sheet(isPresented: $showingTeamSheet, onDismiss: {
             Task { await viewModel.refreshMembers() }
