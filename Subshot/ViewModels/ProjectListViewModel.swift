@@ -148,10 +148,13 @@ final class ProjectListViewModel: ObservableObject {
         }
     }
 
-    /// Drag & drop reorder for project tiles — same pattern as
-    /// ShotListViewModel.reorderSection (per-item absolute sort_order PATCH,
-    /// not a relative "before" endpoint like scenes have, so there's no
-    /// risk of the client/server semantic mismatch that bug had).
+    /// Drag & drop reorder for project tiles — single server-authoritative
+    /// move (2026-07-13), replacing what used to be a per-changed-project
+    /// patchProject(sortOrder:) loop (same architectural fix as
+    /// ShotListViewModel.reorderSection/moveShot — see move_project in the
+    /// backend). targetId IS already exactly "insert before this project
+    /// id", so no local recomputation is needed to derive it; `list` below
+    /// is purely the optimistic visual preview.
     func reorderProject(_ projectId: String, before targetId: String?) async {
         var list = projects
         guard let project = list.first(where: { $0.id == projectId }) else { return }
@@ -162,11 +165,9 @@ final class ProjectListViewModel: ObservableObject {
             projects = list
         }
         do {
-            for (index, p) in list.enumerated() where p.sortOrder != index {
-                let updated = try await APIClient.shared.patchProject(p.id, sortOrder: index)
-                if let i = projects.firstIndex(where: { $0.id == updated.id }) {
-                    projects[i] = updated
-                }
+            let updated = try await APIClient.shared.moveProject(projectId, beforeProjectId: targetId)
+            if let i = projects.firstIndex(where: { $0.id == updated.id }) {
+                projects[i] = updated
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -184,11 +185,9 @@ final class ProjectListViewModel: ObservableObject {
             folders = list
         }
         do {
-            for (index, f) in list.enumerated() where f.sortOrder != index {
-                let updated = try await APIClient.shared.patchFolder(f.id, sortOrder: index)
-                if let i = folders.firstIndex(where: { $0.id == updated.id }) {
-                    folders[i] = updated
-                }
+            let updated = try await APIClient.shared.moveFolder(folderId, beforeFolderId: targetId)
+            if let i = folders.firstIndex(where: { $0.id == updated.id }) {
+                folders[i] = updated
             }
         } catch {
             errorMessage = error.localizedDescription

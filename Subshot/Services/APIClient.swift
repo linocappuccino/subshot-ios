@@ -370,6 +370,41 @@ final class APIClient {
         return try await send(req)
     }
 
+    /// Server-authoritative reorder (2026-07-13) — same shared endpoint the
+    /// web app now calls too, replacing what used to be a client-computed
+    /// multi-PATCH loop independently implemented on both platforms.
+    func moveSection(_ id: String, beforeSectionId: String?) async throws -> SceneSection {
+        var req = try await authorizedRequest("sections/\(id)/move", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let before_section_id: String? }
+        req.httpBody = try encoder.encode(Body(before_section_id: beforeSectionId))
+        return try await send(req)
+    }
+
+    func moveShot(_ id: String, beforeShotId: String?) async throws -> Shot {
+        var req = try await authorizedRequest("shots/\(id)/move", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let before_shot_id: String? }
+        req.httpBody = try encoder.encode(Body(before_shot_id: beforeShotId))
+        return try await send(req)
+    }
+
+    func moveProject(_ id: String, beforeProjectId: String?) async throws -> Project {
+        var req = try await authorizedRequest("projects/\(id)/move", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let before_project_id: String? }
+        req.httpBody = try encoder.encode(Body(before_project_id: beforeProjectId))
+        return try await send(req)
+    }
+
+    func moveFolder(_ id: String, beforeFolderId: String?) async throws -> ProjectFolder {
+        var req = try await authorizedRequest("folders/\(id)/move", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let before_folder_id: String? }
+        req.httpBody = try encoder.encode(Body(before_folder_id: beforeFolderId))
+        return try await send(req)
+    }
+
     func deleteScene(_ id: String) async throws {
         let req = try await authorizedRequest("scenes/\(id)", method: "DELETE")
         try await sendNoContent(req)

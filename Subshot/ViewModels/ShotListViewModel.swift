@@ -203,20 +203,22 @@ final class ShotListViewModel: ObservableObject {
             list.append(section)
         }
         // Apply the reordered list locally FIRST (same pattern as
-        // reorderScene) — an earlier version only ever mutated `sections`
-        // by id as each per-item PATCH response trickled in, so the visible
-        // order didn't change until every request in the loop had round-
-        // tripped, and a single slow/failed request left it stuck exactly
-        // where it started.
+        // reorderScene) — purely a visual preview now, not what gets
+        // persisted (see below).
         withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
             sections = list
         }
+        // Single server-authoritative move (2026-07-13) — targetId IS
+        // already exactly "insert before this section id", so no local
+        // recomputation is needed to derive it; replaces what used to be a
+        // per-changed-section patchSection loop (see move_section in the
+        // backend for why: one shared computation instead of two
+        // independently-implemented, potentially divergent ones — this is
+        // the same shared endpoint the web app now calls too).
         do {
-            for (index, sec) in list.enumerated() where sec.sortOrder != index {
-                let updated = try await APIClient.shared.patchSection(sec.id, sortOrder: index)
-                if let i = sections.firstIndex(where: { $0.id == updated.id }) {
-                    sections[i] = updated
-                }
+            let updated = try await APIClient.shared.moveSection(sectionId, beforeSectionId: targetId)
+            if let i = sections.firstIndex(where: { $0.id == updated.id }) {
+                sections[i] = updated
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -623,25 +625,26 @@ final class ShotListViewModel: ObservableObject {
     /// scene's shot order" — reassigns every sort_order in the destination
     /// list sequentially afterward; there's no bulk-reorder endpoint yet, so
     /// this is one PATCH per shot in that list.
+    /// Two-step server-authoritative move (2026-07-13) — was a client-
+    /// computed loop that PATCHed scene_id+sort_order for EVERY shot in the
+    /// destination list (redundantly re-sending the same target scene_id
+    /// for shots that never actually changed scene, just to nudge their
+    /// sort_order). Replaced with: (1) reassign scene_id on just the moved
+    /// shot, if it changed, then (2) a single call to the new
+    /// /shots/{id}/move endpoint for the authoritative position — same
+    /// two-step pattern scenes already use for cross-section moves, and
+    /// the same shared move endpoint the web app now calls too.
     func moveShot(_ shotId: String, toScene sceneId: String?, before targetId: String? = nil) async {
         guard let shot = shots.first(where: { $0.id == shotId }) else { return }
-        var destination = shots(in: scenes.first { $0.id == sceneId })
-        // Target's position is read from `destination` BEFORE the dragged
-        // shot is removed — see reorderScene's doc comment for why: finding
-        // it AFTER removal made "insert before target" a silent no-op for
-        // the most common gesture (dragging onto the very next shot below).
-        let targetIndex = targetId.flatMap { id in destination.firstIndex(where: { $0.id == id }) }
-        destination.removeAll { $0.id == shotId }
-        if let targetIndex {
-            destination.insert(shot, at: min(targetIndex, destination.count))
-        } else {
-            destination.append(shot)
-        }
         do {
-            for (index, s) in destination.enumerated() {
-                let updated = try await APIClient.shared.moveShot(s.id, sceneId: sceneId, sortOrder: index)
-                replace(updated)
+            if shot.sceneId != sceneId {
+                // sortOrder here is a throwaway placeholder — step 2 below
+                // immediately computes the real, authoritative position.
+                let reassigned = try await APIClient.shared.moveShot(shotId, sceneId: sceneId, sortOrder: 0)
+                replace(reassigned)
             }
+            let moved = try await APIClient.shared.moveShot(shotId, beforeShotId: targetId)
+            replace(moved)
         } catch {
             errorMessage = error.localizedDescription
         }
