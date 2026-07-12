@@ -212,6 +212,22 @@ struct ShotListView: View {
 
     var body: some View {
         ScrollView {
+            // TikTok-style scroll (2026-07-13, Lino: "wenn man einmal
+            // schnell... wischt kommt man direkt zur nächsten Kachel...
+            // wenn man langsam wischt kann man... langsam scrollen") —
+            // .scrollTargetLayout()+.scrollTargetBehavior(.viewAligned)
+            // (standard SwiftUI/iOS 17+ API, not a custom gesture) gives
+            // exactly this for free: a fast flick's own momentum carries
+            // it past the nearest boundary to snap on the NEXT one, a slow
+            // deliberate drag scrolls freely and only settles to the
+            // nearest boundary once released. Snaps between every TOP-
+            // LEVEL child of this LazyVStack — ProjectInfoBox, the
+            // unassigned-scenes block, each whole section block — not
+            // individual scene cards nested inside a section (Lino chose
+            // this simpler "between every element, headers included" scope
+            // over a per-card-only version, which would need scroll
+            // targets nested inside each section's own scene list instead
+            // of just this one top-level container).
             LazyVStack(alignment: .leading, spacing: 16) {
                 // Scrolls with the rest of the content again — the earlier
                 // hang/crash turned out to be the general iOS-26.5-Simulator
@@ -244,7 +260,9 @@ struct ShotListView: View {
                 }
             }
             .padding(.vertical, 16)
+            .scrollTargetLayout()
         }
+        .scrollTargetBehavior(.viewAligned)
         .background(Color(.systemGroupedBackground))
         .overlay(alignment: .bottomTrailing) {
             addSceneButton
