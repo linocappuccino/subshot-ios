@@ -146,6 +146,26 @@ struct ShotListView: View {
     @State private var collapsedDialogSceneIds: Set<String> = []
     @State private var collapsedDescriptionSceneIds: Set<String> = []
     @State private var collapsedShotsSceneIds: Set<String> = []
+    /// Tinder-style swipe (2026-07-13, Lino: "genau so wie bei Tinder
+    /// aussehen") — horizontal drag offset per scene, keyed like the
+    /// collapse-state Sets above. Left past the threshold deletes
+    /// (immediately, no confirm dialog — the full-throw animation IS the
+    /// confirmation, exactly like Tinder's reject swipe); right marks "im
+    /// Kasten". Both are purely ADDITIVE — the existing long-press-menu
+    /// delete and the imKastenButton keep working exactly as before.
+    ///
+    /// UNVERIFIED ON DEVICE (2026-07-13, no simulator available here) —
+    /// attached via .simultaneousGesture (not .gesture/.highPriorityGesture)
+    /// specifically because this file has a DOCUMENTED case of a second
+    /// exclusive gesture recognizer stacked on this exact card hierarchy
+    /// breaking .contextMenu entirely on-device (see regularSceneCard's
+    /// "No dropDestination here anymore" comment) — simultaneous should be
+    /// far less likely to steal the touch from .draggable/.contextMenu, but
+    /// this is a reasoned guess, not a tested one. If the long-press menu
+    /// or scene reordering stops working after this, that's the first
+    /// place to look, and reverting this swipe gesture is a legitimate fix.
+    @State private var sceneSwipeOffsets: [String: CGFloat] = [:]
+    @State private var sceneSwipeExiting: Set<String> = []
     @State private var isExportingPdf = false
     @State private var exportedPdfURL: URL?
     @State private var shareLinkURL: URL?
@@ -1016,6 +1036,11 @@ struct ShotListView: View {
         // instead of a distinct placeholder sitting in the gap before it.
         VStack(alignment: .leading, spacing: 8) {
             sceneDropIndicator(before: scene)
+            // swipeableCard wraps OUTSIDE the card's own glassEffect/
+            // contextMenu/draggable stack (see its own doc comment) so the
+            // whole card — background included — moves together, same as
+            // Tinder, without touching the gesture stack living further in.
+            swipeableCard(scene: scene) {
             VStack(alignment: .leading, spacing: 14) {
                 if collapsed {
                     sceneCollapsedRow(scene: scene)
@@ -1083,6 +1108,7 @@ struct ShotListView: View {
             .animation(.easeInOut(duration: 0.3), value: scene.completed)
             .animation(.easeInOut(duration: 0.25), value: collapsed)
             .modifier(ScenePulseOnElapse(scene: scene))
+            }
         }
         // Grid mode owns its own outer horizontal padding + inter-column gap
         // (see sceneGrid) — a card shouldn't also pad itself in that case, or
@@ -1106,6 +1132,100 @@ struct ShotListView: View {
         // reading the SwiftUI code). Filing a shot into this scene by drag
         // now goes through sceneTile's own single dropDestination instead
         // (see its own doc comment) — one recognizer per tile, not two.
+    }
+
+    /// Tinder-style swipe wrapper — used by regularSceneCard only (2026-07-13,
+    /// Lino: "den swipe effect brauchen wir nur bei der 'einzel kachel'
+    /// ansicht!" — deliberately NOT the 2-column compact grid). See
+    /// sceneSwipeOffsets' doc comment for the full risk/reasoning writeup.
+    /// Applies the horizontal offset/rotation/exit-fade to whatever
+    /// `content` is (the card's own glass background moves WITH it, same
+    /// as Tinder — this wraps OUTSIDE the card's own
+    /// .glassEffect()/.contextMenu()/.draggable() stack, not inside it).
+    @ViewBuilder
+    private func swipeableCard<Content: View>(scene: Scene, @ViewBuilder content: () -> Content) -> some View {
+        let offset = sceneSwipeOffsets[scene.id] ?? 0
+        let isExiting = sceneSwipeExiting.contains(scene.id)
+        content()
+            .offset(x: offset)
+            .rotationEffect(.degrees(Double(offset / 20)), anchor: .bottom)
+            .opacity(isExiting ? 0 : 1)
+            .overlay(alignment: .topLeading) {
+                if offset < -16 {
+                    swipeStamp(text: "LÖSCHEN", color: .red, rotation: -14)
+                        .opacity(min(1, Double(-offset) / 100))
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if offset > 16 {
+                    swipeStamp(text: "IM KASTEN", color: .green, rotation: 14)
+                        .opacity(min(1, Double(offset) / 100))
+                }
+            }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 20)
+                    .onChanged { value in
+                        let h = value.translation.width
+                        let v = value.translation.height
+                        // Only react once the drag is CLEARLY more
+                        // horizontal than vertical — anything ambiguous is
+                        // left alone entirely (no state write at all) so a
+                        // vertical scroll that starts on a card is never
+                        // touched by this gesture in the first place.
+                        guard abs(h) > abs(v) * 1.5 else { return }
+                        sceneSwipeOffsets[scene.id] = h
+                    }
+                    .onEnded { value in
+                        let h = value.translation.width
+                        let v = value.translation.height
+                        guard abs(h) > abs(v) * 1.5 else {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                                sceneSwipeOffsets[scene.id] = 0
+                            }
+                            return
+                        }
+                        let threshold: CGFloat = 110
+                        if h < -threshold {
+                            // Immediate, no confirm dialog — the full-throw-
+                            // off-screen animation itself IS the
+                            // confirmation, exactly like Tinder's reject
+                            // swipe. The long-press "Löschen" menu item
+                            // still goes through the normal confirm dialog
+                            // for anyone who prefers that safer path.
+                            withAnimation(.easeIn(duration: 0.3)) {
+                                sceneSwipeOffsets[scene.id] = -1000
+                                sceneSwipeExiting.insert(scene.id)
+                            }
+                            Task {
+                                try? await Task.sleep(nanoseconds: 280_000_000)
+                                await viewModel.deleteScene(scene)
+                                sceneSwipeOffsets[scene.id] = nil
+                                sceneSwipeExiting.remove(scene.id)
+                            }
+                        } else if h > threshold {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                                sceneSwipeOffsets[scene.id] = 0
+                            }
+                            Task { await viewModel.setSceneCompleted(scene, completed: true) }
+                        } else {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                                sceneSwipeOffsets[scene.id] = 0
+                            }
+                        }
+                    }
+            )
+    }
+
+    private func swipeStamp(text: String, color: Color, rotation: Double) -> some View {
+        Text(text)
+            .font(.title3.weight(.heavy))
+            .foregroundStyle(color)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(color, lineWidth: 3))
+            .rotationEffect(.degrees(rotation))
+            .padding(18)
+            .allowsHitTesting(false)
     }
 
     /// Collapsed "im Kasten" summary — just number/title/priority plus the
@@ -1428,6 +1548,10 @@ struct ShotListView: View {
         // gap before it.
         VStack(alignment: .leading, spacing: 6) {
             sceneDropIndicator(before: scene)
+            // No swipeableCard here (2026-07-13, Lino: "den swipe effect
+            // brauchen wir nur bei der 'einzel kachel' ansicht!") — Tinder-
+            // swipe is single-column (regularSceneCard) only, deliberately
+            // not the 2-column compact grid.
             VStack(alignment: .leading, spacing: 8) {
                 if let imageUrl = scene.imageUrl {
                     AsyncShotThumbnail(path: imageUrl, size: nil, lockAspectRatio: true)
