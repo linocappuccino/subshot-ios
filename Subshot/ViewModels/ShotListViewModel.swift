@@ -328,11 +328,13 @@ final class ShotListViewModel: ObservableObject {
     }
 
     /// Set when a scene's start time was just changed AND other same-day
-    /// scenes further along already have their own start+duration — the
-    /// view shows a confirmation sheet/alert off this, never cascades
-    /// silently (2026-07-11, Lino: "dies soll aber per Dialog gefragt und
-    /// bestätigt werden"). See applyTimeCascade for what happens on accept.
-    @Published var pendingTimeCascade: (updated: Scene, affected: [Scene])?
+    /// scenes further along already have their own start time — the view
+    /// shows a confirmation sheet/alert off this, never cascades silently
+    /// (2026-07-11, Lino: "dies soll aber per Dialog gefragt und bestätigt
+    /// werden"). sceneId/deltaSeconds are exactly what applyTimeCascade
+    /// sends to the server — see its doc comment for why the actual
+    /// shifting moved server-side (2026-07-13).
+    @Published var pendingTimeCascade: (sceneId: String, deltaSeconds: TimeInterval)?
 
     func renameScene(_ scene: Scene, name: String, color: String, description: String, dialogue: String, scheduledAt: Date?, durationMinutes: Int?, priority: ShotPriority?) async {
         let previousScheduledAt = scene.scheduledAt
@@ -347,23 +349,24 @@ final class ShotListViewModel: ObservableObject {
                 scenes[index] = updated
             }
 
-            // "Timing der App" (2026-07-11) — matches the web app's
-            // handleSceneUpdated exactly: only offers to cascade when an
-            // EXISTING start time actually changed (not on first-time set),
-            // and only to same-day scenes that already have both a start
-            // and duration of their own to chain from.
-            if let previousScheduledAt, let newStart = updated.scheduledAt, previousScheduledAt != newStart,
-               updated.durationMinutes != nil {
+            // "Timing der App" (2026-07-11, Spec-Korrektur 2026-07-13) —
+            // matches the web app's handleSceneUpdated: only offers to
+            // cascade when an EXISTING start time actually changed (not on
+            // first-time set), to every same-day scene ("getimte Szenen" —
+            // just needs its OWN start, not also a duration) that's
+            // chronologically after the new start. Projektinfo-Kacheln
+            // ausgeschlossen (Spec nennt nur "Szenen und Zwischenszenen").
+            // This is only the cheap client-side "is there anything to ask
+            // about" check now — the server re-derives the same set itself
+            // when applyTimeCascade actually asks it to shift anything.
+            if let previousScheduledAt, let newStart = updated.scheduledAt, previousScheduledAt != newStart {
                 let calendar = Calendar.current
-                let affected = scenes
-                    .filter { $0.id != updated.id }
-                    .filter { s in
-                        guard let sStart = s.scheduledAt, s.durationMinutes != nil else { return false }
-                        return calendar.isDate(sStart, inSameDayAs: newStart) && sStart > newStart
-                    }
-                    .sorted { ($0.scheduledAt ?? newStart) < ($1.scheduledAt ?? newStart) }
-                if !affected.isEmpty {
-                    pendingTimeCascade = (updated, affected)
+                let hasAffected = scenes.contains { s in
+                    guard s.id != updated.id, !s.isProjectInfo, let sStart = s.scheduledAt else { return false }
+                    return calendar.isDate(sStart, inSameDayAs: newStart) && sStart > newStart
+                }
+                if hasAffected {
+                    pendingTimeCascade = (updated.id, newStart.timeIntervalSince(previousScheduledAt))
                 }
             }
         } catch {
@@ -371,26 +374,23 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
-    /// Chain-recomputes every affected scene's start as "previous scene's
-    /// (possibly just-updated) start + its own duration" — same logic as
-    /// createScene's own start-time suggestion, applied retroactively down
-    /// the rest of the day's chain instead of just once at creation.
+    /// Single server round-trip (2026-07-13) — was a client-side loop that
+    /// chain-recomputed each affected scene's start as "previous scene's
+    /// new start + its own duration", which silently collapsed any gap
+    /// between originally non-contiguous scenes to zero, AND duplicated
+    /// the exact same date math the web app separately implemented (and
+    /// had the identical bug in). The backend's cascade_shift_seconds now
+    /// does the actual uniform-delta shift once, authoritatively, so both
+    /// clients always land on the exact same result — see patch_scene in
+    /// the backend for the full reasoning.
     func applyTimeCascade() async {
-        guard let (updated, affected) = pendingTimeCascade else { return }
+        guard let (sceneId, deltaSeconds) = pendingTimeCascade else { return }
         pendingTimeCascade = nil
-        guard let seedStart = updated.scheduledAt else { return }
-        var cursor = seedStart.addingTimeInterval(TimeInterval((updated.durationMinutes ?? 0) * 60))
-        for s in affected {
-            do {
-                let patched = try await APIClient.shared.patchScene(s.id, scheduledAt: cursor)
-                if let index = scenes.firstIndex(where: { $0.id == patched.id }) {
-                    scenes[index] = patched
-                }
-                cursor = cursor.addingTimeInterval(TimeInterval((s.durationMinutes ?? 0) * 60))
-            } catch {
-                errorMessage = error.localizedDescription
-                break
-            }
+        do {
+            _ = try await APIClient.shared.patchScene(sceneId, cascadeShiftSeconds: deltaSeconds)
+            await load()
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 

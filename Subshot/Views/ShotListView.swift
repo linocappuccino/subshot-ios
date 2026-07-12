@@ -380,26 +380,24 @@ struct ShotListView: View {
             }
         }
         // "Timing der App" (2026-07-11) — offers to shift every later
-        // same-day scene's start (that already has its own start+duration)
-        // to follow the just-edited scene's new time, chained by duration.
-        // Never applied silently — see applyTimeCascade/pendingTimeCascade.
+        // same-day scene's start by the same delta the just-edited scene's
+        // start moved by. Never applied silently — see
+        // applyTimeCascade/pendingTimeCascade. Exact wording per Lino's
+        // spec (2026-07-13): "Möchtest du die nachfolgenden Szenen
+        // zeitlich angleichen? Bestätigen / nicht angleichen."
         .confirmationDialog(
-            "Folgezeiten anpassen?",
+            "Möchtest du die nachfolgenden Szenen zeitlich angleichen?",
             isPresented: Binding(
                 get: { viewModel.pendingTimeCascade != nil },
                 set: { if !$0 { viewModel.pendingTimeCascade = nil } }
             ),
             titleVisibility: .visible
         ) {
-            Button("Anpassen") {
+            Button("Bestätigen") {
                 Task { await viewModel.applyTimeCascade() }
             }
-            Button("Nicht anpassen", role: .cancel) {
+            Button("Nicht angleichen", role: .cancel) {
                 viewModel.pendingTimeCascade = nil
-            }
-        } message: {
-            if let pending = viewModel.pendingTimeCascade {
-                Text("\(pending.affected.count) nachfolgende Szene\(pending.affected.count == 1 ? "" : "n") am selben Tag \(pending.affected.count == 1 ? "hat" : "haben") bereits eigene Zeiten. Entsprechend der neuen Startzeit von „\(pending.updated.name?.isEmpty == false ? pending.updated.name! : "dieser Szene")“ verschieben?")
             }
         }
         .alert("Alles im Kasten?", isPresented: $viewModel.showAllTimedScenesDoneConfirmation) {

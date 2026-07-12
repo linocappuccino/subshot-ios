@@ -316,7 +316,16 @@ final class APIClient {
         locationAddress: String? = nil, locationLat: Double? = nil, locationLng: Double? = nil,
         clearLocation: Bool = false,
         priority: ShotPriority? = nil, clearPriority: Bool = false,
-        goodTakeFilename: String? = nil, clearGoodTake: Bool = false
+        goodTakeFilename: String? = nil, clearGoodTake: Bool = false,
+        // Explicit delta (seconds) for the server-side time-cascade
+        // (2026-07-13, see patch_scene in the backend) — shifts every other
+        // same-day-after scene in the project by this much, server-side, so
+        // web and iOS always compute the identical result. Not inferred
+        // from a before/after diff of THIS call's scheduledAt — the edit
+        // and the cascade confirmation are two separate round-trips (the
+        // scene is already saved by the time the confirmation dialog is
+        // even answered), so pass the delta explicitly.
+        cascadeShiftSeconds: Double? = nil
     ) async throws -> Scene {
         var req = try await authorizedRequest("scenes/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -331,6 +340,7 @@ final class APIClient {
             let clear_location: Bool
             let priority: String?; let clear_priority: Bool
             let good_take_filename: String?; let clear_good_take: Bool
+            let cascade_shift_seconds: Double?
         }
         req.httpBody = try encoder.encode(Body(
             name: name, color: color, description: description,
@@ -342,7 +352,8 @@ final class APIClient {
             location_address: locationAddress, location_lat: locationLat, location_lng: locationLng,
             clear_location: clearLocation,
             priority: priority?.rawValue, clear_priority: clearPriority,
-            good_take_filename: goodTakeFilename, clear_good_take: clearGoodTake
+            good_take_filename: goodTakeFilename, clear_good_take: clearGoodTake,
+            cascade_shift_seconds: cascadeShiftSeconds
         ))
         return try await send(req)
     }
