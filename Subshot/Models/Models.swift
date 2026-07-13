@@ -28,6 +28,9 @@ struct Project: Codable, Identifiable, Hashable {
     var locationAddress: String?
     var locationLat: Double?
     var locationLng: Double?
+    /// Client the shoot is for (2026-07-13, Lino) — shown on the
+    /// project-level Projektinfo tile only.
+    var clientName: String?
     var folderId: String?
     var thumbnailUrl: String?
     let lastOpenedAt: Date
@@ -40,6 +43,7 @@ struct Project: Codable, Identifiable, Hashable {
         case locationAddress = "location_address"
         case locationLat = "location_lat"
         case locationLng = "location_lng"
+        case clientName = "client_name"
         case folderId = "folder_id"
         case thumbnailUrl = "thumbnail_url"
         case lastOpenedAt = "last_opened_at"
@@ -175,6 +179,9 @@ struct Scene: Codable, Identifiable, Hashable {
     /// idea as SceneSection.todoLists but scene-scoped (see
     /// Scene.isProjectInfo doc above; the section-scoped mechanism is legacy).
     var todoLists: [TodoList] = []
+    /// Auftraggeber (2026-07-13, Lino) — only ever set/shown on
+    /// isProjectInfo tiles, unused on normal scenes.
+    var clientName: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, color, description, dialogue, completed, number, letter, priority, dialogues
@@ -192,6 +199,7 @@ struct Scene: Codable, Identifiable, Hashable {
         case isIntermediateStep = "is_intermediate_step"
         case isProjectInfo = "is_project_info"
         case todoLists = "todo_lists"
+        case clientName = "client_name"
     }
 
     /// "3A" / "12" — the display label shown on the scene tile.
@@ -229,11 +237,20 @@ struct Shot: Codable, Identifiable, Hashable {
     var status: ShotStatus
     var sortOrder: Int
     var goodTakeFilename: String?
+    // Camera settings (2026-07-13, Lino).
+    var lens: String?
+    var fStop: String?
+    var frameRate: String?
+    var shutterAngle: Double?
+    var iso: Int?
+    var codec: String?
+    var cameraId: String?
+    var cameraSupport: CameraSupport?
     let createdAt: Date
     let updatedAt: Date
 
     enum CodingKeys: String, CodingKey {
-        case id, description, priority, status
+        case id, description, priority, status, lens, iso, codec
         case projectId = "project_id"
         case sceneId = "scene_id"
         case imageUrl = "image_url"
@@ -241,8 +258,26 @@ struct Shot: Codable, Identifiable, Hashable {
         case cameraAngle = "camera_angle"
         case sortOrder = "sort_order"
         case goodTakeFilename = "good_take_filename"
+        case fStop = "f_stop"
+        case frameRate = "frame_rate"
+        case shutterAngle = "shutter_angle"
+        case cameraId = "camera_id"
+        case cameraSupport = "camera_support"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+    }
+}
+
+enum CameraSupport: String, Codable, CaseIterable, Identifiable {
+    case gimbal, handheld, tripod
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .gimbal: return "Gimbal"
+        case .handheld: return "Handheld"
+        case .tripod: return "Stativ"
+        }
     }
 }
 
@@ -339,6 +374,9 @@ struct SceneSection: Codable, Identifiable, Hashable {
     var locationAddress: String?
     var locationLat: Double?
     var locationLng: Double?
+    /// Same field as Project.clientName, kept in lockstep since this box
+    /// mirrors the project-level Projektinfo tile field-for-field.
+    var clientName: String?
     var todoLists: [TodoList] = []
 
     enum CodingKeys: String, CodingKey {
@@ -350,6 +388,7 @@ struct SceneSection: Codable, Identifiable, Hashable {
         case locationAddress = "location_address"
         case locationLat = "location_lat"
         case locationLng = "location_lng"
+        case clientName = "client_name"
         case todoLists = "todo_lists"
     }
 }

@@ -161,6 +161,7 @@ final class APIClient {
         emoji: String? = nil, clearEmoji: Bool = false,
         shootDate: Date? = nil, locationAddress: String? = nil,
         locationLat: Double? = nil, locationLng: Double? = nil,
+        clientName: String? = nil,
         folderId: String? = nil, clearFolder: Bool = false, sortOrder: Int? = nil
     ) async throws -> Project {
         var req = try await authorizedRequest("projects/\(id)", method: "PATCH")
@@ -170,12 +171,14 @@ final class APIClient {
             let emoji: String?; let clear_emoji: Bool
             let shoot_date: Date?
             let location_address: String?; let location_lat: Double?; let location_lng: Double?
+            let client_name: String?
             let folder_id: String?; let clear_folder: Bool
             let sort_order: Int?
         }
         req.httpBody = try encoder.encode(Body(
             name: name, color: color, emoji: emoji, clear_emoji: clearEmoji, shoot_date: shootDate,
             location_address: locationAddress, location_lat: locationLat, location_lng: locationLng,
+            client_name: clientName,
             folder_id: folderId, clear_folder: clearFolder, sort_order: sortOrder
         ))
         return try await send(req)
@@ -315,6 +318,7 @@ final class APIClient {
         sectionId: String? = nil, clearSection: Bool = false, sortOrder: Int? = nil,
         locationAddress: String? = nil, locationLat: Double? = nil, locationLng: Double? = nil,
         clearLocation: Bool = false,
+        clientName: String? = nil,
         priority: ShotPriority? = nil, clearPriority: Bool = false,
         goodTakeFilename: String? = nil, clearGoodTake: Bool = false,
         // Explicit delta (seconds) for the server-side time-cascade
@@ -338,6 +342,7 @@ final class APIClient {
             let sort_order: Int?
             let location_address: String?; let location_lat: Double?; let location_lng: Double?
             let clear_location: Bool
+            let client_name: String?
             let priority: String?; let clear_priority: Bool
             let good_take_filename: String?; let clear_good_take: Bool
             let cascade_shift_seconds: Double?
@@ -351,6 +356,7 @@ final class APIClient {
             sort_order: sortOrder,
             location_address: locationAddress, location_lat: locationLat, location_lng: locationLng,
             clear_location: clearLocation,
+            client_name: clientName,
             priority: priority?.rawValue, clear_priority: clearPriority,
             good_take_filename: goodTakeFilename, clear_good_take: clearGoodTake,
             cascade_shift_seconds: cascadeShiftSeconds
@@ -472,6 +478,14 @@ final class APIClient {
         var camera_angle: String?
         var priority: String?
         var sort_order: Int = 0
+        var lens: String?
+        var f_stop: String?
+        var frame_rate: String?
+        var shutter_angle: Double?
+        var iso: Int?
+        var codec: String?
+        var camera_id: String?
+        var camera_support: String?
     }
 
     func createShot(projectId: String, body: ShotCreateBody) async throws -> Shot {
@@ -513,7 +527,15 @@ final class APIClient {
         durationSeconds: Int?,
         cameraAngle: String?,
         priority: String?,
-        goodTakeFilename: String?
+        goodTakeFilename: String?,
+        lens: String? = nil,
+        fStop: String? = nil,
+        frameRate: String? = nil,
+        shutterAngle: Double? = nil,
+        iso: Int? = nil,
+        codec: String? = nil,
+        cameraId: String? = nil,
+        cameraSupport: String? = nil
     ) async throws -> Shot {
         var req = try await authorizedRequest("shots/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -523,6 +545,14 @@ final class APIClient {
             "camera_angle": cameraAngle ?? NSNull(),
             "priority": priority ?? NSNull(),
             "good_take_filename": goodTakeFilename ?? NSNull(),
+            "lens": lens ?? NSNull(),
+            "f_stop": fStop ?? NSNull(),
+            "frame_rate": frameRate ?? NSNull(),
+            "shutter_angle": shutterAngle ?? NSNull(),
+            "iso": iso ?? NSNull(),
+            "codec": codec ?? NSNull(),
+            "camera_id": cameraId ?? NSNull(),
+            "camera_support": cameraSupport ?? NSNull(),
         ]
         req.httpBody = try JSONSerialization.data(withJSONObject: payload)
         return try await send(req)
@@ -737,6 +767,7 @@ final class APIClient {
     func patchSection(
         _ id: String, name: String? = nil, sortOrder: Int? = nil,
         shootDate: Date? = nil, locationAddress: String? = nil, locationLat: Double? = nil, locationLng: Double? = nil,
+        clientName: String? = nil,
         addProjectInfo: Bool = false, removeProjectInfo: Bool = false
     ) async throws -> SceneSection {
         var req = try await authorizedRequest("sections/\(id)", method: "PATCH")
@@ -744,11 +775,13 @@ final class APIClient {
         struct Body: Encodable {
             let name: String?; let sort_order: Int?
             let shoot_date: Date?; let location_address: String?; let location_lat: Double?; let location_lng: Double?
+            let client_name: String?
             let add_project_info: Bool; let remove_project_info: Bool
         }
         req.httpBody = try encoder.encode(Body(
             name: name, sort_order: sortOrder,
             shoot_date: shootDate, location_address: locationAddress, location_lat: locationLat, location_lng: locationLng,
+            client_name: clientName,
             add_project_info: addProjectInfo, remove_project_info: removeProjectInfo
         ))
         return try await send(req)

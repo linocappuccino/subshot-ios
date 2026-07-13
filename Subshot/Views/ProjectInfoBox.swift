@@ -40,6 +40,11 @@ struct SectionInfoBox: View {
                         completer: viewModel.locationCompleter
                     )
                     Divider()
+                    ClientNameSection(
+                        clientName: section.clientName,
+                        onUpdate: { name in await viewModel.updateSectionClientName(section, name: name) }
+                    )
+                    Divider()
                     peopleSection
                     Divider()
                     TodoListsSection(
@@ -172,6 +177,11 @@ struct SceneProjectInfoTile: View {
                         completer: viewModel.locationCompleter
                     )
                     Divider()
+                    ClientNameSection(
+                        clientName: scene.clientName,
+                        onUpdate: { name in await viewModel.updateSceneClientName(scene, name: name) }
+                    )
+                    Divider()
                     peopleSection
                     Divider()
                     TodoListsSection(
@@ -274,6 +284,8 @@ struct ProjectInfoBox: View {
                         address: viewModel.locationAddress, lat: viewModel.locationLat, lng: viewModel.locationLng,
                         onUpdate: viewModel.updateLocation, completer: viewModel.locationCompleter
                     )
+                    Divider()
+                    ClientNameSection(clientName: viewModel.clientName, onUpdate: viewModel.updateClientName)
                     Divider()
                     peopleSection
                     Divider()
@@ -496,6 +508,40 @@ private struct LocationSection: View {
             completer.clear()
             query = ""
         }
+    }
+}
+
+/// Auftraggeber (2026-07-13, Lino) — generic over `clientName`/`onUpdate`
+/// just like ShootDateSection/LocationSection above, so the same view
+/// serves the project-level box, a Projektinfo scene tile, and a legacy
+/// section-owned box. Commits on submit/blur, not on every keystroke —
+/// same reasoning as LocationSection's onSubmit.
+private struct ClientNameSection: View {
+    let clientName: String?
+    let onUpdate: (String) async -> Void
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Auftraggeber", systemImage: "person.text.rectangle")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            TextField("Name des Auftraggebers", text: $text)
+                .textFieldStyle(.roundedBorder)
+                .focused($focused)
+                .onSubmit { commit() }
+                .onChange(of: focused) { _, isFocused in
+                    if !isFocused { commit() }
+                }
+        }
+        .onAppear { text = clientName ?? "" }
+        .onChange(of: clientName) { _, newValue in text = newValue ?? "" }
+    }
+
+    private func commit() {
+        guard text != (clientName ?? "") else { return }
+        Task { await onUpdate(text) }
     }
 }
 

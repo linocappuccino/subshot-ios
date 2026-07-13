@@ -38,6 +38,8 @@ final class ShotListViewModel: ObservableObject {
     @Published var locationAddress: String?
     @Published var locationLat: Double?
     @Published var locationLng: Double?
+    /// Client the shoot is for (2026-07-13, Lino) — project-level Projektinfo tile only.
+    @Published var clientName: String?
     @Published var members: [Member] = []
     @Published var todoLists: [TodoList] = []
     @Published var sections: [SceneSection] = []
@@ -73,6 +75,7 @@ final class ShotListViewModel: ObservableObject {
             locationAddress = detail.locationAddress
             locationLat = detail.locationLat
             locationLng = detail.locationLng
+            clientName = detail.clientName
             todoLists = detail.todoLists.sorted { $0.sortOrder < $1.sortOrder }
             sections = detail.sections.sorted { $0.sortOrder < $1.sortOrder }
         } catch {
@@ -105,6 +108,15 @@ final class ShotListViewModel: ObservableObject {
             locationAddress = updated.locationAddress
             locationLat = updated.locationLat
             locationLng = updated.locationLng
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func updateClientName(_ name: String) async {
+        do {
+            let updated = try await APIClient.shared.patchProject(projectId, clientName: name)
+            clientName = updated.clientName
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -310,6 +322,17 @@ final class ShotListViewModel: ObservableObject {
     func updateSceneLocation(_ scene: Scene, address: String, lat: Double, lng: Double) async {
         do {
             let updated = try await APIClient.shared.patchScene(scene.id, locationAddress: address, locationLat: lat, locationLng: lng)
+            if let index = scenes.firstIndex(where: { $0.id == updated.id }) {
+                scenes[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func updateSceneClientName(_ scene: Scene, name: String) async {
+        do {
+            let updated = try await APIClient.shared.patchScene(scene.id, clientName: name)
             if let index = scenes.firstIndex(where: { $0.id == updated.id }) {
                 scenes[index] = updated
             }
@@ -984,6 +1007,17 @@ final class ShotListViewModel: ObservableObject {
             let updated = try await APIClient.shared.patchSection(
                 section.id, locationAddress: address, locationLat: lat, locationLng: lng
             )
+            if let index = sections.firstIndex(where: { $0.id == updated.id }) {
+                sections[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func updateSectionClientName(_ section: SceneSection, name: String) async {
+        do {
+            let updated = try await APIClient.shared.patchSection(section.id, clientName: name)
             if let index = sections.firstIndex(where: { $0.id == updated.id }) {
                 sections[index] = updated
             }

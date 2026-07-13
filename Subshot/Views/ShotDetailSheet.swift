@@ -11,18 +11,38 @@ struct ShotDetailSheet: View {
     @State private var uploadedImage: UIImage?
     @State private var isSaving = false
 
-    // camera_angle/duration_seconds are still on the model/API (existing
-    // values are preserved — patchShotFull below simply stops sending
-    // these two fields) but no longer editable here (Lino: "nicht so viel
-    // informationen die man eingeben kann. Es reicht wenn man ein Bild und
-    // eine Beschreibung, Prio und einen Good Take eingeben kann"), mirrors
-    // the web app's ShotEditModal.tsx simplification.
+    // Camera settings (2026-07-13, Lino) — re-added after having been
+    // deliberately dropped from this sheet earlier ("nicht so viel
+    // informationen die man eingeben kann"): a later, more specific request
+    // asked for every one of these fields by name, superseding that
+    // simplification for camera settings specifically. Shutterangle starts
+    // pre-filled with "180" for a shot that has none yet (his explicit
+    // default), everything else starts empty.
+    @State private var cameraAngle: String
+    @State private var lens: String
+    @State private var fStop: String
+    @State private var frameRate: String
+    @State private var shutterAngle: String
+    @State private var iso: String
+    @State private var codec: String
+    @State private var cameraId: String
+    @State private var cameraSupport: CameraSupport?
+
     init(shot: Shot, viewModel: ShotListViewModel) {
         _shot = State(initialValue: shot)
         self.viewModel = viewModel
         _description = State(initialValue: shot.description ?? "")
         _priority = State(initialValue: shot.priority)
         _goodTake = State(initialValue: shot.goodTakeFilename ?? "")
+        _cameraAngle = State(initialValue: shot.cameraAngle ?? "")
+        _lens = State(initialValue: shot.lens ?? "")
+        _fStop = State(initialValue: shot.fStop ?? "")
+        _frameRate = State(initialValue: shot.frameRate ?? "")
+        _shutterAngle = State(initialValue: shot.shutterAngle.map { String(format: "%g", $0) } ?? "180")
+        _iso = State(initialValue: shot.iso.map(String.init) ?? "")
+        _codec = State(initialValue: shot.codec ?? "")
+        _cameraId = State(initialValue: shot.cameraId ?? "")
+        _cameraSupport = State(initialValue: shot.cameraSupport)
     }
 
     var body: some View {
@@ -76,6 +96,25 @@ struct ShotDetailSheet: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                 }
+
+                Section("Kamera") {
+                    TextField("Kamera-ID (A, B, C…)", text: $cameraId)
+                    TextField("Winkel", text: $cameraAngle)
+                    TextField("Objektiv", text: $lens)
+                    TextField("F-Stop", text: $fStop)
+                    TextField("Framerate", text: $frameRate)
+                    TextField("Shutterangle", text: $shutterAngle)
+                        .keyboardType(.decimalPad)
+                    TextField("ISO", text: $iso)
+                        .keyboardType(.numberPad)
+                    TextField("Codec", text: $codec)
+                    Picker("Aufnahme-Art", selection: $cameraSupport) {
+                        Text("Keine").tag(CameraSupport?.none)
+                        ForEach(CameraSupport.allCases) { support in
+                            Text(support.label).tag(CameraSupport?.some(support))
+                        }
+                    }
+                }
             }
             .navigationTitle("Einstellung bearbeiten")
             .navigationBarTitleDisplayMode(.inline)
@@ -107,19 +146,27 @@ struct ShotDetailSheet: View {
         defer { isSaving = false }
         do {
             let trimmedGoodTake = goodTake.trimmingCharacters(in: .whitespacesAndNewlines)
-            // Passes the shot's EXISTING durationSeconds/cameraAngle back
-            // unchanged (not nil) — patchShotFull always includes both keys
-            // in its JSON body, and the backend treats a present-but-null
-            // field as "clear it" (see app/main.py's patch_shot), so nil
-            // here would silently wipe any value a shot already had even
-            // though this sheet no longer offers a way to edit them.
+            // Passes the shot's EXISTING durationSeconds back unchanged (not
+            // nil) — patchShotFull always includes every key in its JSON
+            // body, and the backend treats a present-but-null field as
+            // "clear it" (see app/main.py's patch_shot), so nil here would
+            // silently wipe durationSeconds even though this sheet doesn't
+            // offer a way to edit it.
             let updated = try await APIClient.shared.patchShotFull(
                 shot.id,
                 description: description,
                 durationSeconds: shot.durationSeconds,
-                cameraAngle: shot.cameraAngle,
+                cameraAngle: cameraAngle.trimmingCharacters(in: .whitespaces).isEmpty ? nil : cameraAngle,
                 priority: priority?.rawValue,
-                goodTakeFilename: trimmedGoodTake.isEmpty ? nil : trimmedGoodTake
+                goodTakeFilename: trimmedGoodTake.isEmpty ? nil : trimmedGoodTake,
+                lens: lens.trimmingCharacters(in: .whitespaces).isEmpty ? nil : lens,
+                fStop: fStop.trimmingCharacters(in: .whitespaces).isEmpty ? nil : fStop,
+                frameRate: frameRate.trimmingCharacters(in: .whitespaces).isEmpty ? nil : frameRate,
+                shutterAngle: Double(shutterAngle),
+                iso: Int(iso),
+                codec: codec.trimmingCharacters(in: .whitespaces).isEmpty ? nil : codec,
+                cameraId: cameraId.trimmingCharacters(in: .whitespaces).isEmpty ? nil : cameraId,
+                cameraSupport: cameraSupport?.rawValue
             )
             viewModel.replace(updated)
         } catch {
