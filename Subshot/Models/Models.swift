@@ -100,6 +100,7 @@ struct ProjectDetail: Codable {
     var locationLat: Double?
     var locationLng: Double?
     var folderId: String?
+    var clientName: String?
     let lastOpenedAt: Date
     let createdAt: Date
     var scenes: [Scene]
@@ -114,6 +115,7 @@ struct ProjectDetail: Codable {
         case locationLat = "location_lat"
         case locationLng = "location_lng"
         case folderId = "folder_id"
+        case clientName = "client_name"
         case lastOpenedAt = "last_opened_at"
         case createdAt = "created_at"
         case todoLists = "todo_lists"
