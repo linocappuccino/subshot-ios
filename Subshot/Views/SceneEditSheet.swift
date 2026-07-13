@@ -10,9 +10,15 @@ import MapKit
 /// below); `color` is still sent to the backend (required field) but fixed,
 /// never user-edited.
 struct SceneEditSheet: View {
-    /// Estimated scene length, offered in 5-minute steps — matches how a
+    /// Minutes offered in 5-minute steps within an hour — matches how a
     /// shooting schedule is actually blocked out, no one dials in "37 Min.".
-    static let durations: [Int?] = [nil] + stride(from: 5, through: 240, by: 5).map { $0 }
+    static let minuteSteps = Array(stride(from: 0, through: 55, by: 5))
+    /// 2026-07-13, Lino: "der Timer... bitte mit Stunden/Minuten ergänzen
+    /// (nicht nur Minuten)" — was a single wheel of "5 Min." … "240 Min.",
+    /// hard to dial in anything over an hour. Two wheels (Stunden/Minuten)
+    /// still resolve to the same total-minutes `durationMinutes` the backend
+    /// expects, just via `durationHours`/`durationMins` kept in sync with it.
+    static let hourSteps = Array(0...8)
 
     let existing: Scene?
     /// "Zwischenschritt" — a lighter-weight scene variant for connective
@@ -34,6 +40,8 @@ struct SceneEditSheet: View {
     @State private var hasDate: Bool
     @State private var scheduledDate: Date
     @State private var durationMinutes: Int?
+    @State private var durationHours = 0
+    @State private var durationMins = 0
     @State private var priority: ShotPriority?
     @State private var uploadedImage: UIImage?
     @State private var isAddingShot = false
@@ -81,7 +89,27 @@ struct SceneEditSheet: View {
         }()
         _scheduledDate = State(initialValue: existing?.scheduledAt ?? suggestedDate ?? Date())
         _durationMinutes = State(initialValue: existing?.durationMinutes)
+        let totalMinutes = existing?.durationMinutes ?? 0
+        _durationHours = State(initialValue: totalMinutes / 60)
+        _durationMins = State(initialValue: (totalMinutes % 60) / 5 * 5)
         _priority = State(initialValue: existing?.priority)
+    }
+
+    /// Same fix as SceneLocationSection's own `liveScene` below — `existing`
+    /// is a one-time snapshot from when the sheet opened, so reading
+    /// assigneeId straight off it would show a stale value right after
+    /// picking a new assignee until the sheet is reopened.
+    private func liveExisting(_ scene: Scene) -> Scene {
+        viewModel.scenes.first(where: { $0.id == scene.id }) ?? scene
+    }
+
+    /// Keeps `durationMinutes` (what actually gets sent to the backend, see
+    /// `onSave` below) in sync with the two Stunden/Minuten wheels above —
+    /// 0h/0min collapses to nil, same "not set" meaning the old single-wheel
+    /// "–" option had.
+    private func syncDurationMinutes() {
+        let total = durationHours * 60 + durationMins
+        durationMinutes = total == 0 ? nil : total
     }
 
     var body: some View {
@@ -182,12 +210,22 @@ struct SceneEditSheet: View {
                     // Only meaningful once a start time exists — the live/countdown
                     // badge on the scene card is scheduledAt + durationMinutes.
                     Section("Geschätzte Länge") {
-                        Picker("Länge", selection: $durationMinutes) {
-                            ForEach(Self.durations, id: \.self) { mins in
-                                Text(mins.map { "\($0) Min." } ?? "–").tag(mins)
+                        HStack {
+                            Picker("Stunden", selection: $durationHours) {
+                                ForEach(Self.hourSteps, id: \.self) { h in
+                                    Text("\(h) Std.").tag(h)
+                                }
                             }
+                            .pickerStyle(.wheel)
+                            Picker("Minuten", selection: $durationMins) {
+                                ForEach(Self.minuteSteps, id: \.self) { m in
+                                    Text("\(m) Min.").tag(m)
+                                }
+                            }
+                            .pickerStyle(.wheel)
                         }
-                        .pickerStyle(.wheel)
+                        .onChange(of: durationHours) { _, _ in syncDurationMinutes() }
+                        .onChange(of: durationMins) { _, _ in syncDurationMinutes() }
                     }
                 }
 
@@ -197,6 +235,32 @@ struct SceneEditSheet: View {
                 if let existing {
                     Section("Location") {
                         SceneLocationSection(scene: existing, viewModel: viewModel)
+                    }
+                }
+
+                // Zuständig (2026-07-13, Lino) — was only reachable from the
+                // full single-column sceneTile's own inline assignee menu;
+                // the 2-column compact tile deliberately leaves that off the
+                // tile itself (see sceneCompactTile's doc comment) and this
+                // sheet had no equivalent, so a scene opened from the
+                // 2-column grid had no way at all to assign a user. Same
+                // "needs a real id" reasoning as Location/Einstellungen above,
+                // and offered for Zwischenschritt scenes too, unlike those.
+                // Reads/writes through `liveExisting`, not `existing` directly
+                // — same stale-snapshot fix as SceneLocationSection's
+                // `liveScene` below, or the picker would silently snap back
+                // to the pre-selection value until the sheet is reopened.
+                if let existing {
+                    Section("Zuständig") {
+                        Picker("Zuständig", selection: Binding(
+                            get: { liveExisting(existing).assigneeId },
+                            set: { newValue in Task { await viewModel.assignScene(existing, to: newValue) } }
+                        )) {
+                            Text("Niemand").tag(String?.none)
+                            ForEach(viewModel.members) { member in
+                                Text(member.name ?? member.email).tag(String?.some(member.userId))
+                            }
+                        }
                     }
                 }
 

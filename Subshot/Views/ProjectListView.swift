@@ -495,14 +495,11 @@ private struct GridSheets: ViewModifier {
     @Binding var editingFolder: ProjectFolder?
     @Binding var showingNotifications: Bool
 
-    @State private var newItemName = ""
-    @FocusState private var newNameFocused: Bool
-
     func body(content: Content) -> some View {
         content
             .sheet(isPresented: $creatingProject) {
-                nameSheet(title: "Neues Projekt") { name in
-                    if let project = await viewModel.create(name: name) { path.append(project) }
+                ProjectEditSheet(project: nil, defaultColor: viewModel.nextDefaultColor) { name, color, emoji in
+                    if let project = await viewModel.create(name: name, color: color, emoji: emoji) { path.append(project) }
                 }
             }
             .sheet(isPresented: $creatingFolder) {
@@ -525,40 +522,6 @@ private struct GridSheets: ViewModifier {
                     path.append(project)
                 }
             }
-    }
-
-    @ViewBuilder
-    private func nameSheet(title: String, onSave: @escaping (String) async -> Void) -> some View {
-        NavigationStack {
-            Form {
-                Section("Name") {
-                    TextField("Name", text: $newItemName)
-                        .focused($newNameFocused)
-                        .onAppear {
-                            newItemName = ""
-                            newNameFocused = true
-                        }
-                }
-            }
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Abbrechen") { creatingProject = false }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Fertig") {
-                        let trimmed = newItemName.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !trimmed.isEmpty else { return }
-                        Task {
-                            await onSave(trimmed)
-                            creatingProject = false
-                        }
-                    }
-                }
-            }
-        }
-        .preferredColorScheme(.dark)
     }
 }
 

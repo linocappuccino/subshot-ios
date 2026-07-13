@@ -154,6 +154,14 @@ struct SceneProjectInfoTile: View {
     @ObservedObject var viewModel: ShotListViewModel
     let scene: Scene
     let projectId: String
+    /// True only inside the 2-column compact grid (2026-07-13, Lino: "Info
+    /// und Szenenkacheln sollen immer gleich gross aussehen") — matches this
+    /// tile's collapsed height to sceneCompactTile's fixed 4:5 box instead of
+    /// the thin single-row header it collapses to everywhere else, so it
+    /// doesn't leave its grid cell mostly empty next to full-height
+    /// neighbors. Never applied while expanded, or the box would fight the
+    /// content it's supposed to be showing.
+    var compactGrid: Bool = false
 
     @State private var isExpanded = false
     @State private var showingTeamSheet = false
@@ -195,9 +203,11 @@ struct SceneProjectInfoTile: View {
             }
         }
         .padding(14)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         // Same Liquid Glass material as every other tile now (Lino: "der
         // apple glas effekt soll auf ALLEN Kacheln sein!").
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
+        .aspectRatio(compactGrid && !isExpanded ? 4.0 / 5.0 : nil, contentMode: .fit)
         .sheet(isPresented: $showingTeamSheet, onDismiss: {
             Task { await viewModel.refreshMembers() }
         }) {

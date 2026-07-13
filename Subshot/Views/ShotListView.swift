@@ -586,7 +586,14 @@ struct ShotListView: View {
                     // cells; a pre-existing limitation of this grid, not
                     // something 2026-07-11's stacking/drag fixes address).
                     if scene.isProjectInfo {
-                        projectInfoSceneCard(scene: scene)
+                        // 2026-07-13, Lino: "hier sollen die Info und
+                        // Szenenkacheln immer gleich gross aussehen... sonst
+                        // hat man zu viel leeren Raum" — collapsed, this tile
+                        // used to be just a thin single-row header sitting in
+                        // a grid cell as tall as its full-size neighbors,
+                        // leaving a big empty gap under it. compactGrid
+                        // matches it to the same 4:5 box as sceneCompactTile.
+                        projectInfoSceneCard(scene: scene, compactGrid: true)
                     } else {
                         sceneCompactTile(scene: scene)
                     }
@@ -1012,10 +1019,10 @@ struct ShotListView: View {
     /// is reused (would need its own padding/background double-applied on
     /// top of SceneProjectInfoTile's, which already looks like a tile).
     @ViewBuilder
-    private func projectInfoSceneCard(scene: Scene) -> some View {
+    private func projectInfoSceneCard(scene: Scene, compactGrid: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             sceneDropIndicator(before: scene)
-            SceneProjectInfoTile(viewModel: viewModel, scene: scene, projectId: projectId)
+            SceneProjectInfoTile(viewModel: viewModel, scene: scene, projectId: projectId, compactGrid: compactGrid)
         }
         .padding(.horizontal, ((isPad && isGridMode) || horizontalSizeClass == .regular) ? 0 : 16)
         .contextMenu {

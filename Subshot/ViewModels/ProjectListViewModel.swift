@@ -123,15 +123,20 @@ final class ProjectListViewModel: ObservableObject {
         }
     }
 
+    /// Suggested color for the next new project, rotated through the shared
+    /// palette by current project count — shown pre-selected in
+    /// ProjectEditSheet's creation mode (2026-07-13: Emoji/Farbe are now
+    /// choosable right at creation, not just afterward via `update`), but
+    /// the user can still pick a different one before hitting "Fertig".
+    var nextDefaultColor: String {
+        Color.subshotPalette[projects.count % Color.subshotPalette.count]
+    }
+
     /// Returns the newly created project so the caller can navigate straight
     /// into it (Reminders-style: name it, hit return, you're in the list).
-    /// Color rotates through the shared palette by current project count, so
-    /// a fresh list of projects reads as visually distinct without asking the
-    /// user to pick a color up front (they can still recolor via `update`).
-    func create(name: String) async -> Project? {
+    func create(name: String, color: String? = nil, emoji: String? = nil) async -> Project? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let color = Color.subshotPalette[projects.count % Color.subshotPalette.count]
         do {
             // Below the current minimum (not appended at the max+1 like
             // scenes/sections/folders) — this view inserts new projects at
@@ -139,7 +144,9 @@ final class ProjectListViewModel: ObservableObject {
             // so the sort_order needs to sort BEFORE everything already
             // there, not after.
             let sortOrder = (projects.map(\.sortOrder).min() ?? 0) - 1
-            let project = try await APIClient.shared.createProject(name: trimmed, color: color, folderId: folderId, sortOrder: sortOrder)
+            let project = try await APIClient.shared.createProject(
+                name: trimmed, color: color ?? nextDefaultColor, emoji: emoji, folderId: folderId, sortOrder: sortOrder
+            )
             projects.insert(project, at: 0)
             return project
         } catch {
