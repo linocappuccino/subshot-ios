@@ -274,8 +274,8 @@ final class APIClient {
         return try await send(req)
     }
 
-    func projectPdf(_ id: String) async throws -> Data {
-        let req = try await authorizedRequest("projects/\(id)/pdf")
+    func projectPdf(_ id: String, view: String = "cards") async throws -> Data {
+        let req = try await authorizedRequest("projects/\(id)/pdf?view=\(view)")
         let (data, response) = try await perform(req)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let message = String(data: data, encoding: .utf8) ?? ""

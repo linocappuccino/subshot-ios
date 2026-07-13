@@ -322,17 +322,19 @@ struct ShotListView: View {
                     ShareLink(item: exportedPdfURL) {
                         Image(systemName: "square.and.arrow.up")
                     }
+                } else if isExportingPdf {
+                    ProgressView()
                 } else {
-                    Button {
-                        Task { await exportPdf() }
+                    // 2026-07-13, Lino: "beim Klick auf PDF Export soll
+                    // zuerst gefragt werden, ob Kachelansicht oder
+                    // Tabellenansicht exportiert werden soll" — was a
+                    // single tap straight to the (card-only) export before.
+                    Menu {
+                        Button("Kachelansicht") { Task { await exportPdf(view: "cards") } }
+                        Button("Tabellenansicht") { Task { await exportPdf(view: "table") } }
                     } label: {
-                        if isExportingPdf {
-                            ProgressView()
-                        } else {
-                            Image(systemName: "square.and.arrow.up")
-                        }
+                        Image(systemName: "square.and.arrow.up")
                     }
-                    .disabled(isExportingPdf)
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -2014,11 +2016,11 @@ struct ShotListView: View {
     /// toolbar swaps to a `ShareLink` for that URL afterward so re-tapping
     /// doesn't re-download; `.task`/`.onDisappear` isn't used to invalidate
     /// it since a stale PDF from a few edits ago is harmless to re-share.
-    private func exportPdf() async {
+    private func exportPdf(view: String) async {
         isExportingPdf = true
         defer { isExportingPdf = false }
         do {
-            let data = try await APIClient.shared.projectPdf(projectId)
+            let data = try await APIClient.shared.projectPdf(projectId, view: view)
             let safeName = projectName.isEmpty ? "shotlist" : projectName
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeName).pdf")
             try data.write(to: url, options: .atomic)
