@@ -31,7 +31,11 @@ final class ProjectListViewModel: ObservableObject {
                 folders = try await APIClient.shared.listFolders()
             }
         } catch {
-            errorMessage = error.localizedDescription
+            // See APIError.isCancellation — a cancelled request (e.g. this
+            // same load() still running from the initial .task when
+            // .refreshable fires it again) isn't a real failure and
+            // shouldn't surface as "Fehler: Verbindungsfehler: cancelled".
+            if !APIError.isCancellation(error) { errorMessage = error.localizedDescription }
         }
     }
 

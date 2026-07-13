@@ -79,7 +79,11 @@ final class ShotListViewModel: ObservableObject {
             todoLists = detail.todoLists.sorted { $0.sortOrder < $1.sortOrder }
             sections = detail.sections.sorted { $0.sortOrder < $1.sortOrder }
         } catch {
-            errorMessage = error.localizedDescription
+            // A cancelled request (pull-to-refresh released mid-flight, or
+            // the view disappearing) isn't a real failure — see
+            // APIError.isCancellation's own comment. Root cause of "Fehler:
+            // Verbindungsfehler: cancelled" on swipe-to-refresh.
+            if !APIError.isCancellation(error) { errorMessage = error.localizedDescription }
         }
         // Independent of the main load — a failure here shouldn't block the
         // scene/shot list from showing.

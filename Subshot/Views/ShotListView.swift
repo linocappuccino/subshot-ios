@@ -270,6 +270,21 @@ struct ShotListView: View {
         .navigationTitle(projectName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // 2026-07-13, Lino: "können wir das oben zur Iconbar
+            // hinzufügen? (so ein Rückgängig Pfeil?)" — same undo the
+            // bottom toast already offers (undoToast below), just also
+            // reachable from the toolbar without waiting to spot the
+            // bottom bar. Only appears while an undo is actually pending,
+            // same condition as the toast.
+            if viewModel.pendingUndoShot != nil {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        viewModel.undoDelete()
+                    } label: {
+                        Image(systemName: "arrow.uturn.backward")
+                    }
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 // Reduced-info 2-column tile overview vs. today's full-detail
                 // cards — orthogonal to the iPad-only column controls below
@@ -965,19 +980,31 @@ struct ShotListView: View {
         // dragged, which Lino explicitly rejected: "ich will keine
         // Abstände sondern die sollen breiter werden wenn ein Indikator
         // dazwischen rutscht"). Fixed properly instead by widening ONLY the
-        // invisible hit-test region (contentShape, 10pt beyond the visible
-        // frame on every side) without touching the frame itself — that
-        // costs nothing in idle layout, since contentShape never
-        // contributes to a view's own size. Combined with
-        // setSceneDropTarget's debounced-clear (a genuine "moved away and
-        // stayed away" grace period, not just a bigger boundary), that's
-        // the actual fix for "geht immer auf und zu".
+        // invisible hit-test region (contentShape, beyond the visible frame
+        // on every side) without touching the frame itself — that costs
+        // nothing in idle layout, since contentShape never contributes to a
+        // view's own size. Combined with setSceneDropTarget's debounced-
+        // clear (a genuine "moved away and stayed away" grace period, not
+        // just a bigger boundary), that's the actual fix for "geht immer
+        // auf und zu".
+        //
+        // Widened from 10pt to 50pt (2026-07-13, Lino: same "50%
+        // oben/unten" precision he wanted from a drop-directly-on-the-tile
+        // redesign) — deliberately NOT the drop-on-tile-with-CGPoint
+        // architecture itself, which was already tried once in this exact
+        // codebase and reverted (broke the tile's own long-press
+        // .contextMenu on a real device via too many stacked gesture
+        // recognizers, see swipeableCard's docs for the same class of
+        // bug). This keeps the proven safe mechanism (gap-based
+        // dropDestination, never on the tile itself) and just makes its
+        // invisible catch zone generous enough that landing anywhere in
+        // roughly the top/bottom half of a neighboring tile reaches it.
         return RoundedRectangle(cornerRadius: 8)
             .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
             .frame(height: isActive ? 60 : 12)
             .padding(.horizontal, 4)
             .opacity(isActive ? 1 : 0)
-            .contentShape(Rectangle().inset(by: -10))
+            .contentShape(Rectangle().inset(by: -50))
             .dropDestination(for: String.self) { ids, _ in
                 guard let raw = ids.first, raw.hasPrefix("scene:") else { return false }
                 let draggedId = String(raw.dropFirst("scene:".count))
@@ -1171,19 +1198,32 @@ struct ShotListView: View {
     private func swipeableCard<Content: View>(scene: Scene, @ViewBuilder content: () -> Content) -> some View {
         let offset = sceneSwipeOffsets[scene.id] ?? 0
         let isExiting = sceneSwipeExiting.contains(scene.id)
+        // Rotation capped at ±16° (2026-07-13, Lino: "die kachel verzieht und
+        // vergrössert sich noch komplett komisch") — uncapped, a fast/long
+        // swipe (easy to overshoot past the ~110pt threshold before letting
+        // go) could rotate the card 20-30°+, and a rotated rectangle's
+        // corners spill outside its own layout frame (SwiftUI doesn't
+        // reserve extra space for that), which reads as the card bleeding
+        // into/over its neighbors above and below in the list - not an
+        // actual size change, but exactly what "vergrössert sich" describes.
+        let rotation = max(-16, min(16, Double(offset) / 20))
         content()
             .offset(x: offset)
-            .rotationEffect(.degrees(Double(offset / 20)), anchor: .bottom)
+            .rotationEffect(.degrees(rotation), anchor: .bottom)
+            // Draws above its neighbors while actively being dragged, so the
+            // now-smaller rotation overflow never gets visually clipped
+            // behind/under the card above or below it in the list.
+            .zIndex(offset == 0 ? 0 : 1)
             .opacity(isExiting ? 0 : 1)
             .overlay(alignment: .topLeading) {
                 if offset < -16 {
-                    swipeStamp(text: "LÖSCHEN", color: .red, rotation: -14)
+                    swipeStamp(text: "LÖSCHEN", systemImage: "trash.fill", color: .red, rotation: -12)
                         .opacity(min(1, Double(-offset) / 100))
                 }
             }
             .overlay(alignment: .topTrailing) {
                 if offset > 16 {
-                    swipeStamp(text: "IM KASTEN", color: .green, rotation: 14)
+                    swipeStamp(text: "IM KASTEN", systemImage: "checkmark", color: .green, rotation: 12)
                         .opacity(min(1, Double(offset) / 100))
                 }
             }
@@ -1241,13 +1281,18 @@ struct ShotListView: View {
             )
     }
 
-    private func swipeStamp(text: String, color: Color, rotation: Double) -> some View {
-        Text(text)
-            .font(.title3.weight(.heavy))
-            .foregroundStyle(color)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(color, lineWidth: 3))
+    /// A filled capsule + icon (2026-07-13, Lino: "den Text der erscheint
+    /// schöner machen") — was a plain bordered rectangle of text, which read
+    /// as a placeholder debug label rather than a deliberate Tinder-style
+    /// like/reject stamp.
+    private func swipeStamp(text: String, systemImage: String, color: Color, rotation: Double) -> some View {
+        Label(text, systemImage: systemImage)
+            .font(.subheadline.weight(.heavy))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(color.gradient, in: Capsule())
+            .shadow(color: color.opacity(0.5), radius: 10, y: 3)
             .rotationEffect(.degrees(rotation))
             .padding(18)
             .allowsHitTesting(false)

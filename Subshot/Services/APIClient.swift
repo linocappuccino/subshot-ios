@@ -17,6 +17,18 @@ enum APIError: Error, LocalizedError {
         case .network(let e): return "Verbindungsfehler: \(e.localizedDescription)"
         }
     }
+
+    /// A request cancelled mid-flight (e.g. pull-to-refresh released while
+    /// the previous load was still running, or the view disappearing) isn't
+    /// a real failure — it's expected, benign, and shouldn't ever reach the
+    /// user as "Fehler: Verbindungsfehler: cancelled" (2026-07-13, Lino).
+    /// Callers that show `errorMessage` from a `.refreshable`/load path
+    /// should check this before doing so.
+    static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if case .network(let inner) = error as? APIError, (inner as? URLError)?.code == .cancelled { return true }
+        return (error as? URLError)?.code == .cancelled
+    }
 }
 
 /// Thin async/await wrapper around the Subshot backend. Every call attaches the
