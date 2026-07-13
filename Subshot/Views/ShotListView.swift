@@ -774,6 +774,8 @@ struct ShotListView: View {
                     } label: {
                         Label("Löschen", systemImage: "trash")
                     }
+                    Divider()
+                    sortMenuItems(sectionId: section.id)
                 } preview: {
                     // Was just Text(name) — read as the row "collapsing"
                     // down to a bare label on hold, same complaint/fix as
@@ -813,8 +815,11 @@ struct ShotListView: View {
         } else {
             // "Ohne Abschnitt" — no rename/delete/reorder (not a real
             // SceneSection), but still a valid target for filing a scene
-            // OUT of any section back to unassigned.
+            // OUT of any section back to unassigned. Auto-sort still
+            // applies here (2026-07-13), via a plain contextMenu (no
+            // rename/delete to combine it with).
             row
+                .contextMenu { sortMenuItems(sectionId: nil) }
                 .dropDestination(for: String.self) { ids, _ in
                     guard let raw = ids.first, raw.hasPrefix("scene:") else { return false }
                     let sceneId = String(raw.dropFirst("scene:".count))
@@ -824,6 +829,27 @@ struct ShotListView: View {
                 } isTargeted: { targeted in
                     setSectionDropTarget(unassignedSectionKey, targeted: targeted)
                 }
+        }
+    }
+
+    /// Auto-sort button (2026-07-13, Lino) — shared between the named-
+    /// section context menu and the "Ohne Abschnitt" one.
+    @ViewBuilder
+    private func sortMenuItems(sectionId: String?) -> some View {
+        Button {
+            Task { await viewModel.sortScenes(sectionId: sectionId, by: .number) }
+        } label: {
+            Label("Nach Identifikationsnummer sortieren", systemImage: "number")
+        }
+        Button {
+            Task { await viewModel.sortScenes(sectionId: sectionId, by: .time) }
+        } label: {
+            Label("Nach Zeit sortieren", systemImage: "clock")
+        }
+        Button {
+            Task { await viewModel.sortScenes(sectionId: sectionId, by: .location) }
+        } label: {
+            Label("Nach Ort sortieren", systemImage: "mappin.and.ellipse")
         }
     }
 

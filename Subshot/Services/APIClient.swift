@@ -388,6 +388,18 @@ final class APIClient {
         return try await send(req)
     }
 
+    /// Auto-sort button (2026-07-13, Lino) — takes the full target order for
+    /// one section (or the unsectioned bucket, sectionId nil) in a single
+    /// request instead of one moveScene call per scene, same reasoning as
+    /// the other bulk "server already knows the whole order" endpoints.
+    func reorderScenes(projectId: String, sectionId: String?, orderedSceneIds: [String]) async throws -> [Scene] {
+        var req = try await authorizedRequest("projects/\(projectId)/scenes/reorder", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let section_id: String?; let ordered_scene_ids: [String] }
+        req.httpBody = try encoder.encode(Body(section_id: sectionId, ordered_scene_ids: orderedSceneIds))
+        return try await send(req)
+    }
+
     /// Server-authoritative reorder (2026-07-13) — same shared endpoint the
     /// web app now calls too, replacing what used to be a client-computed
     /// multi-PATCH loop independently implemented on both platforms.

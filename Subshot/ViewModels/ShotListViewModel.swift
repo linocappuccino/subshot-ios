@@ -746,6 +746,55 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
+    enum SceneSortCriterion {
+        case number, time, location
+    }
+
+    /// Auto-sort button (2026-07-13, Lino: "ein Button um die Kacheln
+    /// automatisch nach Identifikationsnummer/Zeit/Ort zu sortieren") —
+    /// sorts one section's (or the unsectioned bucket's, sectionId nil)
+    /// scenes locally by the chosen key, then persists the whole new order
+    /// in a single request (see reorderScenes) instead of one move call per
+    /// scene. Scenes missing the sort key sort to the end.
+    func sortScenes(sectionId: String?, by criterion: SceneSortCriterion) async {
+        let group = scenes.filter { $0.sectionId == sectionId }
+        let sorted = group.sorted { a, b in
+            switch criterion {
+            case .number:
+                let av = a.number * 1000 + Int(a.letter?.unicodeScalars.first?.value ?? 0)
+                let bv = b.number * 1000 + Int(b.letter?.unicodeScalars.first?.value ?? 0)
+                return av < bv
+            case .time:
+                switch (a.scheduledAt, b.scheduledAt) {
+                case let (av?, bv?): return av < bv
+                case (nil, nil): return false
+                case (nil, _): return false
+                case (_, nil): return true
+                }
+            case .location:
+                switch (a.locationAddress, b.locationAddress) {
+                case let (av?, bv?): return av.localizedCaseInsensitiveCompare(bv) == .orderedAscending
+                case (nil, nil): return false
+                case (nil, _): return false
+                case (_, nil): return true
+                }
+            }
+        }
+        let orderedIds = sorted.map(\.id)
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+            for (index, id) in orderedIds.enumerated() {
+                if let i = scenes.firstIndex(where: { $0.id == id }), scenes[i].sortOrder != index {
+                    scenes[i].sortOrder = index
+                }
+            }
+        }
+        do {
+            _ = try await APIClient.shared.reorderScenes(projectId: projectId, sectionId: sectionId, orderedSceneIds: orderedIds)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func toggleDone(_ shot: Shot) async {
         let newStatus: ShotStatus = shot.status == .done ? .open : .done
         do {
