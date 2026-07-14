@@ -2112,7 +2112,7 @@ struct ShotListView: View {
     /// web's SceneCard.tsx.
     private func sceneAssigneeMenu(scene: Scene) -> some View {
         let assignees = viewModel.members.filter { scene.assigneeIds.contains($0.userId) }
-        return Button {
+        Button {
             assigneeSheetScene = scene
         } label: {
             if assignees.isEmpty {
@@ -2230,7 +2230,7 @@ struct ShotListView: View {
         // ~8%-fill / ~50%-border opacities as web's `${lineColor}14` /
         // `${lineColor}80` hex-alpha suffixes.
         let lineColor = Color(hex: Color.subshotPalette[colorIndex % Color.subshotPalette.count])
-        return HStack(spacing: 8) {
+        HStack(spacing: 8) {
             Button {
                 Task { await viewModel.toggleDialogue(dialogue, in: scene) }
             } label: {
@@ -2734,6 +2734,64 @@ private struct SceneTimerRunningGlow: ViewModifier {
                         }
                     }
                 }
+        }
+    }
+}
+
+/// Multi-select "Zuständig" picker (2026-07-14, Lino: "mehrere Personen
+/// auswählen können und auch wieder entfernen können") — a sheet instead of
+/// a native Menu because SwiftUI's Menu dismisses on every Button tap with
+/// no built-in way to keep it open across several picks, which a genuine
+/// multi-select needs (tap several members, then explicitly close).
+/// Was its own file (SceneAssigneeSheet.swift) — folded in here (2026-07-14)
+/// after Xcode reported "Cannot find 'SceneAssigneeSheet' in scope", most
+/// likely a target-membership gap for the new file rather than anything
+/// wrong with its content; consolidating into this always-compiling file
+/// removes that risk entirely rather than relying on Xcode picking up a
+/// new file automatically.
+struct SceneAssigneeSheet: View {
+    let scene: Scene
+    @ObservedObject var viewModel: ShotListViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    /// Looks the scene up fresh from viewModel.scenes on every render
+    /// instead of using the captured `scene` parameter directly — that
+    /// parameter is a value-type snapshot from whenever the sheet was
+    /// presented, so checkmarks would otherwise freeze at whatever the
+    /// selection was at that moment instead of updating live as this same
+    /// sheet session toggles members in/out.
+    private var currentAssigneeIds: [String] {
+        (viewModel.scenes.first { $0.id == scene.id } ?? scene).assigneeIds
+    }
+
+    var body: some View {
+        NavigationStack {
+            List(viewModel.members) { member in
+                Button {
+                    Task { await viewModel.toggleSceneAssignee(scene, userId: member.userId) }
+                } label: {
+                    HStack {
+                        MemberAvatar(member: member, size: 32)
+                        Text(member.name?.isEmpty == false ? member.name! : member.email)
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        if currentAssigneeIds.contains(member.userId) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.blue)
+                        } else {
+                            Image(systemName: "circle")
+                                .foregroundStyle(.secondary.opacity(0.4))
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Zuständig")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Fertig") { dismiss() }
+                }
+            }
         }
     }
 }
