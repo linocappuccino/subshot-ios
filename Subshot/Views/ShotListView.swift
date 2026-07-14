@@ -1303,6 +1303,7 @@ struct ShotListView: View {
             .animation(.easeInOut(duration: 0.3), value: scene.completed)
             .animation(.easeInOut(duration: 0.25), value: collapsed)
             .modifier(ScenePulseOnElapse(scene: scene))
+            .modifier(SceneTimerRunningGlow(scene: scene))
             }
         }
         // Grid mode owns its own outer horizontal padding + inter-column gap
@@ -1826,6 +1827,7 @@ struct ShotListView: View {
             // treatment.
             .glassEffect(scene.completed ? .regular.tint(.green.opacity(0.35)) : .regular, in: RoundedRectangle(cornerRadius: 14))
             .modifier(ScenePulseOnElapse(scene: scene))
+            .modifier(SceneTimerRunningGlow(scene: scene))
             // Uniform card size across the 2-column grid, format 4:5 (Lino:
             // "jede Kachel die gleiche Grösse in der Höhe... Format von
             // 4:5"). .fit against a fixed grid-column width fixes the
@@ -2500,5 +2502,58 @@ private struct ScenePulseOnElapse: ViewModifier {
                     }
             }
         )
+    }
+}
+
+/// Mirrors web's `useSceneTimerRunning` (SceneCard.tsx): true from
+/// `scheduledAt` until `scheduledAt + durationMinutes`, re-checked every 15s
+/// via TimelineView so the glow starts/stops on its own. Subtle white glow
+/// OUTSIDE the tile edges only (large blur + negative padding so it never
+/// overlaps the card's own content) — same restrained tuning as web
+/// (opacity 0.06→0.18→0.06, 3.6s cycle) after Lino's "nur aussen glowen und
+/// nicht so stark wie jetzt" correction.
+private struct SceneTimerRunningGlow: ViewModifier {
+    let scene: Scene
+    @State private var pulse = false
+
+    private func isRunning(at now: Date) -> Bool {
+        guard !scene.completed,
+              let start = scene.scheduledAt,
+              let duration = scene.durationMinutes else { return false }
+        let end = start.addingTimeInterval(TimeInterval(duration) * 60)
+        return now >= start && now < end
+    }
+
+    func body(content: Content) -> some View {
+        TimelineView(.periodic(from: .now, by: 15)) { context in
+            let running = isRunning(at: context.date)
+            content
+                .background {
+                    if running {
+                        RoundedRectangle(cornerRadius: 20)
+                            .fill(Color.white)
+                            .blur(radius: 20)
+                            .padding(-20)
+                            .opacity(pulse ? 0.18 : 0.06)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .onChange(of: running) { _, newValue in
+                    if newValue {
+                        withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) {
+                            pulse = true
+                        }
+                    } else {
+                        pulse = false
+                    }
+                }
+                .onAppear {
+                    if running {
+                        withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) {
+                            pulse = true
+                        }
+                    }
+                }
+        }
     }
 }
