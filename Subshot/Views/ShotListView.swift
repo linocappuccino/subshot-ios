@@ -37,6 +37,34 @@ private extension View {
             self
         }
     }
+
+    /// Conditionally attaches .contextMenu(menuItems:preview:) — 2026-07-14,
+    /// second attempt at the Tinder-swipe "card doubles/grows" bug: Lino
+    /// confirmed the draggableIf fix above (from a fresh build) made NO
+    /// visible difference at all, which means .draggable() was never the
+    /// (sole) real cause. The other gesture recognizer stacked on this same
+    /// card is .contextMenu's own long-press-triggered preview lift
+    /// (sceneContextMenuPreview) — same class of conflict, different
+    /// recognizer: a long-press starting to register at the same time as
+    /// the swipe's DragGesture would show ITS OWN elevated snapshot of the
+    /// tile on top of the swipe transform, which matches "two overlapping
+    /// renderings, one bigger than the other" far better than a drag-lift
+    /// preview would (a context menu preview visibly SCALES UP, a drag
+    /// preview does not). UNVERIFIED — reasoned from re-reading the code a
+    /// second time after the first fix failed, no new video was available
+    /// this round (see conversation).
+    @ViewBuilder
+    func contextMenuIf<MenuItems: View, Preview: View>(
+        _ condition: Bool,
+        @ViewBuilder menuItems: () -> MenuItems,
+        @ViewBuilder preview: () -> Preview
+    ) -> some View {
+        if condition {
+            self.contextMenu(menuItems: menuItems, preview: preview)
+        } else {
+            self
+        }
+    }
 }
 
 /// Collapses a row of toolbar buttons into a single icon, expanding with a
@@ -1509,6 +1537,11 @@ struct ShotListView: View {
     /// now on explicit request. MUST be verified on a real device before
     /// trusting it; if the same hang reappears, revert to a menu-based
     /// reorder rather than debugging blind from this server.
+    // suppressDrag now also suppresses .contextMenu (2026-07-14, second
+    // attempt at the Tinder-swipe bug — see contextMenuIf's doc comment)
+    // — name kept as-is to avoid touching every call site, but it really
+    // means "suppress every OTHER gesture recognizer on this tile while a
+    // swipe is active", not literally just drag anymore.
     @ViewBuilder
     private func sceneTile(scene: Scene, columnLayout: Bool = false, suppressDrag: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1673,7 +1706,7 @@ struct ShotListView: View {
                 editingScene = .some(scene)
             }
         }
-        .contextMenu {
+        .contextMenuIf(!suppressDrag, menuItems: {
             Button {
                 editingScene = .some(scene)
             } label: {
@@ -1696,9 +1729,9 @@ struct ShotListView: View {
             } label: {
                 Label("Löschen", systemImage: "trash")
             }
-        } preview: {
+        }, preview: {
             sceneContextMenuPreview(scene: scene)
-        }
+        })
         .draggableIf(!suppressDrag, "scene:\(scene.id)") {
             sceneDragPreview(scene: scene)
         }
