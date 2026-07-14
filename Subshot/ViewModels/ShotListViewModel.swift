@@ -145,6 +145,20 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
+    /// 2026-07-14, Lino: "in der projektinfo-kachel muss man die adresse
+    /// auch wieder rauslöschen können" — mirrors clearSceneLocation below,
+    /// which already existed but had no UI hookup either.
+    func clearProjectLocation() async {
+        do {
+            let updated = try await APIClient.shared.patchProject(projectId, clearLocation: true)
+            locationAddress = updated.locationAddress
+            locationLat = updated.locationLat
+            locationLng = updated.locationLng
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func updateClientName(_ name: String) async {
         do {
             let updated = try await APIClient.shared.patchProject(projectId, clientName: name)
@@ -1156,6 +1170,19 @@ final class ShotListViewModel: ObservableObject {
             let updated = try await APIClient.shared.patchSection(
                 section.id, locationAddress: address, locationLat: lat, locationLng: lng
             )
+            if let index = sections.firstIndex(where: { $0.id == updated.id }) {
+                sections[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Mirrors clearProjectLocation/clearSceneLocation — same missing UI
+    /// hookup, same fix (2026-07-14).
+    func clearSectionLocation(_ section: SceneSection) async {
+        do {
+            let updated = try await APIClient.shared.patchSection(section.id, clearLocation: true)
             if let index = sections.firstIndex(where: { $0.id == updated.id }) {
                 sections[index] = updated
             }

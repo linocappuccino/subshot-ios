@@ -37,7 +37,7 @@ struct SectionInfoBox: View {
                         onUpdate: { address, lat, lng in
                             await viewModel.updateSectionLocation(section, address: address, lat: lat, lng: lng)
                         },
-                        completer: viewModel.locationCompleter
+                        onClear: { await viewModel.clearSectionLocation(section) }
                     )
                     Divider()
                     ClientNameSection(
@@ -182,7 +182,7 @@ struct SceneProjectInfoTile: View {
                         onUpdate: { address, lat, lng in
                             await viewModel.updateSceneLocation(scene, address: address, lat: lat, lng: lng)
                         },
-                        completer: viewModel.locationCompleter
+                        onClear: { await viewModel.clearSceneLocation(scene) }
                     )
                     Divider()
                     ClientNameSection(
@@ -292,7 +292,8 @@ struct ProjectInfoBox: View {
                     Divider()
                     LocationSection(
                         address: viewModel.locationAddress, lat: viewModel.locationLat, lng: viewModel.locationLng,
-                        onUpdate: viewModel.updateLocation, completer: viewModel.locationCompleter
+                        onUpdate: viewModel.updateLocation,
+                        onClear: { await viewModel.clearProjectLocation() }
                     )
                     Divider()
                     ClientNameSection(clientName: viewModel.clientName, onUpdate: viewModel.updateClientName)
@@ -445,6 +446,27 @@ private struct LocationSection: View {
     let lat: Double?
     let lng: Double?
     let onUpdate: (String, Double, Double) async -> Void
+    /// 2026-07-14, Lino: "in der projektinfo-kachel muss man die adresse
+    /// auch wieder rauslöschen können" — there was previously no way to
+    /// actually remove an address once set, only "Ändern" (which just
+    /// reopens the field pre-filled). nil hides the button entirely (not
+    /// used currently, every call site now provides one).
+    var onClear: (() async -> Void)? = nil
+    // Stays a SHARED completer passed in (viewModel.locationCompleter),
+    // deliberately NOT switched to a per-instance @StateObject here despite
+    // 2026-07-14's "asiatische Adressen" report making that look tempting —
+    // see the doc comment on ShotListViewModel.locationCompleter: a
+    // per-instance completer inside a view that lives in the scrolling
+    // LazyVStack was the CONFIRMED cause of an actual CPU-pegged freeze
+    // once already (profiled: a paused stack in swift_bridgeObjectRelease
+    // with an active NSURLConnection thread), which is exactly what this
+    // sharing was built to fix. The real bug here is narrower: the shared
+    // completer's `results`/`queryFragment` can carry stale state from
+    // whichever field used it last if that field's edit was abandoned
+    // without calling .clear() — fixed below by clearing on EVERY exit
+    // from edit mode (onSubmit) AND explicitly on entry (tapping "Ändern"),
+    // so a field always starts and ends its own edit with a clean slate,
+    // without touching the shared-ownership architecture at all.
     @ObservedObject var completer: LocationSearchCompleter
     @State private var query = ""
     @State private var isEditing = false
@@ -469,20 +491,49 @@ private struct LocationSection: View {
                         Text(address)
                             .font(.subheadline)
                             .lineLimit(3)
-                        Button("Ändern") {
-                            query = address
-                            isEditing = true
+                        HStack(spacing: 12) {
+                            Button("Ändern") {
+                                // Clear on ENTRY too, not just exit — the
+                                // shared completer (see doc comment above)
+                                // may still be holding another field's
+                                // stale results from earlier in this same
+                                // session; this guarantees a clean slate
+                                // the instant this field starts editing,
+                                // before the user types a single character.
+                                completer.clear()
+                                query = address
+                                isEditing = true
+                            }
+                            .font(.footnote)
+                            if let onClear {
+                                Button("Entfernen", role: .destructive) {
+                                    Task { await onClear() }
+                                }
+                                .font(.footnote)
+                            }
                         }
-                        .font(.footnote)
                     }
                 }
             } else {
                 TextField("Adresse eingeben", text: $query)
                     .textFieldStyle(.roundedBorder)
+                    // Covers the brand-new-address case (address == nil,
+                    // so this branch renders straight away, without ever
+                    // going through the "Ändern" button's own clear()) —
+                    // same stale-shared-completer risk as above.
+                    .onAppear { completer.clear() }
                     .onChange(of: query) { _, newValue in
                         completer.update(query: newValue)
                     }
-                    .onSubmit { isEditing = false }
+                    // Was just `isEditing = false` — abandoning a search
+                    // without picking a suggestion left the completer's
+                    // results/queryFragment sitting there unchanged, ready
+                    // to leak into whichever field edits next (this is the
+                    // actual "asiatische Adressen" bug, see the doc comment
+                    // above on `completer`). Clearing on exit here AND on
+                    // entry (see the "Ändern" button) covers both
+                    // directions regardless of which field goes next.
+                    .onSubmit { isEditing = false; completer.clear() }
                 if !completer.results.isEmpty {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(completer.results.prefix(5), id: \.self) { result in

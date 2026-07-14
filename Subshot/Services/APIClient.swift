@@ -173,6 +173,7 @@ final class APIClient {
         emoji: String? = nil, clearEmoji: Bool = false,
         shootDate: Date? = nil, locationAddress: String? = nil,
         locationLat: Double? = nil, locationLng: Double? = nil,
+        clearLocation: Bool = false,
         clientName: String? = nil,
         folderId: String? = nil, clearFolder: Bool = false, sortOrder: Int? = nil
     ) async throws -> Project {
@@ -183,6 +184,7 @@ final class APIClient {
             let emoji: String?; let clear_emoji: Bool
             let shoot_date: Date?
             let location_address: String?; let location_lat: Double?; let location_lng: Double?
+            let clear_location: Bool
             let client_name: String?
             let folder_id: String?; let clear_folder: Bool
             let sort_order: Int?
@@ -190,6 +192,7 @@ final class APIClient {
         req.httpBody = try encoder.encode(Body(
             name: name, color: color, emoji: emoji, clear_emoji: clearEmoji, shoot_date: shootDate,
             location_address: locationAddress, location_lat: locationLat, location_lng: locationLng,
+            clear_location: clearLocation,
             client_name: clientName,
             folder_id: folderId, clear_folder: clearFolder, sort_order: sortOrder
         ))
@@ -802,6 +805,7 @@ final class APIClient {
     func patchSection(
         _ id: String, name: String? = nil, sortOrder: Int? = nil,
         shootDate: Date? = nil, locationAddress: String? = nil, locationLat: Double? = nil, locationLng: Double? = nil,
+        clearLocation: Bool = false,
         clientName: String? = nil,
         addProjectInfo: Bool = false, removeProjectInfo: Bool = false
     ) async throws -> SceneSection {
@@ -810,12 +814,14 @@ final class APIClient {
         struct Body: Encodable {
             let name: String?; let sort_order: Int?
             let shoot_date: Date?; let location_address: String?; let location_lat: Double?; let location_lng: Double?
+            let clear_location: Bool
             let client_name: String?
             let add_project_info: Bool; let remove_project_info: Bool
         }
         req.httpBody = try encoder.encode(Body(
             name: name, sort_order: sortOrder,
             shoot_date: shootDate, location_address: locationAddress, location_lat: locationLat, location_lng: locationLng,
+            clear_location: clearLocation,
             client_name: clientName,
             add_project_info: addProjectInfo, remove_project_info: removeProjectInfo
         ))
