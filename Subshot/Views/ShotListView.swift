@@ -97,15 +97,31 @@ private struct ExpandableToolbar<Content: View>: View {
                 Image(systemName: expanded ? "xmark.circle.fill" : "ellipsis.circle")
             }
         }
+        // A little breathing room before the revealed buttons when expanded
+        // (2026-07-14, Lino: "mehr platz links") — without it the leftmost
+        // button sits right up against the nav bar's leading content/title.
+        .padding(.leading, expanded ? 8 : 0)
         // Low dampingFraction is what actually produces the visible
         // overshoot ("überstrecht") on expand — a value at/above ~0.7 would
-        // just ease in with no bounce at all.
+        // just ease in with no bounce at all. Kept as a fallback for any
+        // other implicit change, but toggle() below now ALSO wraps the
+        // mutation in an explicit withAnimation — ToolbarItem content is
+        // UIKit-bridged (hosted as real UIBarButtonItems on the
+        // navigation bar, not a plain SwiftUI subview), and that bridge is
+        // known to drop transitions/animations driven purely by an
+        // implicit `.animation(value:)` on state mutated outside
+        // withAnimation, especially on REMOVAL — which is exactly what
+        // "keine Schliess-Animation, öffnen unsauber" (open shaky, close
+        // has none at all) describes: expand happened to mostly work,
+        // collapse silently snapped instead of animating.
         .animation(.spring(response: 0.35, dampingFraction: 0.55), value: expanded)
     }
 
     private func toggle() {
         collapseWork?.cancel()
-        expanded.toggle()
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.55)) {
+            expanded.toggle()
+        }
         if expanded { scheduleAutoCollapse() }
     }
 
