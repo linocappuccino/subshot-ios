@@ -2204,7 +2204,16 @@ struct ShotListView: View {
 
     private func commitNewShot(sceneId: String?) async {
         addingToScene = nil
-        await viewModel.createShot(description: newShotText, sceneId: sceneId)
+        let text = newShotText
+        newShotText = ""
+        // 2026-07-14, Lino: "sobald man der einstellung einen namen gegeben
+        // hat" muss die kamera-info direkt eingebbar sein — straight into
+        // ShotDetailSheet (same sheet as tapping an existing shot, see
+        // selectedShot above) right after naming it, instead of leaving the
+        // user to find and reopen it later just to add camera settings.
+        if let shot = await viewModel.createShot(description: text, sceneId: sceneId) {
+            selectedShot = shot
+        }
     }
 
     /// Downloads the project's PDF once and caches it at a temp URL — the
