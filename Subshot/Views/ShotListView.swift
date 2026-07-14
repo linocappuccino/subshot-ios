@@ -65,6 +65,24 @@ private extension View {
             self
         }
     }
+
+    /// Conditionally attaches .scrollTargetBehavior(.viewAligned) — 2026-07-14,
+    /// Lino: "smoother tiktok scroll effekt" was only ever meant for the
+    /// single-column list ("wir brauchen den swipe effect nur bei der
+    /// einzel kachel ansicht" applied to the same distinction elsewhere),
+    /// but the snap behavior had been applied unconditionally to the whole
+    /// ScrollView regardless of isCompactTileMode/isGridMode/iPad-regular
+    /// grid — snapping between top-level LazyVStack children (whole
+    /// sections) makes sense scrolling a single column of full-width cards,
+    /// not a 2-column grid of small tiles.
+    @ViewBuilder
+    func scrollTargetBehaviorIf(_ condition: Bool) -> some View {
+        if condition {
+            self.scrollTargetBehavior(.viewAligned)
+        } else {
+            self
+        }
+    }
 }
 
 /// Collapses a row of toolbar buttons into a single icon, expanding with a
@@ -306,6 +324,13 @@ struct ShotListView: View {
     /// the column controls, since a phone-width quick scan is exactly the
     /// point of this mode.
     @AppStorage("sceneCompactTileMode") private var isCompactTileMode = false
+    /// Mirrors sceneGrid's own single-column-vs-grid branching exactly (see
+    /// its else branch) — the TikTok-style scroll-snap only makes sense
+    /// scrolling one full-width card at a time, not a multi-column grid of
+    /// small tiles (2026-07-14, see scrollTargetBehaviorIf's doc comment).
+    private var wantsScrollSnap: Bool {
+        !isCompactTileMode && !(isPad && isGridMode) && horizontalSizeClass != .regular
+    }
     /// iPad-only column count, adjustable via a slider (see
     /// columnCountPopover) — 1...4, stored as Double since Slider needs a
     /// floating-point binding; always rounded before use as a grid column
@@ -401,7 +426,7 @@ struct ShotListView: View {
             .padding(.vertical, 16)
             .scrollTargetLayout()
         }
-        .scrollTargetBehavior(.viewAligned)
+        .scrollTargetBehaviorIf(wantsScrollSnap)
         .background(Color(.systemGroupedBackground))
         .overlay(alignment: .bottomTrailing) {
             addSceneButton
