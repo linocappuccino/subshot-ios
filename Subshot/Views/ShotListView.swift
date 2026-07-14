@@ -1140,8 +1140,22 @@ struct ShotListView: View {
     /// visibly move apart to make room — same "live reflow" idea already
     /// proven on the web client (see project memory). `target` is the
     /// scene this gap sits directly before.
-    private func sceneDropIndicator(before target: Scene) -> some View {
-        let isActive = dropTargetSceneId == target.id
+    /// `showsVisual: false` (2026-07-14, 2-column compact grid only, see
+    /// sceneCompactTile) keeps the exact same invisible hit-test/dropDestination
+    /// behavior below but never draws the dashed rectangle itself — a gap
+    /// growing ABOVE one specific grid cell reads as "insert directly above
+    /// me" in a single column, but is actively misleading in 2 columns
+    /// (Lino: "die Indikatoren auf der 2 Spalten Ansicht machen keinen
+    /// Sinn") since it can never express landing to a tile's LEFT/RIGHT,
+    /// only above its own cell regardless of where the finger actually is.
+    /// sceneCompactTile shows a border-highlight on the TARGET tile itself
+    /// instead (edge-agnostic "lands next to this one", same idea as
+    /// ProjectListView's folderTile drop highlight) — same underlying
+    /// dropDestination/gesture setup, just a different visual for the
+    /// identical activation state, so none of the gesture-recognizer
+    /// fragility called out below is touched.
+    private func sceneDropIndicator(before target: Scene, showsVisual: Bool = true) -> some View {
+        let isActive = dropTargetSceneId == target.id && showsVisual
         // NEVER truly zero height — a view with zero size has zero hit-
         // testable area, so a drag could never hover over it in the first
         // place to trigger the expansion to begin with (a real bug found
@@ -1223,17 +1237,43 @@ struct ShotListView: View {
     /// top of SceneProjectInfoTile's, which already looks like a tile).
     @ViewBuilder
     private func projectInfoSceneCard(scene: Scene, compactGrid: Bool = false) -> some View {
+        // 2026-07-14: showsVisual/border-highlight follows the exact same
+        // reasoning as sceneCompactTile's own drop indicator — see its doc
+        // comment. This tile was missing that treatment even though it
+        // renders inside the very same 2-column compact grid.
         VStack(alignment: .leading, spacing: 14) {
-            sceneDropIndicator(before: scene)
+            sceneDropIndicator(before: scene, showsVisual: !compactGrid)
             SceneProjectInfoTile(viewModel: viewModel, scene: scene, projectId: projectId, compactGrid: compactGrid)
         }
         .padding(.horizontal, ((isPad && isGridMode) || horizontalSizeClass == .regular) ? 0 : 16)
+        .overlay {
+            if compactGrid && dropTargetSceneId == scene.id {
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(Color.accentColor, lineWidth: 3)
+            }
+        }
+        // 2026-07-14: was a plain .contextMenu { } stacked directly with
+        // .draggable() below — the same broken combination already found
+        // and fixed on ProjectListView's project/folder tiles and
+        // diagnosed originally on ShotListView's own scene tiles (see
+        // sceneToDelete's doc comment): a bare .contextMenu's default
+        // auto-preview competes with .draggable's long-press recognizer,
+        // which can silently kill dragging. This tile — shown inside the
+        // very same 2-column compact grid as sceneCompactTile — never got
+        // the .contextMenu(menuItems:preview:) fix those other two did.
         .contextMenu {
             Button(role: .destructive) {
                 sceneToDelete = scene
             } label: {
                 Label("Löschen", systemImage: "trash")
             }
+        } preview: {
+            Label("Info", systemImage: "info.circle.fill")
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color(.secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .draggable("scene:\(scene.id)") {
             Label("Info", systemImage: "info.circle.fill")
@@ -1822,7 +1862,7 @@ struct ShotListView: View {
         // that tile's own card instead of a distinct placeholder in the
         // gap before it.
         VStack(alignment: .leading, spacing: 6) {
-            sceneDropIndicator(before: scene)
+            sceneDropIndicator(before: scene, showsVisual: false)
             // No swipeableCard here (2026-07-13, Lino: "den swipe effect
             // brauchen wir nur bei der 'einzel kachel' ansicht!") — Tinder-
             // swipe is single-column (regularSceneCard) only, deliberately
@@ -1880,6 +1920,17 @@ struct ShotListView: View {
             // check with a deliberately long scene name.
             .aspectRatio(4.0 / 5.0, contentMode: .fit)
             .contentShape(Rectangle())
+            // Edge-agnostic drop highlight replacing sceneDropIndicator's
+            // (now invisible in this mode, see showsVisual above) dashed
+            // rectangle — border around the actual target tile makes sense
+            // regardless of which column it's in, unlike a gap growing only
+            // above one cell.
+            .overlay {
+                if dropTargetSceneId == scene.id {
+                    RoundedRectangle(cornerRadius: 14)
+                        .strokeBorder(Color.accentColor, lineWidth: 3)
+                }
+            }
             .onTapGesture { editingScene = .some(scene) }
             .contextMenu {
                 Button {
