@@ -98,16 +98,34 @@ struct ShotDetailSheet: View {
                 }
 
                 Section("Kamera") {
+                    // Autocorrect/autocapitalization off on every technical
+                    // field here (2026-07-14, Lino: "die typischen apple
+                    // eingabe optionen") — same reasoning as Good Take above:
+                    // values like "T2.8", "ProRes422", "50mm" are codes, not
+                    // sentences, and iOS's default text behavior kept
+                    // capitalizing/correcting them into nonsense.
                     TextField("Kamera-ID (A, B, C…)", text: $cameraId)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
                     TextField("Winkel", text: $cameraAngle)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
                     TextField("Objektiv", text: $lens)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
                     TextField("F-Stop", text: $fStop)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
                     TextField("Framerate", text: $frameRate)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
                     TextField("Shutterangle", text: $shutterAngle)
                         .keyboardType(.decimalPad)
                     TextField("ISO", text: $iso)
                         .keyboardType(.numberPad)
                     TextField("Codec", text: $codec)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
                     Picker("Aufnahme-Art", selection: $cameraSupport) {
                         Text("Keine").tag(CameraSupport?.none)
                         ForEach(CameraSupport.allCases) { support in
