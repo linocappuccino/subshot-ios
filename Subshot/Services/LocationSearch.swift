@@ -19,6 +19,22 @@ final class LocationSearchCompleter: NSObject, ObservableObject, MKLocalSearchCo
         // Addresses AND named places (studios, parks, venues) — a shoot
         // location is at least as often "Sihlwald" or "Studio 4" as a street address.
         completer.resultTypes = [.address, .pointOfInterest]
+        // 2026-07-14, Lino: company/POI names got zero suggestions (plain
+        // street addresses worked). MKLocalSearchCompleter's `region`
+        // defaults to the whole world — full street addresses still
+        // resolve fine against that (they're globally disambiguated by
+        // their own text), but named-place/.pointOfInterest matching
+        // needs a geographic anchor to rank against, and silently returns
+        // nothing without one. No CLLocationManager here (would need a new
+        // Info.plist usage-description + permission prompt just for this)
+        // — a fixed region centered on Switzerland with generous padding
+        // into the bordering countries covers where Subshot's shoots
+        // actually happen without asking for location access at all.
+        completer.region = MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 46.8182, longitude: 8.2275),
+            latitudinalMeters: 400_000,
+            longitudinalMeters: 400_000
+        )
     }
 
     func update(query: String) {

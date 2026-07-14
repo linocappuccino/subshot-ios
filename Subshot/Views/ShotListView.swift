@@ -1705,10 +1705,17 @@ struct ShotListView: View {
                 if let address = scene.locationAddress, let lat = scene.locationLat, let lng = scene.locationLng {
                     HStack(spacing: 10) {
                         SceneMapThumbnail(lat: lat, lng: lng, size: 56)
+                        // 2026-07-14, Lino: "adressen text soll immer
+                        // linksbündig sein" — explicit leading alignment +
+                        // a full-width leading frame, so a wrapped 2-line
+                        // address can't end up reading as centered/ragged
+                        // next to the fixed-width map thumbnail.
                         Text(address)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
             }
