@@ -39,6 +39,57 @@ private extension View {
     }
 }
 
+/// Collapses a row of toolbar buttons into a single icon, expanding with a
+/// bounce when tapped (2026-07-14, Lino: "können wir diese schliessen? und
+/// wenn man drückt geht sie schnell auf mit einem überstrecht effect? ...
+/// soll sich nach 3 sekunden selber wieder schliessen"). A plain SwiftUI
+/// HStack instead of conditionally showing/hiding separate ToolbarItems —
+/// UINavigationBar (which actually lays out toolbar items under the hood)
+/// doesn't reliably animate items appearing/disappearing at all, so the
+/// expand/collapse has to happen entirely inside ONE ToolbarItem's own
+/// view tree to get a real, controllable spring animation.
+private struct ExpandableToolbar<Content: View>: View {
+    @State private var expanded = false
+    @State private var collapseWork: DispatchWorkItem?
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        HStack(spacing: 16) {
+            if expanded {
+                content
+                    .transition(.scale(scale: 0.4).combined(with: .opacity))
+            }
+            Button {
+                toggle()
+            } label: {
+                Image(systemName: expanded ? "xmark.circle.fill" : "ellipsis.circle")
+            }
+        }
+        // Low dampingFraction is what actually produces the visible
+        // overshoot ("überstrecht") on expand — a value at/above ~0.7 would
+        // just ease in with no bounce at all.
+        .animation(.spring(response: 0.35, dampingFraction: 0.55), value: expanded)
+    }
+
+    private func toggle() {
+        collapseWork?.cancel()
+        expanded.toggle()
+        if expanded { scheduleAutoCollapse() }
+    }
+
+    private func scheduleAutoCollapse() {
+        let work = DispatchWorkItem {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { expanded = false }
+        }
+        collapseWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: work)
+    }
+}
+
 struct ShotListView: View {
     @StateObject private var viewModel: ShotListViewModel
     let projectName: String
@@ -297,90 +348,92 @@ struct ShotListView: View {
         .navigationTitle(projectName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            // 2026-07-13, Lino: "können wir das oben zur Iconbar
-            // hinzufügen? (so ein Rückgängig Pfeil?)" — same undo the
-            // bottom toast already offers (undoToast below), just also
-            // reachable from the toolbar without waiting to spot the
-            // bottom bar. Extended 2026-07-14 (Lino: "die letzten 5 schritte
-            // rückgängig machen") to also cover viewModel.undoStack, not
-            // just the shot-delete toast — see performUndo()'s doc comment
-            // for how the two mechanisms share this one button.
-            if viewModel.pendingUndoShot != nil || !viewModel.undoStack.isEmpty {
-                ToolbarItem(placement: .navigationBarTrailing) {
+            // 2026-07-14, Lino: "momentan ist die icon bar oben ja immer
+            // offen, können wir diese schliessen? und wenn man drückt geht
+            // sie schnell auf mit einem überstrecht effect? ... das stretch
+            // menü oben soll sich nach 3 sekunden selber wieder schliessen."
+            // Every button that used to be its own always-visible
+            // ToolbarItem now lives inside ONE ExpandableToolbar, collapsed
+            // to a single icon by default — see its own doc comment for why
+            // this needs a custom view instead of native ToolbarItems (the
+            // overshoot animation has to be a plain SwiftUI view
+            // transition, not a UINavigationBar-managed item
+            // insertion/removal, which doesn't reliably animate at all).
+            ToolbarItem(placement: .navigationBarTrailing) {
+                ExpandableToolbar {
+                    // 2026-07-13, Lino: "können wir das oben zur Iconbar
+                    // hinzufügen? (so ein Rückgängig Pfeil?)" — same undo
+                    // the bottom toast already offers (undoToast below),
+                    // just also reachable from the toolbar. Extended
+                    // 2026-07-14 to also cover viewModel.undoStack, not
+                    // just the shot-delete toast — see performUndo()'s doc
+                    // comment for how the two mechanisms share this button.
+                    if viewModel.pendingUndoShot != nil || !viewModel.undoStack.isEmpty {
+                        Button {
+                            Task { await viewModel.performUndo() }
+                        } label: {
+                            Image(systemName: "arrow.uturn.backward")
+                        }
+                    }
+                    // Reduced-info 2-column tile overview vs. today's full-detail
+                    // cards — orthogonal to the iPad-only column controls below
+                    // (those change how many full cards fit per row; this changes
+                    // how much detail each tile shows at all), so it's offered on
+                    // every device including iPhone.
                     Button {
-                        Task { await viewModel.performUndo() }
+                        withAnimation(.easeInOut(duration: 0.2)) { isCompactTileMode.toggle() }
                     } label: {
-                        Image(systemName: "arrow.uturn.backward")
+                        Image(systemName: isCompactTileMode ? "checklist" : "square.grid.2x2")
                     }
-                }
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                // Reduced-info 2-column tile overview vs. today's full-detail
-                // cards — orthogonal to the iPad-only column controls below
-                // (those change how many full cards fit per row; this changes
-                // how much detail each tile shows at all), so it's offered on
-                // every device including iPhone.
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { isCompactTileMode.toggle() }
-                } label: {
-                    Image(systemName: isCompactTileMode ? "checklist" : "square.grid.2x2")
-                }
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                if isPad {
-                    if horizontalSizeClass == .regular {
-                        Button {
-                            showingColumnCountPopover = true
-                        } label: {
-                            Image(systemName: "slider.horizontal.3")
+                    if isPad {
+                        if horizontalSizeClass == .regular {
+                            Button {
+                                showingColumnCountPopover = true
+                            } label: {
+                                Image(systemName: "slider.horizontal.3")
+                            }
+                            .popover(isPresented: $showingColumnCountPopover) {
+                                columnCountPopover
+                            }
+                        } else {
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) { isGridMode.toggle() }
+                            } label: {
+                                Image(systemName: isGridMode ? "rectangle.grid.1x2" : "square.grid.2x2")
+                            }
                         }
-                        .popover(isPresented: $showingColumnCountPopover) {
-                            columnCountPopover
+                    }
+                    if let exportedPdfURL {
+                        ShareLink(item: exportedPdfURL) {
+                            Image(systemName: "square.and.arrow.up")
                         }
+                    } else if isExportingPdf {
+                        ProgressView()
                     } else {
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.2)) { isGridMode.toggle() }
+                        // 2026-07-13, Lino: "beim Klick auf PDF Export soll
+                        // zuerst gefragt werden, ob Kachelansicht oder
+                        // Tabellenansicht exportiert werden soll" — was a
+                        // single tap straight to the (card-only) export before.
+                        Menu {
+                            Button("Kachelansicht") { Task { await exportPdf(view: "cards") } }
+                            Button("Tabellenansicht") { Task { await exportPdf(view: "table") } }
                         } label: {
-                            Image(systemName: isGridMode ? "rectangle.grid.1x2" : "square.grid.2x2")
+                            Image(systemName: "square.and.arrow.up")
                         }
                     }
-                }
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                if let exportedPdfURL {
-                    ShareLink(item: exportedPdfURL) {
-                        Image(systemName: "square.and.arrow.up")
-                    }
-                } else if isExportingPdf {
-                    ProgressView()
-                } else {
-                    // 2026-07-13, Lino: "beim Klick auf PDF Export soll
-                    // zuerst gefragt werden, ob Kachelansicht oder
-                    // Tabellenansicht exportiert werden soll" — was a
-                    // single tap straight to the (card-only) export before.
-                    Menu {
-                        Button("Kachelansicht") { Task { await exportPdf(view: "cards") } }
-                        Button("Tabellenansicht") { Task { await exportPdf(view: "table") } }
+                    // Opens the management sheet (link + optional password)
+                    // instead of sharing straight away — password protection
+                    // needs a place to live, and folding it into a quick-share
+                    // one-tap button would either bury it or turn every share
+                    // into a two-tap flow either way, so it's its own sheet now.
+                    Button {
+                        showingShareLinkSheet = true
                     } label: {
-                        Image(systemName: "square.and.arrow.up")
+                        Image(systemName: "link")
                     }
-                }
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                // Opens the management sheet (link + optional password)
-                // instead of sharing straight away — password protection
-                // needs a place to live, and folding it into a quick-share
-                // one-tap button would either bury it or turn every share
-                // into a two-tap flow either way, so it's its own sheet now.
-                Button {
-                    showingShareLinkSheet = true
-                } label: {
-                    Image(systemName: "link")
-                }
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button { showingTeamSheet = true } label: {
-                    Image(systemName: "person.2")
+                    Button { showingTeamSheet = true } label: {
+                        Image(systemName: "person.2")
+                    }
                 }
             }
         }
