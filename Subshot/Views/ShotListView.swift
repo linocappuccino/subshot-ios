@@ -343,7 +343,24 @@ struct ShotListView: View {
                 // LazyVStack recycling doesn't regenerate one per re-render).
                 ProjectInfoBox(viewModel: viewModel, projectId: projectId)
 
-                unassignedSection()
+                // 2026-07-14: was unconditional — with zero unassigned
+                // shots (the common case) this still rendered an empty,
+                // near-invisible ~32pt VStack (just its own vertical
+                // padding, no content). As a direct LazyVStack child it's
+                // ALSO a .scrollTargetLayout() snap target (see the
+                // TikTok-scroll doc comment above), so that empty sliver
+                // sat as a real scroll-snap boundary wedged between
+                // ProjectInfoBox and the first actual section — right
+                // where Lino reported the top section becoming
+                // unclickable/undraggable/uncollapsible (a snap target
+                // with nothing in it still competes for the ScrollView's
+                // own pan-gesture arbitration at that boundary). Guarding
+                // it the same way sectionGroup(section: nil) already
+                // guards its own empty case (below) removes that phantom
+                // target entirely when there's nothing to show.
+                if !viewModel.shots(in: nil).isEmpty {
+                    unassignedSection()
+                }
 
                 // Sections are opt-in — a project that's never created one
                 // renders exactly like before (flat scene list, no headers).
