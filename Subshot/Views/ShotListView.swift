@@ -1458,6 +1458,28 @@ struct ShotListView: View {
         // actual size change, but exactly what "vergrössert sich" describes.
         let rotation = max(-16, min(16, Double(offset) / 20))
         content()
+            // 2026-07-14, third attempt — Lino finally pinned down the actual
+            // visual precisely: "die kachel im hintergrund winkelt sich auch,
+            // aber sie wird AUCH grösser, viel grösser" (the glass background
+            // angles correctly, like the content, but ALSO grows much bigger
+            // — two separate observations, not one). The 2026-07-13 rotation
+            // cap and this session's two earlier attempts (suppressing
+            // .draggable/.contextMenu during the swipe) all targeted GESTURE
+            // conflicts or overflow-from-rotation, not this: content() here
+            // already carries .glassEffect() (Liquid Glass, its own
+            // blur/refraction compositing pass) plus ScenePulseOnElapse's
+            // shadow and SceneTimerRunningGlow's blurred, padding(-20)
+            // oversized background — several DIFFERENT visual-effect layers
+            // that SwiftUI may recompute/resample independently as
+            // .offset/.rotationEffect below animate, instead of transforming
+            // one single already-rendered picture. .compositingGroup() is
+            // the standard fix for exactly this class of bug: it forces
+            // every effect above (glass, blur, shadow, opacity) to flatten
+            // into ONE fixed-size rasterized layer at the content's own
+            // (untransformed) size, so .offset/.rotationEffect afterward
+            // rotate/move that single flat picture instead of letting any
+            // individual effect's own rendering rescale mid-transform.
+            .compositingGroup()
             .offset(x: offset)
             .rotationEffect(.degrees(rotation), anchor: .bottom)
             // Draws above its neighbors while actively being dragged, so the
