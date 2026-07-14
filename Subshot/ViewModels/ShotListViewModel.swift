@@ -57,6 +57,34 @@ final class ShotListViewModel: ObservableObject {
     @Published var pendingUndoShot: Shot?
     private var undoTask: Task<Void, Never>?
 
+    /// General undo history, max 5 entries (2026-07-14, Lino: "falls man was
+    /// gelöscht oder gemacht hat was man rückgängig machen will. man kann nur
+    /// die letzten 5 schritte rückgängig machen") — separate from
+    /// pendingUndoShot/deleteWithUndo above, which is its own proven,
+    /// time-boxed (5s) mechanism specifically for shots and deliberately
+    /// left untouched here. This stack currently only covers scene deletion
+    /// (which had NO undo at all before this), each entry a closure that
+    /// reverses one action; oldest entries fall off past 5. Extend to more
+    /// action types the same way if wanted later.
+    @Published private(set) var undoStack: [(label: String, undo: () async -> Void)] = []
+
+    private func pushUndo(_ label: String, undo: @escaping () async -> Void) {
+        undoStack.append((label, undo))
+        if undoStack.count > 5 { undoStack.removeFirst(undoStack.count - 5) }
+    }
+
+    /// Called by the toolbar's undo button — pops and runs the most recent
+    /// entry. Shot deletion's own 5s toast/undoDelete() takes priority since
+    /// it's time-sensitive (silently commits once the window expires).
+    func performUndo() async {
+        if pendingUndoShot != nil {
+            undoDelete()
+            return
+        }
+        guard let last = undoStack.popLast() else { return }
+        await last.undo()
+    }
+
     init(projectId: String) {
         self.projectId = projectId
     }
@@ -563,12 +591,36 @@ final class ShotListViewModel: ObservableObject {
     /// way to delete a scene at all from the UI (see ShotListView's
     /// sceneMenuTarget) even though the backend endpoint already existed.
     func deleteScene(_ scene: Scene) async {
+        // Captured BEFORE removal/delete for the undo closure below — the
+        // scene row itself is a hard delete on the backend (no trash), so
+        // "undo" means recreating it from this snapshot and re-filing
+        // whatever shots were in it (deleting a scene only unfiles its
+        // shots, see the loop below, it doesn't delete them).
+        let orphanedShotIds = shots.filter { $0.sceneId == scene.id }.map(\.id)
         scenes.removeAll { $0.id == scene.id }
         for index in shots.indices where shots[index].sceneId == scene.id {
             shots[index].sceneId = nil
         }
         do {
             try await APIClient.shared.deleteScene(scene.id)
+            pushUndo("Szene „\(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")“ gelöscht") { [weak self] in
+                guard let self else { return }
+                guard let recreated = await self.createScene(
+                    name: scene.name ?? "",
+                    color: scene.color,
+                    description: scene.description,
+                    dialogue: scene.dialogue,
+                    scheduledAt: scene.scheduledAt,
+                    durationMinutes: scene.durationMinutes,
+                    sectionId: scene.sectionId,
+                    priority: scene.priority,
+                    isIntermediateStep: scene.isIntermediateStep
+                ) else { return }
+                for shotId in orphanedShotIds {
+                    _ = try? await APIClient.shared.patchShot(shotId, sceneId: recreated.id)
+                }
+                await self.load()
+            }
         } catch {
             errorMessage = error.localizedDescription
         }

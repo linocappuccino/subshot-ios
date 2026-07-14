@@ -301,12 +301,14 @@ struct ShotListView: View {
             // hinzufügen? (so ein Rückgängig Pfeil?)" — same undo the
             // bottom toast already offers (undoToast below), just also
             // reachable from the toolbar without waiting to spot the
-            // bottom bar. Only appears while an undo is actually pending,
-            // same condition as the toast.
-            if viewModel.pendingUndoShot != nil {
+            // bottom bar. Extended 2026-07-14 (Lino: "die letzten 5 schritte
+            // rückgängig machen") to also cover viewModel.undoStack, not
+            // just the shot-delete toast — see performUndo()'s doc comment
+            // for how the two mechanisms share this one button.
+            if viewModel.pendingUndoShot != nil || !viewModel.undoStack.isEmpty {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
-                        viewModel.undoDelete()
+                        Task { await viewModel.performUndo() }
                     } label: {
                         Image(systemName: "arrow.uturn.backward")
                     }
