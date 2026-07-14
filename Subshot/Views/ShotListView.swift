@@ -880,6 +880,11 @@ struct ShotListView: View {
         } label: {
             Label("Nach Ort sortieren", systemImage: "mappin.and.ellipse")
         }
+        Button {
+            Task { await viewModel.sortScenes(sectionId: sectionId, by: .priority) }
+        } label: {
+            Label("Nach Priorität sortieren", systemImage: "exclamationmark.circle")
+        }
     }
 
     /// Debounced-activation helper for the section header's indicator — see

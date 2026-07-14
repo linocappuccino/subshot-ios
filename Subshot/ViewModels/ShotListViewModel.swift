@@ -747,7 +747,17 @@ final class ShotListViewModel: ObservableObject {
     }
 
     enum SceneSortCriterion {
-        case number, time, location
+        case number, time, location, priority
+    }
+
+    /// must < should < optional < none — used by .priority sorting below.
+    private func priorityRank(_ p: ShotPriority?) -> Int {
+        switch p {
+        case .must: return 0
+        case .should: return 1
+        case .optional: return 2
+        case nil: return 3
+        }
     }
 
     /// Auto-sort button (2026-07-13, Lino: "ein Button um die Kacheln
@@ -774,6 +784,18 @@ final class ShotListViewModel: ObservableObject {
             case .location:
                 switch (a.locationAddress, b.locationAddress) {
                 case let (av?, bv?): return av.localizedCaseInsensitiveCompare(bv) == .orderedAscending
+                case (nil, nil): return false
+                case (nil, _): return false
+                case (_, nil): return true
+                }
+            case .priority:
+                // must < should < optional < none, scheduledAt breaks ties
+                // within the same priority (2026-07-14, Lino: "bei prio
+                // evtl. auch die zeitreihenfolge beachten").
+                let ar = priorityRank(a.priority), br = priorityRank(b.priority)
+                if ar != br { return ar < br }
+                switch (a.scheduledAt, b.scheduledAt) {
+                case let (av?, bv?): return av < bv
                 case (nil, nil): return false
                 case (nil, _): return false
                 case (_, nil): return true
