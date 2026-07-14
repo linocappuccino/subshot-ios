@@ -1692,8 +1692,8 @@ struct ShotListView: View {
                     }
                     .buttonStyle(.plain)
                     if !dialogCollapsed {
-                        ForEach(columnLayout ? Array(scene.dialogues.prefix(2)) : scene.dialogues) { dialogue in
-                            dialogueRow(dialogue: dialogue, scene: scene)
+                        ForEach(Array((columnLayout ? Array(scene.dialogues.prefix(2)) : scene.dialogues).enumerated()), id: \.element.id) { index, dialogue in
+                            dialogueRow(dialogue: dialogue, scene: scene, colorIndex: index)
                         }
                         if columnLayout && scene.dialogues.count > 2 {
                             Text("+\(scene.dialogues.count - 2) weitere")
@@ -2107,8 +2107,16 @@ struct ShotListView: View {
     /// One checkable spoken line — tapping the checkmark marks it recorded
     /// (strikethrough), long-press to remove it entirely.
     @ViewBuilder
-    private func dialogueRow(dialogue: SceneDialogue, scene: Scene) -> some View {
-        HStack(spacing: 8) {
+    private func dialogueRow(dialogue: SceneDialogue, scene: Scene, colorIndex: Int) -> some View {
+        // 2026-07-14, Lino: "in der web app haben wir die dialoge ja
+        // farblich unterschieden, dies auch auf der ios app umsetzen" —
+        // mirrors SceneCard.tsx exactly: cycle the shared subshotPalette by
+        // line INDEX (not per-speaker, SceneDialogue has no speaker field),
+        // just enough to tell consecutive lines apart at a glance. Same
+        // ~8%-fill / ~50%-border opacities as web's `${lineColor}14` /
+        // `${lineColor}80` hex-alpha suffixes.
+        let lineColor = Color(hex: Color.subshotPalette[colorIndex % Color.subshotPalette.count])
+        return HStack(spacing: 8) {
             Button {
                 Task { await viewModel.toggleDialogue(dialogue, in: scene) }
             } label: {
@@ -2124,6 +2132,15 @@ struct ShotListView: View {
                 .foregroundStyle(.secondary)
                 .strikethrough(dialogue.done)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, 2)
+        .padding(.horizontal, 6)
+        .background(lineColor.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 1)
+                .fill(lineColor.opacity(0.5))
+                .frame(width: 2)
         }
         .contextMenu {
             Button {
