@@ -283,6 +283,20 @@ struct ProjectListView: View {
             .buttonStyle(.plain)
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { tileSizes[project.id] = $0 }
+        // 2026-07-14: was a plain .contextMenu { } stacked directly with
+        // .draggable() below — ShotListView's scene tiles hit this exact
+        // combination first (see its own doc comment on sceneToDelete) and
+        // found it broken on-device: a bare .contextMenu with its default
+        // auto-preview competes with .draggable's own long-press-based
+        // recognizer for gesture ownership, which can silently kill
+        // dragging entirely rather than just picking one winner. That fix
+        // was never ported here, so project tiles kept the broken combo —
+        // matches "kann man die Objekte nicht neu anordnen". Switching to
+        // .contextMenu(menuItems:preview:) is Apple's actual supported
+        // combo for this (UIContextMenuInteraction + UIDragInteraction are
+        // built to disambiguate "hold still" vs "hold and move" together),
+        // with tileBody(...) reused as the preview instead of the default
+        // full-tile auto-snapshot.
         .contextMenu {
             Button { editingProject = project } label: {
                 Label("Bearbeiten", systemImage: "pencil")
@@ -292,6 +306,15 @@ struct ProjectListView: View {
             } label: {
                 Label("Löschen", systemImage: "trash")
             }
+        } preview: {
+            tileBody(
+                title: project.name,
+                subtitle: "Wird gelöscht in \(project.daysUntilDeletion) Tagen",
+                color: project.color,
+                thumbnailPath: project.thumbnailUrl,
+                fallbackIcon: "film.stack",
+                emoji: project.emoji
+            )
         }
         // Long-press-and-hold picks the tile up (standard iOS drag haptic) —
         // dropping it on a folder tile files it there, dropping it on
@@ -329,6 +352,8 @@ struct ProjectListView: View {
             )
         }
         .buttonStyle(.plain)
+        // Same plain-.contextMenu-vs-.draggable conflict as projectTile
+        // above — see its doc comment.
         .contextMenu {
             Button { editingFolder = folder } label: {
                 Label("Bearbeiten", systemImage: "pencil")
@@ -338,6 +363,16 @@ struct ProjectListView: View {
             } label: {
                 Label("Löschen", systemImage: "trash")
             }
+        } preview: {
+            tileBody(
+                title: folder.name,
+                subtitle: folder.projectCount == 1 ? "1 Projekt" : "\(folder.projectCount) Projekte",
+                color: folder.color,
+                thumbnailPath: folder.backgroundImageURL,
+                fallbackIcon: "folder.fill",
+                emoji: folder.emoji,
+                thumbnailFocusPoint: folder.backgroundImageFocusPoint
+            )
         }
         .overlay {
             if dropTargetFolderId == folder.id {
