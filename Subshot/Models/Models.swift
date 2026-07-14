@@ -152,6 +152,11 @@ struct Scene: Codable, Identifiable, Hashable {
     var completed: Bool
     var sortOrder: Int
     var assigneeId: String?
+    /// 2026-07-14, Lino: "mehrere Personen auswählen können" — replaces
+    /// assigneeId as the source of truth for display/editing; assigneeId
+    /// stays for backward compat (see backend Scene.assignee_id doc
+    /// comment) but is no longer written to.
+    var assigneeIds: [String] = []
     var sectionId: String?
     var locationAddress: String?
     var locationLat: Double?
@@ -193,6 +198,7 @@ struct Scene: Codable, Identifiable, Hashable {
         case imageUrl = "image_url"
         case sortOrder = "sort_order"
         case assigneeId = "assignee_id"
+        case assigneeIds = "assignee_ids"
         case sectionId = "section_id"
         case locationAddress = "location_address"
         case locationLat = "location_lat"

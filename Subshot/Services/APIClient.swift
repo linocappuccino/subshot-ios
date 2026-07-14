@@ -327,6 +327,7 @@ final class APIClient {
         description: String? = nil, dialogue: String? = nil,
         scheduledAt: Date? = nil, durationMinutes: Int? = nil, completed: Bool? = nil,
         assigneeId: String? = nil, clearAssignee: Bool = false,
+        assigneeIds: [String]? = nil,
         sectionId: String? = nil, clearSection: Bool = false, sortOrder: Int? = nil,
         locationAddress: String? = nil, locationLat: Double? = nil, locationLng: Double? = nil,
         clearLocation: Bool = false,
@@ -350,6 +351,7 @@ final class APIClient {
             let dialogue: String?; let scheduled_at: Date?
             let duration_minutes: Int?; let completed: Bool?
             let assignee_id: String?; let clear_assignee: Bool
+            let assignee_ids: [String]?
             let section_id: String?; let clear_section: Bool
             let sort_order: Int?
             let location_address: String?; let location_lat: Double?; let location_lng: Double?
@@ -364,6 +366,7 @@ final class APIClient {
             dialogue: dialogue, scheduled_at: scheduledAt,
             duration_minutes: durationMinutes, completed: completed,
             assignee_id: assigneeId, clear_assignee: clearAssignee,
+            assignee_ids: assigneeIds,
             section_id: sectionId, clear_section: clearSection,
             sort_order: sortOrder,
             location_address: locationAddress, location_lat: locationLat, location_lng: locationLng,

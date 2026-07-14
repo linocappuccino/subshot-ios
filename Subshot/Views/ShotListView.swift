@@ -172,6 +172,11 @@ struct ShotListView: View {
     @State private var newShotText = ""
     @State private var selectedShot: Shot?
     @State private var showingTeamSheet = false
+    /// Drives SceneAssigneeSheet (2026-07-14, multi-select) — see
+    /// sceneAssigneeMenu, replacing the old single-pick native Menu (which
+    /// can't stay open across multiple taps; SwiftUI's Menu dismisses on
+    /// every Button action with no built-in persistent mode).
+    @State private var assigneeSheetScene: Scene?
     @State private var editingScene: Scene??      // nil = sheet closed; .some(nil) = creating; .some(scene) = renaming
     /// Only meaningful while editingScene == .some(nil) (creating) — which
     /// FAB menu option was tapped. Not persisted anywhere; a reduced-field
@@ -546,6 +551,9 @@ struct ShotListView: View {
         }
         .sheet(item: $selectedShot) { shot in
             ShotDetailSheet(shot: shot, viewModel: viewModel)
+        }
+        .sheet(item: $assigneeSheetScene) { scene in
+            SceneAssigneeSheet(scene: scene, viewModel: viewModel)
         }
         .sheet(isPresented: $showingTeamSheet) {
             TeamSheet(projectId: projectId)
@@ -2074,32 +2082,40 @@ struct ShotListView: View {
     /// item assignment (ProjectInfoBox.TodoItemRow), not tucked into the full
     /// edit sheet, so setting/changing it is a one-tap action from the list.
     @ViewBuilder
+    /// 2026-07-14, Lino: "mehrere Personen auswählen können und auch wieder
+    /// entfernen können" — opens SceneAssigneeSheet instead of a native
+    /// Menu (which auto-dismisses on every tap, so it can't stay open
+    /// across multiple picks/removals — see assigneeSheetScene's doc
+    /// comment). Trigger shows an overlapping avatar stack, same idea as
+    /// web's SceneCard.tsx.
     private func sceneAssigneeMenu(scene: Scene) -> some View {
-        let assignee = viewModel.members.first { $0.userId == scene.assigneeId }
-        Menu {
-            if assignee != nil {
-                Button {
-                    Task { await viewModel.assignScene(scene, to: nil) }
-                } label: {
-                    Label("Niemand zugewiesen", systemImage: "xmark.circle")
-                }
-            }
-            ForEach(viewModel.members) { member in
-                Button {
-                    Task { await viewModel.assignScene(scene, to: member.userId) }
-                } label: {
-                    Text(member.name?.isEmpty == false ? member.name! : member.email)
-                }
-            }
+        let assignees = viewModel.members.filter { scene.assigneeIds.contains($0.userId) }
+        return Button {
+            assigneeSheetScene = scene
         } label: {
-            if let assignee {
-                MemberAvatar(member: assignee, size: 32)
-            } else {
+            if assignees.isEmpty {
                 Image(systemName: "person.crop.circle")
                     .font(.title2)
                     .foregroundStyle(.secondary)
+            } else {
+                HStack(spacing: -12) {
+                    ForEach(assignees.prefix(3)) { member in
+                        MemberAvatar(member: member, size: 32)
+                            .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 2))
+                    }
+                    if assignees.count > 3 {
+                        Text("+\(assignees.count - 3)")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 32, height: 32)
+                            .background(Color(.tertiarySystemGroupedBackground))
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 2))
+                    }
+                }
             }
         }
+        .buttonStyle(.plain)
         .frame(minWidth: 44, minHeight: 44)
         .contentShape(Rectangle())
     }

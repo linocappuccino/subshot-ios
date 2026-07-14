@@ -642,6 +642,28 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
+    /// 2026-07-14, Lino: "mehrere Personen auswählen können und auch wieder
+    /// entfernen können" — toggles one id in/out of assigneeIds, mirrors
+    /// web's toggleAssignee in SceneCard.tsx exactly (same reasoning:
+    /// present-vs-absent on the wire, not null-vs-omitted, so an empty
+    /// array is a real "nobody assigned" value, no separate clear flag).
+    func toggleSceneAssignee(_ scene: Scene, userId: String) async {
+        var next = scene.assigneeIds
+        if let idx = next.firstIndex(of: userId) {
+            next.remove(at: idx)
+        } else {
+            next.append(userId)
+        }
+        do {
+            let updated = try await APIClient.shared.patchScene(scene.id, assigneeIds: next)
+            if let index = scenes.firstIndex(where: { $0.id == updated.id }) {
+                scenes[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func assignSceneToSection(_ scene: Scene, sectionId: String?) async {
         do {
             let updated: Scene
