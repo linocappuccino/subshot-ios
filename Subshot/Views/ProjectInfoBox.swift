@@ -37,7 +37,8 @@ struct SectionInfoBox: View {
                         onUpdate: { address, lat, lng in
                             await viewModel.updateSectionLocation(section, address: address, lat: lat, lng: lng)
                         },
-                        onClear: { await viewModel.clearSectionLocation(section) }
+                        onClear: { await viewModel.clearSectionLocation(section) },
+                        completer: viewModel.locationCompleter
                     )
                     Divider()
                     ClientNameSection(
@@ -182,7 +183,8 @@ struct SceneProjectInfoTile: View {
                         onUpdate: { address, lat, lng in
                             await viewModel.updateSceneLocation(scene, address: address, lat: lat, lng: lng)
                         },
-                        onClear: { await viewModel.clearSceneLocation(scene) }
+                        onClear: { await viewModel.clearSceneLocation(scene) },
+                        completer: viewModel.locationCompleter
                     )
                     Divider()
                     ClientNameSection(
@@ -293,7 +295,8 @@ struct ProjectInfoBox: View {
                     LocationSection(
                         address: viewModel.locationAddress, lat: viewModel.locationLat, lng: viewModel.locationLng,
                         onUpdate: viewModel.updateLocation,
-                        onClear: { await viewModel.clearProjectLocation() }
+                        onClear: { await viewModel.clearProjectLocation() },
+                        completer: viewModel.locationCompleter
                     )
                     Divider()
                     ClientNameSection(clientName: viewModel.clientName, onUpdate: viewModel.updateClientName)
