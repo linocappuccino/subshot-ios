@@ -559,7 +559,14 @@ final class APIClient {
         iso: Int? = nil,
         codec: String? = nil,
         cameraId: String? = nil,
-        cameraSupport: String? = nil
+        cameraSupport: String? = nil,
+        // "Foto entfernen" (2026-07-14) — a plain image_url:null in this
+        // same dict WOULD already null the column (image_url is one of the
+        // generic model_fields_set-driven fields on the backend), but that
+        // alone leaves the uploaded file orphaned on disk. clear_image
+        // additionally tells the backend to delete the file itself
+        // (mirrors delete_shot's own _delete_shot_image_file cleanup).
+        clearImage: Bool = false
     ) async throws -> Shot {
         var req = try await authorizedRequest("shots/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -577,6 +584,7 @@ final class APIClient {
             "codec": codec ?? NSNull(),
             "camera_id": cameraId ?? NSNull(),
             "camera_support": cameraSupport ?? NSNull(),
+            "clear_image": clearImage,
         ]
         req.httpBody = try JSONSerialization.data(withJSONObject: payload)
         return try await send(req)

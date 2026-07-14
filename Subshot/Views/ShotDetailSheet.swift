@@ -28,6 +28,42 @@ struct ShotDetailSheet: View {
     @State private var cameraId: String
     @State private var cameraSupport: CameraSupport?
 
+    // 2026-07-14, Lino: free-text Objektiv/F-Stop/ISO invited inconsistent
+    // values and typos — pickers over the real-world range instead. Each
+    // Binding parses/formats through the existing String @State var above
+    // rather than adding parallel numeric state, so save() (which already
+    // reads lens/fStop/iso as Strings) needed no changes at all.
+    private var lensMMBinding: Binding<Int> {
+        Binding(
+            get: { Int(lens.filter(\.isNumber)) ?? 50 },
+            set: { lens = "\($0)mm" }
+        )
+    }
+    private var fStopBinding: Binding<Double> {
+        Binding(
+            get: { Double(fStop.replacingOccurrences(of: "f/", with: "")) ?? 2.8 },
+            set: { fStop = String(format: "f/%.1f", $0) }
+        )
+    }
+    private var isoBinding: Binding<Int> {
+        Binding(
+            get: { Int(iso) ?? 800 },
+            set: { iso = "\($0)" }
+        )
+    }
+    private static let lensRange = Array(0...1000)
+    // Built from integer tenths (17/10.0), not stride's cumulative 1.0+0.1*n
+    // additions — stride can drift by a ULP or two over 190 steps, which
+    // would make the Picker's Double tag fail to exactly match the value
+    // fStopBinding.get parses back out of the string, breaking selection
+    // highlighting.
+    private static let fStopRange = (10...200).map { Double($0) / 10.0 }
+    private static let isoRange = Array(stride(from: 50, through: 50000, by: 50))
+    // Standard PAL (25/50)- and NTSC (23.976/29.97/59.94)-family rates, plus
+    // plain 24/30/60 — covers what a shoot actually sets a camera to, rather
+    // than any arbitrary typed number.
+    private static let frameRateOptions = ["23.976", "24", "25", "29.97", "30", "50", "59.94", "60"]
+
     init(shot: Shot, viewModel: ShotListViewModel) {
         _shot = State(initialValue: shot)
         self.viewModel = viewModel
@@ -71,6 +107,15 @@ struct ShotDetailSheet: View {
                                 .foregroundStyle(.primary)
                         }
                     }
+                    // 2026-07-14, Lino: photo had no remove option before,
+                    // only add/replace.
+                    if uploadedImage != nil || shot.imageUrl != nil {
+                        Button(role: .destructive) {
+                            Task { await removePhoto() }
+                        } label: {
+                            Label("Foto entfernen", systemImage: "trash")
+                        }
+                    }
                 }
 
                 Section("Beschreibung") {
@@ -107,22 +152,32 @@ struct ShotDetailSheet: View {
                     TextField("Kamera-ID (A, B, C…)", text: $cameraId)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
-                    TextField("Winkel", text: $cameraAngle)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                    TextField("Objektiv", text: $lens)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                    TextField("F-Stop", text: $fStop)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                    TextField("Framerate", text: $frameRate)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                    // Objektiv/F-Stop/ISO: picker over the real-world range
+                    // instead of free text (2026-07-14) — Winkel removed
+                    // entirely per the same request.
+                    Picker("Objektiv", selection: lensMMBinding) {
+                        ForEach(Self.lensRange, id: \.self) { mm in
+                            Text("\(mm)mm").tag(mm)
+                        }
+                    }
+                    Picker("F-Stop", selection: fStopBinding) {
+                        ForEach(Self.fStopRange, id: \.self) { value in
+                            Text(String(format: "f/%.1f", value)).tag(value)
+                        }
+                    }
+                    Picker("Framerate", selection: $frameRate) {
+                        Text("Keine").tag("")
+                        ForEach(Self.frameRateOptions, id: \.self) { rate in
+                            Text("\(rate) fps").tag(rate)
+                        }
+                    }
                     TextField("Shutterangle", text: $shutterAngle)
                         .keyboardType(.decimalPad)
-                    TextField("ISO", text: $iso)
-                        .keyboardType(.numberPad)
+                    Picker("ISO", selection: isoBinding) {
+                        ForEach(Self.isoRange, id: \.self) { value in
+                            Text("\(value)").tag(value)
+                        }
+                    }
                     TextField("Codec", text: $codec)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
@@ -153,6 +208,36 @@ struct ShotDetailSheet: View {
         do {
             let updated = try await APIClient.shared.uploadShotImage(shotId: shot.id, image: image)
             shot = updated
+            viewModel.replace(updated)
+        } catch {
+            viewModel.errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Acts immediately (own PATCH), same as handlePhotoPicked above, rather
+    /// than waiting for "Fertig" — matches the add/change photo flow.
+    private func removePhoto() async {
+        do {
+            let trimmedGoodTake = goodTake.trimmingCharacters(in: .whitespacesAndNewlines)
+            let updated = try await APIClient.shared.patchShotFull(
+                shot.id,
+                description: description,
+                durationSeconds: shot.durationSeconds,
+                cameraAngle: cameraAngle.trimmingCharacters(in: .whitespaces).isEmpty ? nil : cameraAngle,
+                priority: priority?.rawValue,
+                goodTakeFilename: trimmedGoodTake.isEmpty ? nil : trimmedGoodTake,
+                lens: lens.trimmingCharacters(in: .whitespaces).isEmpty ? nil : lens,
+                fStop: fStop.trimmingCharacters(in: .whitespaces).isEmpty ? nil : fStop,
+                frameRate: frameRate.trimmingCharacters(in: .whitespaces).isEmpty ? nil : frameRate,
+                shutterAngle: Double(shutterAngle),
+                iso: Int(iso),
+                codec: codec.trimmingCharacters(in: .whitespaces).isEmpty ? nil : codec,
+                cameraId: cameraId.trimmingCharacters(in: .whitespaces).isEmpty ? nil : cameraId,
+                cameraSupport: cameraSupport?.rawValue,
+                clearImage: true
+            )
+            shot = updated
+            uploadedImage = nil
             viewModel.replace(updated)
         } catch {
             viewModel.errorMessage = error.localizedDescription
