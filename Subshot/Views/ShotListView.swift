@@ -24,6 +24,21 @@ private func sceneAccentColor(_ priority: ShotPriority?) -> Color {
     }
 }
 
+private extension View {
+    /// Conditionally attaches .draggable() — used to suppress sceneTile's
+    /// reorder-drag while swipeableCard's own gesture is active (see
+    /// swipingSceneIds' doc comment on ShotListView for why: both being
+    /// live at once produced two overlapping renders during a swipe).
+    @ViewBuilder
+    func draggableIf(_ condition: Bool, _ payload: String, @ViewBuilder preview: () -> some View) -> some View {
+        if condition {
+            self.draggable(payload) { preview() }
+        } else {
+            self
+        }
+    }
+}
+
 struct ShotListView: View {
     @StateObject private var viewModel: ShotListViewModel
     let projectName: String
@@ -166,6 +181,18 @@ struct ShotListView: View {
     /// place to look, and reverting this swipe gesture is a legitimate fix.
     @State private var sceneSwipeOffsets: [String: CGFloat] = [:]
     @State private var sceneSwipeExiting: Set<String> = []
+    /// Set the instant a horizontal swipe is recognized (see swipeableCard's
+    /// onChanged), cleared on release — sceneTile reads this to suppress its
+    /// own .draggable() while true. Root-caused 2026-07-14 from a screen
+    /// recording Lino sent: what looked like the card "growing weirdly
+    /// toward the text" was actually TWO overlapping renders — the custom
+    /// swipe transform on top of the system's own .draggable() drag-lift
+    /// preview, both live at once because .simultaneousGesture (see above)
+    /// deliberately lets both recognizers run together. This only ever
+    /// suppresses .draggable() during a swipe that's ALREADY past the
+    /// horizontal-vs-vertical threshold, so reordering via long-press+drag
+    /// when NOT swiping is untouched.
+    @State private var swipingSceneIds: Set<String> = []
     @State private var isExportingPdf = false
     @State private var exportedPdfURL: URL?
     @State private var shareLinkURL: URL?
@@ -1125,7 +1152,7 @@ struct ShotListView: View {
                 if collapsed {
                     sceneCollapsedRow(scene: scene)
                 } else {
-                    sceneTile(scene: scene, columnLayout: columnLayout)
+                    sceneTile(scene: scene, columnLayout: columnLayout, suppressDrag: swipingSceneIds.contains(scene.id))
                     // Zwischenschritt: no shot list at all, not even the add-row
                     // — it's a lightweight connective beat, not a shootable
                     // scene. Also hidden while collapsed above, along with
@@ -1243,13 +1270,17 @@ struct ShotListView: View {
             // behind/under the card above or below it in the list.
             .zIndex(offset == 0 ? 0 : 1)
             .opacity(isExiting ? 0 : 1)
-            .overlay(alignment: .topLeading) {
+            .overlay(alignment: .leading) {
+                // Vertically centered (Lino, 2026-07-14: "muss immer
+                // vertikal mittig erscheinen und nicht oben bei der
+                // kachel") — was .topLeading, which pinned it to the
+                // tile's top edge instead of the middle.
                 if offset < -16 {
                     swipeStamp(text: "LÖSCHEN", systemImage: "trash.fill", color: .red, rotation: -12)
                         .opacity(min(1, Double(-offset) / 100))
                 }
             }
-            .overlay(alignment: .topTrailing) {
+            .overlay(alignment: .trailing) {
                 if offset > 16 {
                     swipeStamp(text: "IM KASTEN", systemImage: "checkmark", color: .green, rotation: 12)
                         .opacity(min(1, Double(offset) / 100))
@@ -1267,6 +1298,14 @@ struct ShotListView: View {
                         // touched by this gesture in the first place.
                         guard abs(h) > abs(v) * 1.5 else { return }
                         sceneSwipeOffsets[scene.id] = h
+                        // See swipingSceneIds' doc comment — this is the fix
+                        // for the "card doubles/grows weirdly" bug: suppress
+                        // sceneTile's own .draggable() for as long as we're
+                        // clearly mid-swipe, so its system drag-lift preview
+                        // never renders on top of this transform at the same
+                        // time. Insert is idempotent, cheap to call every
+                        // onChanged tick.
+                        swipingSceneIds.insert(scene.id)
                     }
                     .onEnded { value in
                         let h = value.translation.width
@@ -1275,6 +1314,7 @@ struct ShotListView: View {
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
                                 sceneSwipeOffsets[scene.id] = 0
                             }
+                            swipingSceneIds.remove(scene.id)
                             return
                         }
                         let threshold: CGFloat = 110
@@ -1294,16 +1334,19 @@ struct ShotListView: View {
                                 await viewModel.deleteScene(scene)
                                 sceneSwipeOffsets[scene.id] = nil
                                 sceneSwipeExiting.remove(scene.id)
+                                swipingSceneIds.remove(scene.id)
                             }
                         } else if h > threshold {
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
                                 sceneSwipeOffsets[scene.id] = 0
                             }
                             Task { await viewModel.setSceneCompleted(scene, completed: true) }
+                            swipingSceneIds.remove(scene.id)
                         } else {
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
                                 sceneSwipeOffsets[scene.id] = 0
                             }
+                            swipingSceneIds.remove(scene.id)
                         }
                     }
             )
@@ -1407,7 +1450,7 @@ struct ShotListView: View {
     /// trusting it; if the same hang reappears, revert to a menu-based
     /// reorder rather than debugging blind from this server.
     @ViewBuilder
-    private func sceneTile(scene: Scene, columnLayout: Bool = false) -> some View {
+    private func sceneTile(scene: Scene, columnLayout: Bool = false, suppressDrag: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             if let imageUrl = scene.imageUrl {
                 AsyncShotThumbnail(path: imageUrl, size: nil, lockAspectRatio: true)
@@ -1596,7 +1639,7 @@ struct ShotListView: View {
         } preview: {
             sceneContextMenuPreview(scene: scene)
         }
-        .draggable("scene:\(scene.id)") {
+        .draggableIf(!suppressDrag, "scene:\(scene.id)") {
             sceneDragPreview(scene: scene)
         }
         // Handles a SHOT being filed into this scene (unprefixed id), PLUS
