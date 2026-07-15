@@ -1436,6 +1436,22 @@ struct ShotListView: View {
         // (see its own doc comment) — one recognizer per tile, not two.
     }
 
+    /// See swipeableCard's 2026-07-15 "fourth attempt" doc comment for the
+    /// full reasoning — .drawingGroup() only while actively mid-swipe,
+    /// .compositingGroup() (safe, already-shipped baseline) the rest of the
+    /// time, so the Liquid Glass look is never at risk for a card sitting
+    /// still in the list.
+    private struct SwipeCompositingModifier: ViewModifier {
+        let isSwiping: Bool
+        func body(content: Content) -> some View {
+            if isSwiping {
+                content.drawingGroup()
+            } else {
+                content.compositingGroup()
+            }
+        }
+    }
+
     /// Tinder-style swipe wrapper — used by regularSceneCard only (2026-07-13,
     /// Lino: "den swipe effect brauchen wir nur bei der 'einzel kachel'
     /// ansicht!" — deliberately NOT the 2-column compact grid). See
@@ -1479,7 +1495,31 @@ struct ShotListView: View {
             // (untransformed) size, so .offset/.rotationEffect afterward
             // rotate/move that single flat picture instead of letting any
             // individual effect's own rendering rescale mid-transform.
-            .compositingGroup()
+            //
+            // 2026-07-15, FOURTH attempt — Lino confirmed compositingGroup()
+            // alone made ZERO visible difference. UNVERIFIED (still no
+            // Xcode/simulator here), reasoned guess: compositingGroup()
+            // only flattens the LAYER TREE for compositing (correct
+            // blend/opacity as one unit) but does NOT force a fixed-pixel
+            // GPU raster — during a live, fast-changing DragGesture offset,
+            // SwiftUI/UIKit can still resample a cached bitmap of that
+            // flattened layer at the wrong scale while it's actively being
+            // transformed, which would read as "grows" exactly during the
+            // swipe. .drawingGroup() forces a real fixed-resolution Core
+            // Image/Metal raster instead, which is the stronger, more
+            // deterministic version of this fix.
+            //
+            // RISK, flagged explicitly per Lino's own call to try this
+            // anyway (2026-07-15): .glassEffect() (Liquid Glass) samples
+            // its backdrop live for the refraction look — .drawingGroup()
+            // could in principle flatten that into a dead/opaque bitmap
+            // instead, i.e. this fix could trade the swipe bug for a worse
+            // one (glass effect breaking). Scoped to ONLY apply while
+            // offset != 0 (i.e. only during an active swipe) specifically
+            // to contain that risk to the brief moment a card is being
+            // thrown, not to the list's normal at-rest appearance where the
+            // glass look matters far more and for far longer.
+            .modifier(SwipeCompositingModifier(isSwiping: offset != 0))
             .offset(x: offset)
             .rotationEffect(.degrees(rotation), anchor: .bottom)
             // Draws above its neighbors while actively being dragged, so the
