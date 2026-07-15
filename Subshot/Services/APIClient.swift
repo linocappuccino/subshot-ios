@@ -389,6 +389,22 @@ final class APIClient {
         return try await send(req)
     }
 
+    /// AI scene image (2026-07-15) — sourced entirely from the scene's own
+    /// description server-side, no prompt param here. `style` is
+    /// "realistic" or "sketch" (see SceneEditSheet's picker). RunPod cold
+    /// start + SDXL inference can legitimately take a while, well past
+    /// URLSession's normal default — a generous per-request timeout so a
+    /// slow-but-healthy generation isn't cut off client-side before the
+    /// backend's own (longer) poll loop would have given up.
+    func generateSceneImage(_ sceneId: String, style: String) async throws -> Scene {
+        var req = try await authorizedRequest("scenes/\(sceneId)/generate-image", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 120
+        struct Body: Encodable { let style: String }
+        req.httpBody = try encoder.encode(Body(style: style))
+        return try await send(req)
+    }
+
     /// Repositions a scene relative to its siblings — server renumbers just
     /// this scene (screenplay-style: stable numbers, letter suffix if it
     /// lands in a gap between two already-numbered scenes). Replaces the old

@@ -47,6 +47,14 @@ struct SceneEditSheet: View {
     /// replace it — mirrors ShotDetailSheet's own removePhoto (shots
     /// already got this 2026-07-14).
     @State private var removingImage = false
+    /// AI-generated cover photo (2026-07-15) — overrides `existing?.imageUrl`
+    /// for display once a generation succeeds, since `existing` is a
+    /// one-time snapshot (see liveExisting's own doc comment) and wouldn't
+    /// otherwise reflect the new image until the sheet is reopened.
+    @State private var displayedImageUrl: String?
+    /// Which AI style is currently generating (nil = idle) — "realistic" or
+    /// "sketch", matches the backend's SceneImageGenerate.style values.
+    @State private var generatingStyle: String?
     @State private var isAddingShot = false
     @State private var newShotText = ""
     @FocusState private var newShotFocused: Bool
@@ -75,6 +83,7 @@ struct SceneEditSheet: View {
         _name = State(initialValue: existing?.name ?? "")
         _color = State(initialValue: existing?.color ?? Color.subshotPalette[0])
         _description = State(initialValue: existing?.description ?? "")
+        _displayedImageUrl = State(initialValue: existing?.imageUrl)
         _hasDate = State(initialValue: existing?.scheduledAt != nil)
         // A brand-new scene defaults its start time to right when the
         // previous one (by sort_order — the last scene currently in the
@@ -124,11 +133,37 @@ struct SceneEditSheet: View {
     /// separate direct call here).
     private func removeImage() async {
         uploadedImage = nil
-        guard let existing, existing.imageUrl != nil else { return }
+        guard let existing, displayedImageUrl != nil else { return }
         removingImage = true
         defer { removingImage = false }
         do {
             let updated = try await APIClient.shared.patchScene(existing.id, clearImage: true)
+            displayedImageUrl = nil
+            if let index = viewModel.scenes.firstIndex(where: { $0.id == updated.id }) {
+                viewModel.scenes[index] = updated
+            }
+        } catch {
+            viewModel.errorMessage = error.localizedDescription
+        }
+    }
+
+    /// AI cover photo (2026-07-15, Lino: "kann man per knopfdruck ein AI
+    /// bild ertstellen lassen... nimmt die infos aus der beschreibung...
+    /// soll dann automatisch im Bildfeld landen") — only for an
+    /// already-saved scene (needs a real id), only once there's a
+    /// description to generate FROM. Result lands via `displayedImageUrl`,
+    /// not `uploadedImage` — the backend has already written and persisted
+    /// the image server-side by the time this returns, so treating it like
+    /// a locally-staged pick (which "Fertig" would re-upload) would
+    /// needlessly re-send the same picture.
+    private func generateAIImage(_ style: String) async {
+        guard let existing, !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        generatingStyle = style
+        defer { generatingStyle = nil }
+        do {
+            let updated = try await APIClient.shared.generateSceneImage(existing.id, style: style)
+            uploadedImage = nil
+            displayedImageUrl = updated.imageUrl
             if let index = viewModel.scenes.firstIndex(where: { $0.id == updated.id }) {
                 viewModel.scenes[index] = updated
             }
@@ -156,7 +191,7 @@ struct SceneEditSheet: View {
                                         .aspectRatio(contentMode: .fill)
                                         .frame(width: 60, height: 60)
                                         .clipShape(RoundedRectangle(cornerRadius: 8))
-                                } else if let imageUrl = existing?.imageUrl {
+                                } else if let imageUrl = displayedImageUrl {
                                     AsyncShotThumbnail(path: imageUrl, size: 60)
                                 } else {
                                     Image(systemName: "photo.fill")
@@ -164,15 +199,48 @@ struct SceneEditSheet: View {
                                         .background(Color(.systemGray5))
                                         .clipShape(RoundedRectangle(cornerRadius: 8))
                                 }
-                                Text((uploadedImage == nil && existing?.imageUrl == nil) ? "Bild hinzufügen" : "Bild ändern")
+                                Text((uploadedImage == nil && displayedImageUrl == nil) ? "Bild hinzufügen" : "Bild ändern")
                                     .foregroundStyle(.primary)
                             }
                         }
-                        if uploadedImage != nil || existing?.imageUrl != nil {
+                        if uploadedImage != nil || displayedImageUrl != nil {
                             Button(role: .destructive) {
                                 Task { await removeImage() }
                             } label: {
                                 Label("Bild entfernen", systemImage: "trash")
+                            }
+                        }
+                        // AI-Bild (2026-07-15) — nur für bereits gespeicherte
+                        // Szenen mit einer Beschreibung, siehe
+                        // generateAIImage's Doc-Kommentar.
+                        if existing != nil {
+                            HStack(spacing: 12) {
+                                Button {
+                                    Task { await generateAIImage("realistic") }
+                                } label: {
+                                    if generatingStyle == "realistic" {
+                                        ProgressView()
+                                    } else {
+                                        Label("Realistisch", systemImage: "sparkles")
+                                    }
+                                }
+                                .disabled(description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || generatingStyle != nil)
+
+                                Button {
+                                    Task { await generateAIImage("sketch") }
+                                } label: {
+                                    if generatingStyle == "sketch" {
+                                        ProgressView()
+                                    } else {
+                                        Label("Sketch", systemImage: "pencil.and.scribble")
+                                    }
+                                }
+                                .disabled(description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || generatingStyle != nil)
+                            }
+                            if description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                Text("Erst eine Beschreibung eintragen")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
                         }
                     }
