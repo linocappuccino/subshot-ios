@@ -1613,39 +1613,26 @@ struct ShotListView: View {
                         .opacity(min(1, Double(offset) / 100))
                 }
             }
-            // FIFTH attempt at this bug class (2026-07-15) — Lino: "es kommt
-            // ein verbotszeichen im hintergrund.. und das swipen freezed
-            // ein" (the 🚫 no-drop-target badge is UIKit's own native
-            // feedback for an ACTIVE .draggable() drag session with no
-            // eligible drop target under the finger right now — this is
-            // sceneTile's own .draggableIf actually engaging mid-swipe, the
-            // exact race swipingSceneIds/draggableIf was built to prevent,
-            // just now visibly losing that race instead of silently
-            // "growing/doubling" like attempts 1-4 described). Root cause
-            // those attempts never addressed: .draggable() is backed by a
-            // real UIDragInteraction/UIKit recognizer, a COMPLETELY separate
-            // system from SwiftUI's own Gesture protocol tree — the
-            // swipingSceneIds suppression only removes the .draggable()
-            // modifier AFTER onChanged already fired once (past
-            // minimumDistance), which is one SwiftUI render pass too late
-            // to stop UIKit's own recognizer from having already started
-            // responding to the same touch-down. .simultaneousGesture (the
-            // previous state here) explicitly tells SwiftUI these two
-            // recognizers may run at once — the opposite of what's wanted.
-            // .highPriorityGesture asks SwiftUI to resolve this gesture
-            // FIRST and only concede to others if it fails to recognize,
-            // which at minimum tightens (may not fully close — .draggable's
-            // UIKit recognizer isn't part of SwiftUI's own priority graph)
-            // the window where both can be live for the same touch.
-            // Genuinely unverified — no simulator/Xcode here — flag to Lino
-            // if the 🚫/freeze persists after this, since the next real
-            // fix if so is likely restructuring drag-to-reorder onto a
-            // dedicated small grip handle (like the section-header drag
-            // handle already used elsewhere in this file) instead of the
-            // whole tile, which would remove the race entirely rather than
-            // trying to out-prioritize it — a bigger UX change not made
-            // here without confirming first.
-            .highPriorityGesture(
+            // Tried .highPriorityGesture here for one commit (2026-07-15,
+            // "fifth attempt" at the 🚫-badge race — see swipingSceneIds'
+            // own doc comment for the full history). Lino confirmed the 🚫
+            // badge went away but the freeze — which he then clarified was
+            // ALREADY happening before that change too, not new — remained
+            // either way, so that swap fixed nothing and added a real,
+            // documented risk for no gain: sceneSwipeOffsets' own comment
+            // (2026-07-13) already recorded that an exclusive gesture
+            // (.gesture/.highPriorityGesture) on this exact card hierarchy
+            // is DOCUMENTED to break .contextMenu entirely on-device
+            // elsewhere in this file. Reverted to .simultaneousGesture, the
+            // original, deliberately-chosen-for-that-exact-reason value.
+            // The freeze itself is still open — root cause not yet found;
+            // see swipingSceneIds' comment for the standing theory (the
+            // .draggable() vs. custom-DragGesture race) and the dedicated-
+            // grip-handle restructure as the most likely real fix, which
+            // hasn't been attempted yet because it changes the "long-press
+            // anywhere on the tile to reorder" UX and needs Lino's sign-off
+            // first.
+            .simultaneousGesture(
                 DragGesture(minimumDistance: 20)
                     .onChanged { value in
                         let h = value.translation.width
@@ -2605,28 +2592,30 @@ private struct ShotCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ZStack(alignment: .topLeading) {
+                // 2026-07-15, Lino: "wenn kein bild in der kachel hochgeladen
+                // / eingefügt wurde, sollen auch keine bilder in der kachel
+                // dargestellt werden (auch kein bild symbol)" — the camera-
+                // icon placeholder box is gone entirely now; a shot with no
+                // image just doesn't reserve any space for one.
                 if let imageUrl = shot.imageUrl {
                     AsyncShotThumbnail(path: imageUrl, size: nil)
                         .frame(height: 180)
                         .frame(maxWidth: .infinity)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
-                } else {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(.tertiarySystemGroupedBackground))
-                        .frame(height: 90)
-                        .overlay {
-                            Image(systemName: "camera")
-                                .font(.title2)
-                                .foregroundStyle(.secondary)
-                        }
                 }
 
                 HStack(spacing: 6) {
                     Button(action: onToggleDone) {
+                        // White (with a shadow for legibility) only made
+                        // sense against a photo background — now that a
+                        // shot without one shows no placeholder at all (see
+                        // above), that same white circle would sit almost
+                        // invisibly on the plain grouped-background behind
+                        // it. .primary reads correctly either way.
                         Image(systemName: shot.status == .done ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(shot.status == .done ? .green : .white)
+                            .foregroundStyle(shot.status == .done ? .green : (shot.imageUrl != nil ? .white : .primary))
                             .font(.title3)
-                            .shadow(radius: 2)
+                            .shadow(radius: shot.imageUrl != nil ? 2 : 0)
                     }
                     .buttonStyle(.plain)
 
