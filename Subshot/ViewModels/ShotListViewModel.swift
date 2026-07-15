@@ -21,6 +21,18 @@ final class ShotListViewModel: ObservableObject {
     private var shotsBySceneId: [String?: [Shot]] = [:]
     @Published var isLoading = false
     @Published var errorMessage: String?
+    /// Bumped on every load() call (2026-07-15, Lino: "wenn man die seite
+    /// öffnet oder refreshed... sollen die info und projektinfo kacheln
+    /// immer geschlossen sein"). ProjectInfoBox/SceneProjectInfoTile/
+    /// SectionInfoBox each keep their own expand/collapse as a plain
+    /// @State — that's per-VIEW-INSTANCE, and pull-to-refresh reuses the
+    /// same instances (only the underlying data changes), so it never
+    /// reset on its own. ShotListView applies .id(loadGeneration) to each
+    /// of those views so SwiftUI treats them as brand-new instances on
+    /// every load()/refresh — the standard way to force @State back to
+    /// its default without threading a reset call through 3 separate
+    /// view structs.
+    @Published var loadGeneration = 0
     /// Set right after marking a scene "Im Kasten" turns out to have been the
     /// last still-open scheduled ("getimte") scene in the project — see
     /// setSceneCompleted. ShotListView shows a one-button confirmation alert
@@ -91,6 +103,7 @@ final class ShotListViewModel: ObservableObject {
 
     func load() async {
         isLoading = true
+        loadGeneration += 1
         defer { isLoading = false }
         do {
             let detail = try await APIClient.shared.getProject(projectId)

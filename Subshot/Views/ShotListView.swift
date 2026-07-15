@@ -388,6 +388,10 @@ struct ShotListView: View {
                 // (SceneMapThumbnail, cached like AsyncShotThumbnail so
                 // LazyVStack recycling doesn't regenerate one per re-render).
                 ProjectInfoBox(viewModel: viewModel, projectId: projectId)
+                    // Forces a fresh instance (resets its own expand/
+                    // collapse @State) on every load()/refresh — see
+                    // loadGeneration's own doc comment.
+                    .id(viewModel.loadGeneration)
 
                 // 2026-07-14: was unconditional — with zero unassigned
                 // shots (the common case) this still rendered an empty,
@@ -924,6 +928,7 @@ struct ShotListView: View {
     private func sectionProjectInfoArea(section: SceneSection) -> some View {
         if section.hasProjectInfo {
             SectionInfoBox(viewModel: viewModel, section: section, projectId: projectId)
+                .id(viewModel.loadGeneration)
                 .padding(.horizontal, 16)
         }
     }
@@ -1277,6 +1282,7 @@ struct ShotListView: View {
         VStack(alignment: .leading, spacing: 14) {
             sceneDropIndicator(before: scene, showsVisual: !compactGrid)
             SceneProjectInfoTile(viewModel: viewModel, scene: scene, projectId: projectId, compactGrid: compactGrid)
+                .id(viewModel.loadGeneration)
         }
         .padding(.horizontal, ((isPad && isGridMode) || horizontalSizeClass == .regular) ? 0 : 16)
         .overlay {
