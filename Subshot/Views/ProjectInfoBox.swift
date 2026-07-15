@@ -1,5 +1,4 @@
 import SwiftUI
-import MapKit
 
 /// Section-scoped counterpart to ProjectInfoBox, for multi-day shoots
 /// (2026-07-10): a section can optionally carry its own mini info box (own
@@ -564,8 +563,8 @@ private struct LocationSection: View {
         }
     }
 
-    private func select(_ completion: MKLocalSearchCompletion) async {
-        guard let resolved = try? await LocationSearch.resolve(completion) else { return }
+    private func select(_ suggestion: LocationSuggestion) async {
+        guard let resolved = try? await LocationSearch.resolve(suggestion, sessionToken: completer.sessionToken) else { return }
         await onUpdate(resolved.address, resolved.lat, resolved.lng)
         withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
             isEditing = false

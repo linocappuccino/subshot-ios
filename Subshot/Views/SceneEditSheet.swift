@@ -1,5 +1,4 @@
 import SwiftUI
-import MapKit
 
 /// Reminders' "New List" sheet, adapted for Scenes: a name field, description
 /// and cover photo. Used both to create a scene (opens automatically right
@@ -408,7 +407,7 @@ struct SceneEditSheet: View {
     }
 }
 
-/// Per-scene address field, same MKLocalSearchCompleter autocomplete as the
+/// Per-scene address field, same backend-search autocomplete as the
 /// project-level LocationSection in ProjectInfoBox — but with its own
 /// completer instance rather than reusing `viewModel.locationCompleter`
 /// (that one's scoped to the project box; a scene sheet is a modal with its
@@ -473,8 +472,8 @@ private struct SceneLocationSection: View {
         }
     }
 
-    private func select(_ completion: MKLocalSearchCompletion) async {
-        guard let resolved = try? await LocationSearch.resolve(completion) else { return }
+    private func select(_ suggestion: LocationSuggestion) async {
+        guard let resolved = try? await LocationSearch.resolve(suggestion, sessionToken: completer.sessionToken) else { return }
         await viewModel.updateSceneLocation(scene, address: resolved.address, lat: resolved.lat, lng: resolved.lng)
         isEditing = false
         completer.clear()

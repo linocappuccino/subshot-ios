@@ -833,6 +833,45 @@ final class APIClient {
         try await sendNoContent(req)
     }
 
+    // MARK: - Geocoding
+
+    struct GeocodeSuggestion: Decodable {
+        let display_name: String
+        let lat: Double?
+        let lng: Double?
+        let place_id: String?
+    }
+
+    struct GeocodeResolved: Decodable {
+        let display_name: String
+        let lat: Double
+        let lng: Double
+    }
+
+    /// Same Google-Places-backed (Nominatim-fallback) search the web app
+    /// uses, see app/mapping.py's geocode_search doc comment — replaces the
+    /// iOS app's old on-device MKLocalSearchCompleter (Apple Maps data has
+    /// near-zero business/POI coverage, the actual "Adresssuche funktioniert
+    /// nicht" complaint). `sessionToken` should be one UUID reused across
+    /// every keystroke of a single search and passed again to
+    /// geocodeResolve on pick, then replaced — see LocationSearchCompleter.
+    func geocodeSearch(query: String, sessionToken: String) async throws -> [GeocodeSuggestion] {
+        let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        let token = sessionToken.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? sessionToken
+        let req = try await authorizedRequest("geocode/search?q=\(q)&session_token=\(token)")
+        return try await send(req)
+    }
+
+    /// Resolves a Google Autocomplete suggestion's place_id into an address +
+    /// coordinates (the Nominatim path already carries coordinates inline,
+    /// see LocationSearch.resolve — this is only called for a Google pick).
+    func geocodeResolve(placeId: String, sessionToken: String) async throws -> GeocodeResolved {
+        let id = placeId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? placeId
+        let token = sessionToken.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? sessionToken
+        let req = try await authorizedRequest("geocode/resolve?place_id=\(id)&session_token=\(token)")
+        return try await send(req)
+    }
+
     // MARK: - Notifications
 
     func notifications(unreadOnly: Bool = true) async throws -> [AppNotification] {

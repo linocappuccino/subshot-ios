@@ -1,61 +1,63 @@
 import Foundation
 import Combine
-import MapKit
 
-/// Wraps MKLocalSearchCompleter (Apple's own address-autocomplete, no API
-/// key/account needed) for the project location field. Old-style delegate
-/// pattern on purpose, not an actor-isolated rewrite — keeps this safe to
-/// compile under any concurrency-checking setting without needing to know
-/// this project's exact Swift/Xcode version.
-final class LocationSearchCompleter: NSObject, ObservableObject, MKLocalSearchCompleterDelegate {
-    @Published var results: [MKLocalSearchCompletion] = []
+/// One search result, from either the Google Places path (place_id set, no
+/// coordinates yet — see resolve()) or the Nominatim fallback path
+/// (coordinates already included, place_id nil).
+struct LocationSuggestion: Hashable, Identifiable {
+    let id = UUID()
+    let title: String
+    let subtitle: String = ""
+    let placeId: String?
+    let lat: Double?
+    let lng: Double?
+}
 
-    private let completer: MKLocalSearchCompleter
+/// Debounced wrapper around the backend's Google-Places-backed
+/// /geocode/search (2026-07-15, replaces the old MKLocalSearchCompleter —
+/// see [[project_subshot_billing_geocoding_20260715]]/Todoist #41: Apple's
+/// on-device search has near-zero business/POI coverage, e.g. "ese agency"
+/// in Zürich returned nothing, same root cause the web app already fixed by
+/// switching to Google Places. iOS was left on MapKit at the time and never
+/// got the same fix, which is what Lino kept reporting as still broken.
+@MainActor
+final class LocationSearchCompleter: ObservableObject {
+    @Published var results: [LocationSuggestion] = []
 
-    override init() {
-        completer = MKLocalSearchCompleter()
-        super.init()
-        completer.delegate = self
-        // Addresses AND named places (studios, parks, venues) — a shoot
-        // location is at least as often "Sihlwald" or "Studio 4" as a street address.
-        completer.resultTypes = [.address, .pointOfInterest]
-        // 2026-07-14, Lino: company/POI names got zero suggestions (plain
-        // street addresses worked). MKLocalSearchCompleter's `region`
-        // defaults to the whole world — full street addresses still
-        // resolve fine against that (they're globally disambiguated by
-        // their own text), but named-place/.pointOfInterest matching
-        // needs a geographic anchor to rank against, and silently returns
-        // nothing without one. No CLLocationManager here (would need a new
-        // Info.plist usage-description + permission prompt just for this)
-        // — a fixed region centered on Switzerland with generous padding
-        // into the bordering countries covers where Subshot's shoots
-        // actually happen without asking for location access at all.
-        completer.region = MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: 46.8182, longitude: 8.2275),
-            latitudinalMeters: 400_000,
-            longitudinalMeters: 400_000
-        )
-    }
+    /// One UUID per search session, reused across every keystroke and passed
+    /// to resolve() on pick, then replaced — see mapping.py's geocode_search
+    /// doc comment for why this is what makes Google's Autocomplete billing
+    /// stay free/near-free. Exposed so call sites can pass it into resolve().
+    private(set) var sessionToken = UUID().uuidString
+
+    private var searchTask: Task<Void, Never>?
 
     func update(query: String) {
-        completer.queryFragment = query
+        searchTask?.cancel()
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 3 else {
+            results = []
+            return
+        }
+        searchTask = Task { [sessionToken] in
+            // Same 350ms-ish debounce as the web LocationPicker (400ms) —
+            // avoids firing a request on every single keystroke.
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled else { return }
+            guard let fetched = try? await APIClient.shared.geocodeSearch(query: trimmed, sessionToken: sessionToken) else { return }
+            guard !Task.isCancelled else { return }
+            results = fetched.map {
+                LocationSuggestion(title: $0.display_name, placeId: $0.place_id, lat: $0.lat, lng: $0.lng)
+            }
+        }
     }
 
     func clear() {
-        completer.queryFragment = ""
+        searchTask?.cancel()
         results = []
-    }
-
-    func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
-        DispatchQueue.main.async {
-            self.results = completer.results
-        }
-    }
-
-    func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
-        DispatchQueue.main.async {
-            self.results = []
-        }
+        // Fresh session for the next search — mirrors the sessionToken
+        // rotation the web app does after a pick/field blur.
+        sessionToken = UUID().uuidString
     }
 }
 
@@ -66,20 +68,19 @@ struct ResolvedLocation {
 }
 
 enum LocationSearch {
-    /// Resolves a tapped autocomplete suggestion into a full address string
-    /// + coordinate pair — the completion itself only has title/subtitle,
-    /// the actual coordinate needs a follow-up MKLocalSearch.
-    static func resolve(_ completion: MKLocalSearchCompletion) async throws -> ResolvedLocation {
-        let request = MKLocalSearch.Request(completion: completion)
-        let search = MKLocalSearch(request: request)
-        let response = try await search.start()
-        // .placemark is deprecated in iOS 26 in favor of .location — same
-        // coordinate, just a plain CLLocation instead of an MKPlacemark.
-        guard let coordinate = response.mapItems.first?.location.coordinate else {
+    /// Resolves a tapped suggestion into a full address string + coordinate
+    /// pair. Nominatim results already carry coordinates inline; a Google
+    /// result only has a place_id and needs the terminating /geocode/resolve
+    /// call (see APIClient.geocodeResolve's doc comment).
+    static func resolve(_ suggestion: LocationSuggestion, sessionToken: String) async throws -> ResolvedLocation {
+        if let placeId = suggestion.placeId {
+            let resolved = try await APIClient.shared.geocodeResolve(placeId: placeId, sessionToken: sessionToken)
+            return ResolvedLocation(address: resolved.display_name, lat: resolved.lat, lng: resolved.lng)
+        }
+        guard let lat = suggestion.lat, let lng = suggestion.lng else {
             throw NSError(domain: "LocationSearch", code: 1, userInfo: [NSLocalizedDescriptionKey: "Keine Koordinaten gefunden"])
         }
-        let address = [completion.title, completion.subtitle].filter { !$0.isEmpty }.joined(separator: ", ")
-        return ResolvedLocation(address: address, lat: coordinate.latitude, lng: coordinate.longitude)
+        return ResolvedLocation(address: suggestion.title, lat: lat, lng: lng)
     }
 
     /// Opens Google Maps for the coordinate — a plain universal link, so it
