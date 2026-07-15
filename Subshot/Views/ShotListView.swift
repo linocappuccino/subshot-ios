@@ -96,7 +96,6 @@ private extension View {
 /// view tree to get a real, controllable spring animation.
 private struct ExpandableToolbar<Content: View>: View {
     @State private var expanded = false
-    @State private var collapseWork: DispatchWorkItem?
     let content: Content
 
     init(@ViewBuilder content: () -> Content) {
@@ -119,36 +118,32 @@ private struct ExpandableToolbar<Content: View>: View {
         // (2026-07-14, Lino: "mehr platz links") — without it the leftmost
         // button sits right up against the nav bar's leading content/title.
         .padding(.leading, expanded ? 8 : 0)
-        // Low dampingFraction is what actually produces the visible
-        // overshoot ("überstrecht") on expand — a value at/above ~0.7 would
-        // just ease in with no bounce at all. Kept as a fallback for any
-        // other implicit change, but toggle() below now ALSO wraps the
-        // mutation in an explicit withAnimation — ToolbarItem content is
-        // UIKit-bridged (hosted as real UIBarButtonItems on the
-        // navigation bar, not a plain SwiftUI subview), and that bridge is
-        // known to drop transitions/animations driven purely by an
-        // implicit `.animation(value:)` on state mutated outside
-        // withAnimation, especially on REMOVAL — which is exactly what
-        // "keine Schliess-Animation, öffnen unsauber" (open shaky, close
-        // has none at all) describes: expand happened to mostly work,
-        // collapse silently snapped instead of animating.
-        .animation(.spring(response: 0.35, dampingFraction: 0.55), value: expanded)
+        // Fallback for any other implicit change — toggle() below ALWAYS
+        // wraps the mutation in its own explicit withAnimation (see there
+        // for why: ToolbarItem content is UIKit-bridged, and that bridge is
+        // known to drop transitions driven purely by an implicit
+        // `.animation(value:)`), so this curve rarely actually fires; kept
+        // roughly matching the close spring as the safer of the two to fall
+        // back to.
+        .animation(.spring(response: 0.35, dampingFraction: 0.75), value: expanded)
     }
 
+    // 2026-07-15, Lino: "sollen nicht mehr automatisch zu gehen... über das
+    // X schliessen... die öffnen animation ist aber noch eine wenig zu
+    // schnell oder extrem" — the 3s auto-collapse timer (scheduleAutoCollapse,
+    // removed) is gone entirely, X is now the only way to close. Separately
+    // toned down the open spring (0.55 -> 0.68 damping, slightly longer
+    // response) — still a visible "überstrecht" bounce (the original ask),
+    // just less violent. Close keeps its own calmer, no-overshoot spring
+    // (was only ever used for the timer-driven auto-collapse before; now
+    // also the manual-close curve, which reads better than reusing the
+    // bouncy open curve in reverse).
     private func toggle() {
-        collapseWork?.cancel()
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.55)) {
-            expanded.toggle()
-        }
-        if expanded { scheduleAutoCollapse() }
-    }
-
-    private func scheduleAutoCollapse() {
-        let work = DispatchWorkItem {
+        if expanded {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { expanded = false }
+        } else {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.68)) { expanded = true }
         }
-        collapseWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: work)
     }
 }
 
@@ -884,8 +879,52 @@ struct ShotListView: View {
             }
             if !isSectionCollapsed(section) {
                 sceneGrid(viewModel.scenes(in: section))
+                sectionTrailingDropZone(section: section)
             }
         }
+    }
+
+    /// Dedicated "append to the END of THIS section" drop target, sitting
+    /// right after this section's own last scene tile — inside THIS
+    /// section's own VStack, not the next one's. 2026-07-15, Lino: dragging
+    /// a tile toward the end of a section (right before the next one)
+    /// "funktioniert einfach noch nicht sauber... landet im abschnitt
+    /// darunter", and the indicator visibly touched the next section's
+    /// title. Root cause: the only thing anywhere near that boundary was
+    /// the NEXT section's own pre-header reorder rectangle (see
+    /// sectionGroup's landing-indicator comment above) — that one belongs
+    /// to the section BELOW, and its dropDestination (on sectionHeader)
+    /// files a dropped scene into THAT section, not "end of the one
+    /// above". There was no target at all that unambiguously meant "end of
+    /// this section" — this is that target, using the exact same dashed-
+    /// rectangle idiom as sceneDropIndicator/the section header's own
+    /// indicator, just scoped to reorderScene(before: nil) (== append,
+    /// see its own doc comment) on THIS section.
+    @ViewBuilder
+    private func sectionTrailingDropZone(section: SceneSection?) -> some View {
+        let key = "section-end:\(section?.id ?? unassignedSectionKey)"
+        let isActive = dropTargetSceneId == key
+        RoundedRectangle(cornerRadius: 8)
+            .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
+            .frame(height: isActive ? 60 : 12)
+            .padding(.horizontal, 4)
+            .opacity(isActive ? 1 : 0)
+            .contentShape(Rectangle().inset(by: -20))
+            .padding(.horizontal, 16)
+            .dropDestination(for: String.self) { ids, _ in
+                guard let raw = ids.first, raw.hasPrefix("scene:") else { return false }
+                let draggedId = String(raw.dropFirst("scene:".count))
+                guard let dragged = viewModel.scenes.first(where: { $0.id == draggedId }) else { return false }
+                Task {
+                    if dragged.sectionId != section?.id {
+                        await viewModel.assignSceneToSection(dragged, sectionId: section?.id)
+                    }
+                    await viewModel.reorderScene(draggedId, before: nil)
+                }
+                return true
+            } isTargeted: { targeted in
+                setSceneDropTarget(key, targeted: targeted)
+            }
     }
 
     private func isSectionCollapsed(_ section: SceneSection?) -> Bool {
