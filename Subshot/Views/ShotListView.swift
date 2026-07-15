@@ -2730,8 +2730,9 @@ private struct ScenePulseOnElapse: ViewModifier {
 /// via TimelineView so the glow starts/stops on its own. Subtle white glow
 /// OUTSIDE the tile edges only (large blur + negative padding so it never
 /// overlaps the card's own content) — same restrained tuning as web
-/// (opacity 0.06→0.18→0.06, 3.6s cycle) after Lino's "nur aussen glowen und
-/// nicht so stark wie jetzt" correction.
+/// (opacity 0.05→0.11→0.05, 3.6s cycle) after Lino's "nur aussen glowen und
+/// nicht so stark wie jetzt" correction, dimmed further 2026-07-15 ("immer
+/// noch zu hell", was 0.06→0.18).
 private struct SceneTimerRunningGlow: ViewModifier {
     let scene: Scene
     @State private var pulse = false
@@ -2754,7 +2755,7 @@ private struct SceneTimerRunningGlow: ViewModifier {
                             .fill(Color.white)
                             .blur(radius: 20)
                             .padding(-20)
-                            .opacity(pulse ? 0.18 : 0.06)
+                            .opacity(pulse ? 0.11 : 0.05)
                             .allowsHitTesting(false)
                     }
                 }

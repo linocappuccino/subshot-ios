@@ -490,9 +490,22 @@ private struct LocationSection: View {
                         SceneMapThumbnail(lat: lat, lng: lng, size: 64)
                     }
                     VStack(alignment: .leading, spacing: 4) {
+                        // 2026-07-15, Lino: address text here still wasn't
+                        // left-aligned and had odd word spacing — this Text
+                        // never got the same explicit leading-alignment fix
+                        // ShotListView's scene-card address already has
+                        // (2026-07-14, "adressen text soll immer
+                        // linksbündig sein"). Without an explicit
+                        // maxWidth:.infinity frame, Text sizes itself to
+                        // its own intrinsic content width instead of the
+                        // row's actual available width, which can leave
+                        // SwiftUI picking an ambiguous, too-narrow wrap
+                        // width relative to what's visually available.
                         Text(address)
                             .font(.subheadline)
                             .lineLimit(3)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         HStack(spacing: 12) {
                             Button("Ändern") {
                                 // Clear on ENTRY too, not just exit — the

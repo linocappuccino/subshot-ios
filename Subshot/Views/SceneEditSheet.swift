@@ -436,7 +436,14 @@ private struct SceneLocationSection: View {
                     SceneMapThumbnail(lat: lat, lng: lng, size: 200)
                         .frame(maxWidth: .infinity)
                 }
-                Text(address).font(.subheadline)
+                // Same explicit leading-alignment fix as ShotListView's
+                // scene-card address and ProjectInfoBox's (2026-07-15) —
+                // without it Text sizes to its own intrinsic width instead
+                // of the row's actual available width.
+                Text(address)
+                    .font(.subheadline)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 HStack {
                     Button("Ändern") {
                         query = address
