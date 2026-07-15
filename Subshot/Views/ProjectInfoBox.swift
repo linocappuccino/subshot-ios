@@ -505,6 +505,7 @@ private struct LocationSection: View {
                             .font(.subheadline)
                             .lineLimit(3)
                             .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         HStack(spacing: 12) {
                             Button("Ändern") {

@@ -1838,18 +1838,33 @@ struct ShotListView: View {
                     }
                 }
                 if let address = scene.locationAddress, let lat = scene.locationLat, let lng = scene.locationLng {
-                    HStack(spacing: 10) {
+                    HStack(alignment: .top, spacing: 10) {
                         SceneMapThumbnail(lat: lat, lng: lng, size: 56)
                         // 2026-07-14, Lino: "adressen text soll immer
                         // linksbündig sein" — explicit leading alignment +
                         // a full-width leading frame, so a wrapped 2-line
                         // address can't end up reading as centered/ragged
-                        // next to the fixed-width map thumbnail.
+                        // next to the fixed-width map thumbnail. Still read
+                        // as "Blocksatz" (justified) 2026-07-15 — added
+                        // fixedSize(horizontal:false, vertical:true):
+                        // without it, a lineLimit(2) Text that only NEEDS 1
+                        // line at this width can get its content
+                        // redistributed/stretched across the full 2-line
+                        // budget by SwiftUI's line-breaking instead of
+                        // collapsing to one short line, which reads as
+                        // artificially wide word gaps — the actual
+                        // "Blocksatz" symptom, not a plain alignment miss
+                        // (multilineTextAlignment was already correct).
+                        // HStack alignment also pinned to .top (was
+                        // default .center) so a short 1-line address
+                        // doesn't vertically center-shift against the
+                        // fixed-size map thumbnail.
                         Text(address)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
