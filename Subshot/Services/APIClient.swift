@@ -391,17 +391,23 @@ final class APIClient {
 
     /// AI scene image (2026-07-15) — sourced entirely from the scene's own
     /// description server-side, no prompt param here. `style` is
-    /// "realistic" or "sketch" (see SceneEditSheet's picker). RunPod cold
-    /// start + SDXL inference can legitimately take a while, well past
-    /// URLSession's normal default — a generous per-request timeout so a
-    /// slow-but-healthy generation isn't cut off client-side before the
-    /// backend's own (longer) poll loop would have given up.
-    func generateSceneImage(_ sceneId: String, style: String) async throws -> Scene {
+    /// "realistic" or "sketch", `aspectRatio` "16:9" or "9:16" (see
+    /// SceneEditSheet's pickers). Fire-and-forget: the backend queues the
+    /// job as a background task and responds with 202 immediately, NOT
+    /// once the image is actually ready (Lino: "man muss die möglichkeit
+    /// haben die seite zu schliessen und die generierung läuft im
+    /// hintergrund weiter") — the scene's imageUrl updates server-side
+    /// once RunPod finishes, and ShotListView's existing 12s poll picks it
+    /// up on its own, whether or not this sheet is still open by then. No
+    /// long client-side timeout needed anymore since this call itself
+    /// returns fast.
+    struct GenerateImageAck: Decodable { let status: String }
+
+    func generateSceneImage(_ sceneId: String, style: String, aspectRatio: String) async throws -> GenerateImageAck {
         var req = try await authorizedRequest("scenes/\(sceneId)/generate-image", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.timeoutInterval = 120
-        struct Body: Encodable { let style: String }
-        req.httpBody = try encoder.encode(Body(style: style))
+        struct Body: Encodable { let style: String; let aspect_ratio: String }
+        req.httpBody = try encoder.encode(Body(style: style, aspect_ratio: aspectRatio))
         return try await send(req)
     }
 

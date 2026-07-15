@@ -54,7 +54,20 @@ struct SceneEditSheet: View {
     @State private var displayedImageUrl: String?
     /// Which AI style is currently generating (nil = idle) — "realistic" or
     /// "sketch", matches the backend's SceneImageGenerate.style values.
+    /// Only true for the brief moment of the fire-and-forget POST itself
+    /// now (see generateAIImage) — the actual generation happens server-
+    /// side afterward, tracked separately by imageGenerationStarted below.
     @State private var generatingStyle: String?
+    /// 2026-07-15, Lino: "16:9 oder 9:16" — matches the web app's own
+    /// default choice/reasoning (camera-footage aspect is the more likely
+    /// default for a scene reference image).
+    @State private var aspectRatio = "16:9"
+    /// Set once a generation request has been successfully queued —
+    /// stays true for the rest of this sheet's lifetime (unlike
+    /// `generatingStyle`, which flips back almost immediately once the
+    /// fast 202 response lands) so the "wird im Hintergrund erstellt"
+    /// hint doesn't just flash and disappear.
+    @State private var imageGenerationStarted = false
     @State private var isAddingShot = false
     @State private var newShotText = ""
     @FocusState private var newShotFocused: Bool
@@ -149,24 +162,25 @@ struct SceneEditSheet: View {
 
     /// AI cover photo (2026-07-15, Lino: "kann man per knopfdruck ein AI
     /// bild ertstellen lassen... nimmt die infos aus der beschreibung...
-    /// soll dann automatisch im Bildfeld landen") — only for an
-    /// already-saved scene (needs a real id), only once there's a
-    /// description to generate FROM. Result lands via `displayedImageUrl`,
-    /// not `uploadedImage` — the backend has already written and persisted
-    /// the image server-side by the time this returns, so treating it like
-    /// a locally-staged pick (which "Fertig" would re-upload) would
-    /// needlessly re-send the same picture.
+    /// soll dann automatisch im Bildfeld landen... man muss die
+    /// möglichkeit haben die seite zu schliessen und die generierung
+    /// läuft im hintergrund weiter") — only for an already-saved scene
+    /// (needs a real id), only once there's a description to generate
+    /// FROM. Fire-and-forget: the backend queues the job as a background
+    /// task and responds immediately, well before the image is actually
+    /// ready — this sheet does NOT wait for or apply the result itself
+    /// anymore (that would require staying open the whole time, exactly
+    /// what Lino wants to avoid). The scene's imageUrl updates server-side
+    /// once RunPod finishes; ShotListView's existing 12s poll picks it up
+    /// on its own the next time this scene renders, whether this sheet
+    /// stayed open or was closed right after tapping the button.
     private func generateAIImage(_ style: String) async {
         guard let existing, !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         generatingStyle = style
         defer { generatingStyle = nil }
         do {
-            let updated = try await APIClient.shared.generateSceneImage(existing.id, style: style)
-            uploadedImage = nil
-            displayedImageUrl = updated.imageUrl
-            if let index = viewModel.scenes.firstIndex(where: { $0.id == updated.id }) {
-                viewModel.scenes[index] = updated
-            }
+            _ = try await APIClient.shared.generateSceneImage(existing.id, style: style, aspectRatio: aspectRatio)
+            imageGenerationStarted = true
         } catch {
             viewModel.errorMessage = error.localizedDescription
         }
@@ -214,6 +228,15 @@ struct SceneEditSheet: View {
                         // Szenen mit einer Beschreibung, siehe
                         // generateAIImage's Doc-Kommentar.
                         if existing != nil {
+                            Text("KI-Bild aus Beschreibung erstellen")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 4)
+                            Picker("Format", selection: $aspectRatio) {
+                                Text("16:9").tag("16:9")
+                                Text("9:16").tag("9:16")
+                            }
+                            .pickerStyle(.segmented)
                             HStack(spacing: 12) {
                                 Button {
                                     Task { await generateAIImage("realistic") }
@@ -242,13 +265,15 @@ struct SceneEditSheet: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
-                            // 2026-07-15, Lino: RunPod cold-start (kept at
-                            // 0 idle cost) can genuinely take a couple
-                            // minutes on the first generation after a
-                            // quiet spell — say so up front instead of a
-                            // bare spinner that reads as hung.
-                            if generatingStyle != nil {
-                                Text("Kann bis zu 2-3 Minuten dauern, falls der KI-Server gerade „kalt“ ist (länger nicht genutzt wurde).")
+                            // 2026-07-15, Lino: fire-and-forget now (see
+                            // generateAIImage) — this stays visible for the
+                            // rest of the sheet's lifetime once a request
+                            // has been queued, not just the brief moment
+                            // generatingStyle is set, since the actual
+                            // generation (and the cold-start wait, kept at
+                            // 0 idle cost) happens server-side afterward.
+                            if imageGenerationStarted {
+                                Text("Wird im Hintergrund erstellt — landet automatisch im Bildfeld. Kann bis zu 2-3 Minuten dauern, falls der KI-Server gerade „kalt“ ist. Du kannst dieses Fenster schliessen.")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
