@@ -43,6 +43,10 @@ struct SceneEditSheet: View {
     @State private var durationMins = 0
     @State private var priority: ShotPriority?
     @State private var uploadedImage: UIImage?
+    /// 2026-07-15, Lino: no way to remove a scene's cover photo, only
+    /// replace it — mirrors ShotDetailSheet's own removePhoto (shots
+    /// already got this 2026-07-14).
+    @State private var removingImage = false
     @State private var isAddingShot = false
     @State private var newShotText = ""
     @FocusState private var newShotFocused: Bool
@@ -111,6 +115,28 @@ struct SceneEditSheet: View {
         durationMinutes = total == 0 ? nil : total
     }
 
+    /// Mirrors ShotDetailSheet's removePhoto. A locally staged (not yet
+    /// uploaded) photo just clears locally — nothing to tell the server
+    /// about yet. An already-saved image needs its own immediate PATCH,
+    /// same as removePhoto acts immediately rather than waiting for
+    /// "Fertig" (this sheet's own "Fertig" only ever ADDS an image via
+    /// onImagePicked, it never sends clear_image, so removal has to be a
+    /// separate direct call here).
+    private func removeImage() async {
+        uploadedImage = nil
+        guard let existing, existing.imageUrl != nil else { return }
+        removingImage = true
+        defer { removingImage = false }
+        do {
+            let updated = try await APIClient.shared.patchScene(existing.id, clearImage: true)
+            if let index = viewModel.scenes.firstIndex(where: { $0.id == updated.id }) {
+                viewModel.scenes[index] = updated
+            }
+        } catch {
+            viewModel.errorMessage = error.localizedDescription
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -140,6 +166,13 @@ struct SceneEditSheet: View {
                                 }
                                 Text((uploadedImage == nil && existing?.imageUrl == nil) ? "Bild hinzufügen" : "Bild ändern")
                                     .foregroundStyle(.primary)
+                            }
+                        }
+                        if uploadedImage != nil || existing?.imageUrl != nil {
+                            Button(role: .destructive) {
+                                Task { await removeImage() }
+                            } label: {
+                                Label("Bild entfernen", systemImage: "trash")
                             }
                         }
                     }

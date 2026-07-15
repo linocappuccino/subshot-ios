@@ -337,6 +337,11 @@ final class APIClient {
         clientName: String? = nil,
         priority: ShotPriority? = nil, clearPriority: Bool = false,
         goodTakeFilename: String? = nil, clearGoodTake: Bool = false,
+        // 2026-07-15, Lino: no way to remove a scene's cover photo, only
+        // replace it (matches patchShotFull's clearImage, which shots
+        // already had) — mirrors that same clear_image escape hatch
+        // server-side (ScenePatch.clear_image, added same day).
+        clearImage: Bool = false,
         // Explicit delta (seconds) for the server-side time-cascade
         // (2026-07-13, see patch_scene in the backend) — shifts every other
         // same-day-after scene in the project by this much, server-side, so
@@ -362,6 +367,7 @@ final class APIClient {
             let client_name: String?
             let priority: String?; let clear_priority: Bool
             let good_take_filename: String?; let clear_good_take: Bool
+            let clear_image: Bool
             let cascade_shift_seconds: Double?
         }
         req.httpBody = try encoder.encode(Body(
@@ -377,6 +383,7 @@ final class APIClient {
             client_name: clientName,
             priority: priority?.rawValue, clear_priority: clearPriority,
             good_take_filename: goodTakeFilename, clear_good_take: clearGoodTake,
+            clear_image: clearImage,
             cascade_shift_seconds: cascadeShiftSeconds
         ))
         return try await send(req)
