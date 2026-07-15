@@ -375,7 +375,26 @@ struct ShotListView: View {
             // over a per-card-only version, which would need scroll
             // targets nested inside each section's own scene list instead
             // of just this one top-level container).
-            LazyVStack(alignment: .leading, spacing: 16) {
+            // ProjectInfoBox lives in a PLAIN VStack, outside the LazyVStack
+            // below that actually carries .scrollTargetLayout() (2026-07-15)
+            // — it used to be the first child INSIDE that tracked stack,
+            // making the ProjectInfoBox<->first-content boundary itself a
+            // scroll-snap target. Even after fixing the separate
+            // loadGeneration-churn bug (see ShotListViewModel.load's doc
+            // comment), Lino kept reporting the same-shaped symptom ("die
+            // obersten 2 Elemente unter der Projektinfo box sind nicht
+            // verwendbar") — pointing at THIS boundary itself, not just the
+            // rebuild churn: .scrollTargetBehavior(.viewAligned) settles the
+            // scroll position AT recognized snap boundaries, and a tap
+            // landing right at/near one very close to the top of the
+            // content (nothing above it to absorb a slightly-off-vertical
+            // touch) is exactly where a scroll view's own pan-gesture
+            // recognizer is most likely to intercept it before it reaches
+            // the tapped view. Excluding ProjectInfoBox from the tracked
+            // stack removes that one boundary entirely — everything below
+            // it (unassigned scenes, each section) still snaps among
+            // itself exactly as before, only the very top edge changes.
+            VStack(alignment: .leading, spacing: 16) {
                 // Scrolls with the rest of the content again — the earlier
                 // hang/crash turned out to be the general iOS-26.5-Simulator
                 // rendering bug (see project memory), not MapKit itself, so
@@ -388,47 +407,49 @@ struct ShotListView: View {
                     // loadGeneration's own doc comment.
                     .id(viewModel.loadGeneration)
 
-                // 2026-07-14: was unconditional — with zero unassigned
-                // shots (the common case) this still rendered an empty,
-                // near-invisible ~32pt VStack (just its own vertical
-                // padding, no content). As a direct LazyVStack child it's
-                // ALSO a .scrollTargetLayout() snap target (see the
-                // TikTok-scroll doc comment above), so that empty sliver
-                // sat as a real scroll-snap boundary wedged between
-                // ProjectInfoBox and the first actual section — right
-                // where Lino reported the top section becoming
-                // unclickable/undraggable/uncollapsible (a snap target
-                // with nothing in it still competes for the ScrollView's
-                // own pan-gesture arbitration at that boundary). Guarding
-                // it the same way sectionGroup(section: nil) already
-                // guards its own empty case (below) removes that phantom
-                // target entirely when there's nothing to show.
-                if !viewModel.shots(in: nil).isEmpty {
-                    unassignedSection()
-                }
+                LazyVStack(alignment: .leading, spacing: 16) {
+                    // 2026-07-14: was unconditional — with zero unassigned
+                    // shots (the common case) this still rendered an empty,
+                    // near-invisible ~32pt VStack (just its own vertical
+                    // padding, no content). As a direct LazyVStack child it's
+                    // ALSO a .scrollTargetLayout() snap target (see the
+                    // TikTok-scroll doc comment above), so that empty sliver
+                    // sat as a real scroll-snap boundary wedged between
+                    // ProjectInfoBox and the first actual section — right
+                    // where Lino reported the top section becoming
+                    // unclickable/undraggable/uncollapsible (a snap target
+                    // with nothing in it still competes for the ScrollView's
+                    // own pan-gesture arbitration at that boundary). Guarding
+                    // it the same way sectionGroup(section: nil) already
+                    // guards its own empty case (below) removes that phantom
+                    // target entirely when there's nothing to show.
+                    if !viewModel.shots(in: nil).isEmpty {
+                        unassignedSection()
+                    }
 
-                // Sections are opt-in — a project that's never created one
-                // renders exactly like before (flat scene list, no headers).
-                // Only once at least one section exists does grouping (with
-                // an explicit "Ohne Abschnitt" bucket for the rest) kick in.
-                if viewModel.sections.isEmpty {
-                    // scenes(in: nil), not the raw array — a project with no
-                    // sections yet still has every scene's sectionId == nil,
-                    // so this is equivalent to the unsectioned bucket below,
-                    // just without its own header.
-                    sceneGrid(viewModel.scenes(in: nil))
-                } else {
-                    ForEach(viewModel.sections) { section in
-                        sectionGroup(section: section)
-                    }
-                    let unassigned = viewModel.scenes(in: nil)
-                    if !unassigned.isEmpty {
-                        sectionGroup(section: nil)
+                    // Sections are opt-in — a project that's never created one
+                    // renders exactly like before (flat scene list, no headers).
+                    // Only once at least one section exists does grouping (with
+                    // an explicit "Ohne Abschnitt" bucket for the rest) kick in.
+                    if viewModel.sections.isEmpty {
+                        // scenes(in: nil), not the raw array — a project with no
+                        // sections yet still has every scene's sectionId == nil,
+                        // so this is equivalent to the unsectioned bucket below,
+                        // just without its own header.
+                        sceneGrid(viewModel.scenes(in: nil))
+                    } else {
+                        ForEach(viewModel.sections) { section in
+                            sectionGroup(section: section)
+                        }
+                        let unassigned = viewModel.scenes(in: nil)
+                        if !unassigned.isEmpty {
+                            sectionGroup(section: nil)
+                        }
                     }
                 }
+                .scrollTargetLayout()
             }
             .padding(.vertical, 16)
-            .scrollTargetLayout()
         }
         .scrollTargetBehaviorIf(wantsScrollSnap)
         .background(Color(.systemGroupedBackground))
