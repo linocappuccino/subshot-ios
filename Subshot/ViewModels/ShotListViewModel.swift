@@ -101,9 +101,26 @@ final class ShotListViewModel: ObservableObject {
         self.projectId = projectId
     }
 
-    func load() async {
+    /// `resetGeneration` (2026-07-15): the 12s silent background poll (see
+    /// ShotListView's own `.task` loop) used to call this with the default,
+    /// bumping loadGeneration on EVERY tick — which, via .id(loadGeneration)
+    /// on ProjectInfoBox/SectionInfoBox/SceneProjectInfoTile (see
+    /// loadGeneration's own doc comment), tore down and rebuilt fresh
+    /// instances of exactly those three views every 12 seconds, snapping
+    /// any of them back to their default COLLAPSED @State the instant a
+    /// user had expanded one — mid-interaction, unprompted, no way to avoid
+    /// it since it kept happening every 12s for as long as the screen
+    /// stayed open. That's what made "die obersten Objekte" read as
+    /// completely unusable ("kann man gar nichts mit den oberen 2 Objekten
+    /// machen") while every ordinary scene tile (no .id(loadGeneration) of
+    /// its own) worked fine. The always-starts-closed behavior was only
+    /// ever meant for a genuine reopen/pull-to-refresh (see loadGeneration's
+    /// doc comment for the original ask) — the silent poll now passes
+    /// false, leaving loadGeneration (and therefore those views' own
+    /// expand/collapse state) untouched.
+    func load(resetGeneration: Bool = true) async {
         isLoading = true
-        loadGeneration += 1
+        if resetGeneration { loadGeneration += 1 }
         defer { isLoading = false }
         do {
             let detail = try await APIClient.shared.getProject(projectId)

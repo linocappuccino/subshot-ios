@@ -545,7 +545,11 @@ struct ShotListView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 12_000_000_000)
                 if Task.isCancelled { break }
-                await viewModel.load()
+                // resetGeneration: false — see load()'s own doc comment.
+                // This silent poll must never force-collapse
+                // ProjectInfoBox/SectionInfoBox/SceneProjectInfoTile out
+                // from under an actively-interacting user.
+                await viewModel.load(resetGeneration: false)
             }
         }
         .sheet(item: $selectedShot) { shot in
