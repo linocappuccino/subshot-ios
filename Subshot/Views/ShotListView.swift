@@ -1613,7 +1613,39 @@ struct ShotListView: View {
                         .opacity(min(1, Double(offset) / 100))
                 }
             }
-            .simultaneousGesture(
+            // FIFTH attempt at this bug class (2026-07-15) — Lino: "es kommt
+            // ein verbotszeichen im hintergrund.. und das swipen freezed
+            // ein" (the 🚫 no-drop-target badge is UIKit's own native
+            // feedback for an ACTIVE .draggable() drag session with no
+            // eligible drop target under the finger right now — this is
+            // sceneTile's own .draggableIf actually engaging mid-swipe, the
+            // exact race swipingSceneIds/draggableIf was built to prevent,
+            // just now visibly losing that race instead of silently
+            // "growing/doubling" like attempts 1-4 described). Root cause
+            // those attempts never addressed: .draggable() is backed by a
+            // real UIDragInteraction/UIKit recognizer, a COMPLETELY separate
+            // system from SwiftUI's own Gesture protocol tree — the
+            // swipingSceneIds suppression only removes the .draggable()
+            // modifier AFTER onChanged already fired once (past
+            // minimumDistance), which is one SwiftUI render pass too late
+            // to stop UIKit's own recognizer from having already started
+            // responding to the same touch-down. .simultaneousGesture (the
+            // previous state here) explicitly tells SwiftUI these two
+            // recognizers may run at once — the opposite of what's wanted.
+            // .highPriorityGesture asks SwiftUI to resolve this gesture
+            // FIRST and only concede to others if it fails to recognize,
+            // which at minimum tightens (may not fully close — .draggable's
+            // UIKit recognizer isn't part of SwiftUI's own priority graph)
+            // the window where both can be live for the same touch.
+            // Genuinely unverified — no simulator/Xcode here — flag to Lino
+            // if the 🚫/freeze persists after this, since the next real
+            // fix if so is likely restructuring drag-to-reorder onto a
+            // dedicated small grip handle (like the section-header drag
+            // handle already used elsewhere in this file) instead of the
+            // whole tile, which would remove the race entirely rather than
+            // trying to out-prioritize it — a bigger UX change not made
+            // here without confirming first.
+            .highPriorityGesture(
                 DragGesture(minimumDistance: 20)
                     .onChanged { value in
                         let h = value.translation.width
