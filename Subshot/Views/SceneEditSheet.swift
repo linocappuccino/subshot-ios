@@ -206,10 +206,29 @@ struct SceneEditSheet: View {
                             draftDialogueRow(text, at: index)
                         }
                         if isAddingDialogue {
-                            TextField("Neuer Dialog", text: $newDialogueText)
-                                .focused($newDialogueFocused)
-                                .submitLabel(.done)
-                                .onSubmit { commitNewDialogue() }
+                            // 2026-07-15, Lino: dialogue text needs to keep
+                            // real line breaks exactly as typed — a plain
+                            // single-line TextField (the old version here)
+                            // can't hold a newline AT ALL, Return always
+                            // submitted the whole line immediately. axis:
+                            // .vertical (same technique "Beschreibung"
+                            // above already uses) lets Return insert an
+                            // actual newline and grows the field instead.
+                            // That means Return no longer submits, so this
+                            // needs its own explicit commit button — a
+                            // multi-line field's onSubmit doesn't reliably
+                            // fire on Return the way a single-line field's did.
+                            HStack(alignment: .bottom, spacing: 8) {
+                                TextField("Neuer Dialog", text: $newDialogueText, axis: .vertical)
+                                    .focused($newDialogueFocused)
+                                    .lineLimit(1...6)
+                                Button {
+                                    commitNewDialogue()
+                                } label: {
+                                    Image(systemName: "checkmark.circle.fill")
+                                }
+                                .disabled(newDialogueText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            }
                         } else {
                             Button {
                                 newDialogueText = ""
