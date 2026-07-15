@@ -1,5 +1,8 @@
 import Foundation
 import Combine
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// One search result, from either the Google Places path (place_id set, no
 /// coordinates yet — see resolve()) or the Nominatim fallback path
