@@ -242,6 +242,16 @@ struct SceneEditSheet: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
+                            // 2026-07-15, Lino: RunPod cold-start (kept at
+                            // 0 idle cost) can genuinely take a couple
+                            // minutes on the first generation after a
+                            // quiet spell — say so up front instead of a
+                            // bare spinner that reads as hung.
+                            if generatingStyle != nil {
+                                Text("Kann bis zu 2-3 Minuten dauern, falls der KI-Server gerade „kalt“ ist (länger nicht genutzt wurde).")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
