@@ -54,9 +54,10 @@ struct SceneEditSheet: View {
     @State private var displayedImageUrl: String?
     /// Which AI style is currently generating (nil = idle) — "realistic" or
     /// "sketch", matches the backend's SceneImageGenerate.style values.
-    /// Only true for the brief moment of the fire-and-forget POST itself
-    /// now (see generateAIImage) — the actual generation happens server-
-    /// side afterward, tracked separately by imageGenerationStarted below.
+    /// Optimistic lock covering the gap between tapping the button and the
+    /// next 12s poll picking up the persistent `existing.imageGenerating`
+    /// flag (see the onChange below, mirrors the web app's own
+    /// generatingStyle/useEffect pair in SceneEditModal.tsx).
     @State private var generatingStyle: String?
     /// 2026-07-15, Lino: "16:9 oder 9:16" — matches the web app's own
     /// default choice/reasoning (camera-footage aspect is the more likely
@@ -118,6 +119,12 @@ struct SceneEditSheet: View {
         _durationHours = State(initialValue: totalMinutes / 60)
         _durationMins = State(initialValue: (totalMinutes % 60) / 5 * 5)
         _priority = State(initialValue: existing?.priority)
+        // 2026-07-16: seed from the persistent flag so reopening the sheet
+        // mid-generation (job started earlier, this sheet instance is
+        // fresh) still shows the "wird im Hintergrund erstellt" hint
+        // instead of only ever showing it within the sheet instance that
+        // originally tapped the button.
+        _imageGenerationStarted = State(initialValue: existing?.imageGenerating ?? false)
     }
 
     /// Same fix as SceneLocationSection's own `liveScene` below — `existing`
@@ -126,6 +133,13 @@ struct SceneEditSheet: View {
     /// picking a new assignee until the sheet is reopened.
     private func liveExisting(_ scene: Scene) -> Scene {
         viewModel.scenes.first(where: { $0.id == scene.id }) ?? scene
+    }
+
+    /// The persistent, poll-backed generation flag (see Scene.imageGenerating
+    /// doc comment) — false whenever there's no `existing` (brand-new scene,
+    /// AI section isn't even shown then).
+    private var liveImageGenerating: Bool {
+        existing.map { liveExisting($0).imageGenerating } ?? false
     }
 
     /// Keeps `durationMinutes` (what actually gets sent to the backend, see
@@ -174,15 +188,32 @@ struct SceneEditSheet: View {
     /// once RunPod finishes; ShotListView's existing 12s poll picks it up
     /// on its own the next time this scene renders, whether this sheet
     /// stayed open or was closed right after tapping the button.
+    ///
+    /// 2026-07-16, two fixes bundled in (mirrors the web app's own same-day
+    /// fix in SceneEditModal.tsx): 1) persists `description` first so the
+    /// backend generates from whatever's actually in the text field right
+    /// now, not the last-saved value still in the DB (the description
+    /// field itself has no autosave — it only reaches the server via
+    /// "Fertig" otherwise). 2) `generatingStyle` is deliberately NOT reset
+    /// here anymore — the POST resolving only means the job was queued,
+    /// not that it's done. It now stays set until the onChange below
+    /// observes `existing.imageGenerating` flip back to false via the 12s
+    /// poll, which also backs the buttons' disabled state so a second tap
+    /// — or this same scene reopened elsewhere — can't fire a duplicate
+    /// job while one's already running.
     private func generateAIImage(_ style: String) async {
         guard let existing, !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         generatingStyle = style
-        defer { generatingStyle = nil }
         do {
+            let updated = try await APIClient.shared.patchScene(existing.id, description: description)
+            if let index = viewModel.scenes.firstIndex(where: { $0.id == updated.id }) {
+                viewModel.scenes[index] = updated
+            }
             _ = try await APIClient.shared.generateSceneImage(existing.id, style: style, aspectRatio: aspectRatio)
             imageGenerationStarted = true
         } catch {
             viewModel.errorMessage = error.localizedDescription
+            generatingStyle = nil
         }
     }
 
@@ -247,7 +278,7 @@ struct SceneEditSheet: View {
                                         Label("Realistisch", systemImage: "sparkles")
                                     }
                                 }
-                                .disabled(description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || generatingStyle != nil)
+                                .disabled(description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || generatingStyle != nil || liveImageGenerating)
 
                                 Button {
                                     Task { await generateAIImage("sketch") }
@@ -258,7 +289,15 @@ struct SceneEditSheet: View {
                                         Label("Sketch", systemImage: "pencil.and.scribble")
                                     }
                                 }
-                                .disabled(description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || generatingStyle != nil)
+                                .disabled(description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || generatingStyle != nil || liveImageGenerating)
+                            }
+                            // Clears the optimistic local lock once the
+                            // persistent server-side flag confirms the job
+                            // actually finished, not just that it was
+                            // queued — mirrors the web app's own useEffect
+                            // in SceneEditModal.tsx.
+                            .onChange(of: liveImageGenerating) { _, stillGenerating in
+                                if !stillGenerating { generatingStyle = nil }
                             }
                             if description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                 Text("Erst eine Beschreibung eintragen")

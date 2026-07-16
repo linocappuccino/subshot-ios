@@ -149,6 +149,12 @@ struct Scene: Codable, Identifiable, Hashable {
     var scheduledAt: Date?
     var durationMinutes: Int?
     var imageUrl: String?
+    /// Persistent AI-image-generation lock (2026-07-16) — survives sheet
+    /// close/reopen and app relaunch, unlike a local-only "just tapped"
+    /// flag, since the actual RunPod job runs well after this scene's
+    /// response already came back. Mirrors the web app's own
+    /// `existing.image_generating` (see SceneEditModal.tsx).
+    var imageGenerating: Bool = false
     var completed: Bool
     var sortOrder: Int
     var assigneeId: String?
@@ -196,6 +202,7 @@ struct Scene: Codable, Identifiable, Hashable {
         case scheduledAt = "scheduled_at"
         case durationMinutes = "duration_minutes"
         case imageUrl = "image_url"
+        case imageGenerating = "image_generating"
         case sortOrder = "sort_order"
         case assigneeId = "assignee_id"
         case assigneeIds = "assignee_ids"
