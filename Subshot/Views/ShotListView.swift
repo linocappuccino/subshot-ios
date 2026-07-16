@@ -25,17 +25,47 @@ private func sceneAccentColor(_ priority: ShotPriority?) -> Color {
 }
 
 private extension View {
-    /// Conditionally attaches .draggable() — used to suppress sceneTile's
-    /// reorder-drag while swipeableCard's own gesture is active (see
-    /// swipingSceneIds' doc comment on ShotListView for why: both being
-    /// live at once produced two overlapping renders during a swipe).
+    /// Suppresses sceneTile's reorder-drag while swipeableCard's own gesture
+    /// is active (see swipingSceneIds' doc comment on ShotListView for why:
+    /// both being live at once produced two overlapping renders during a
+    /// swipe).
+    ///
+    /// 2026-07-17, SIXTH attempt at the still-open "swipe freezes/hangs"
+    /// bug (Lino: "hängt fest wenn man nach links oder rechts swiped") —
+    /// no UX change this round (Lino explicitly declined the dedicated-
+    /// grip-handle restructure the standing theory calls for). NEW theory
+    /// instead, about THIS helper specifically: it used to be
+    /// `if condition { self.draggable(payload) {...} } else { self }` —
+    /// an `if/else` over two DIFFERENT view types. Toggling `condition`
+    /// (which happens mid-gesture, from inside the swipe DragGesture's own
+    /// `onChanged`, exactly when swipingSceneIds.insert(scene.id) flips
+    /// `suppressDrag`) forces SwiftUI to tear down and rebuild this part of
+    /// the view identity, since `if`/`else` branches are structurally
+    /// different view types to SwiftUI's diffing — as opposed to the same
+    /// view with a merely different modifier ARGUMENT. If that teardown
+    /// reaches far enough up to include the `.simultaneousGesture(
+    /// DragGesture...)` living on swipeableCard's `content()` (which wraps
+    /// sceneTile, i.e. exactly what this modifier lives inside), the very
+    /// act of suppressing .draggable() to fix the OTHER (already-fixed)
+    /// "grows" bug could sever the swipe gesture's own recognizer mid-touch
+    /// — SwiftUI's DragGesture has no onCancelled callback, so a torn-down
+    /// recognizer never fires onEnded, leaving sceneSwipeOffsets/
+    /// swipingSceneIds stuck at whatever they were mid-swipe forever. That
+    /// matches "hängt fest" exactly (the card visually stays offset/
+    /// unresponsive) far better than any theory tried so far, all of which
+    /// targeted what was VISIBLE (a second rendering) rather than a
+    /// recognizer being killed outright.
+    ///
+    /// Fix: always attach .draggable() (same view type in every render,
+    /// nothing to tear down) with an inert empty-string payload when
+    /// suppressed instead of removing the modifier — no valid "scene:"/
+    /// "section:" prefix ever starts with "", so every existing
+    /// onDrop/dropDestination handler in this file already ignores it
+    /// silently, same practical effect as not being draggable, with none
+    /// of the view-identity churn. UNVERIFIED (no Xcode/simulator here).
     @ViewBuilder
     func draggableIf(_ condition: Bool, _ payload: String, @ViewBuilder preview: () -> some View) -> some View {
-        if condition {
-            self.draggable(payload) { preview() }
-        } else {
-            self
-        }
+        self.draggable(condition ? payload : "") { preview() }
     }
 
     /// Conditionally attaches .contextMenu(menuItems:preview:) — 2026-07-14,
@@ -1670,6 +1700,23 @@ struct ShotListView: View {
                     .onChanged { value in
                         let h = value.translation.width
                         let v = value.translation.height
+                        // Self-healing safety net (2026-07-17, alongside the
+                        // draggableIf fix above) — DragGesture has no
+                        // onCancelled callback, so if a PREVIOUS swipe's
+                        // recognizer was ever torn down/interrupted mid-
+                        // gesture without onEnded firing, sceneSwipeOffsets/
+                        // swipingSceneIds could stay stuck at that old,
+                        // non-zero value forever (exactly "hängt fest").
+                        // minimumDistance: 20 already means onChanged never
+                        // fires until translation exceeds 20pt in some
+                        // direction, so a magnitude still under 25 here can
+                        // only mean "the very start of a brand-new touch" —
+                        // clear any stale leftover from an old gesture
+                        // before doing anything else with this one.
+                        if abs(h) < 25, abs(v) < 25, sceneSwipeOffsets[scene.id] != nil {
+                            sceneSwipeOffsets[scene.id] = nil
+                            swipingSceneIds.remove(scene.id)
+                        }
                         // Only react once the drag is CLEARLY more
                         // horizontal than vertical — anything ambiguous is
                         // left alone entirely (no state write at all) so a

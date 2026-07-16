@@ -234,6 +234,24 @@ enum ShotPriority: String, Codable, CaseIterable, Identifiable {
         case .optional: return "Optional"
         }
     }
+
+    /// Same palette as the web app's PRIORITY_COLORS (lib/types.ts) and the
+    /// share_view.py PDF/preview export — must=red, should=orange,
+    /// optional=blue, kept in one place (2026-07-17) so every picker that
+    /// shows a priority's own color (not just a generic accent) stays in
+    /// sync with the other two clients by construction, not by copy-paste.
+    var color: Color {
+        switch self {
+        case .must: return .red
+        case .should: return .orange
+        case .optional: return Color(red: 0x3d / 255.0, green: 0x84 / 255.0, blue: 0xd8 / 255.0)
+        }
+    }
+
+    /// "Keine" (no priority set) isn't a case of the enum itself (priority
+    /// is `ShotPriority?` everywhere it's stored) — this is the color for
+    /// that nil state, same neutral gray as the web app's PRIORITY_COLORS[null].
+    static let noneColor = Color(.systemGray3)
 }
 
 enum ShotStatus: String, Codable {

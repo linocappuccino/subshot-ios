@@ -132,14 +132,11 @@ struct ShotDetailSheet: View {
                 }
 
                 Section("Priorität") {
-                    Picker("Priorität", selection: $priority) {
-                        Text("Keine").tag(ShotPriority?.none)
-                        ForEach(ShotPriority.allCases) { p in
-                            Text(p.label).tag(ShotPriority?.some(p))
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .onChange(of: priority) { _, _ in scheduleAutosave() }
+                    // 2026-07-17 — same colored picker as SceneEditSheet
+                    // (PrioritySegmentedControl, defined there), matching the
+                    // web app's per-priority-color switch on both tiles.
+                    PrioritySegmentedControl(priority: $priority)
+                        .onChange(of: priority) { _, _ in scheduleAutosave() }
                 }
 
                 // For noting the keeper take's filename on set, once picture

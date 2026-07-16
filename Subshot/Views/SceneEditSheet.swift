@@ -395,14 +395,17 @@ struct SceneEditSheet: View {
                 }
                 if !isIntermediateStep {
                     Section("Priorität") {
-                        Picker("Priorität", selection: $priority) {
-                            Text("Keine").tag(ShotPriority?.none)
-                            ForEach(ShotPriority.allCases) { p in
-                                Text(p.label).tag(ShotPriority?.some(p))
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .onChange(of: priority) { _, _ in scheduleAutosave() }
+                        // 2026-07-17, Lino: the web app's priority switch
+                        // already shows each option in its OWN color the
+                        // instant you switch to it (see SegmentedControl.tsx
+                        // + PRIORITY_COLORS) — the stock `.pickerStyle(
+                        // .segmented)` here only ever showed the system's
+                        // generic tint, never the priority's real color.
+                        // PrioritySegmentedControl (bottom of this file)
+                        // matches the web behavior exactly, same palette
+                        // (ShotPriority.color/.noneColor in Models.swift).
+                        PrioritySegmentedControl(priority: $priority)
+                            .onChange(of: priority) { _, _ in scheduleAutosave() }
                     }
                 }
                 Section("Beschreibung") {
@@ -764,5 +767,45 @@ private struct SceneLocationSection: View {
         isEditing = false
         completer.clear()
         query = ""
+    }
+}
+
+/// Custom priority picker (2026-07-17) — replaces the stock
+/// `.pickerStyle(.segmented)` Picker, which only ever showed the system's
+/// generic accent tint. Matches the web app's SegmentedControl.tsx exactly:
+/// the currently-selected option's own pill is filled with ITS priority
+/// color (ShotPriority.color/.noneColor in Models.swift), not one shared
+/// accent — same reasoning as sceneAccentColor's scene-number badge
+/// elsewhere in this app (ShotListView.swift). Used by both
+/// SceneEditSheet (scene-level priority) and ShotDetailSheet (shot-level).
+struct PrioritySegmentedControl: View {
+    @Binding var priority: ShotPriority?
+
+    private static let options: [ShotPriority?] = [nil, .must, .should, .optional]
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(Self.options, id: \.self) { option in
+                let isActive = priority == option
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                        priority = option
+                    }
+                } label: {
+                    Text(option?.label ?? "Keine")
+                        .font(.footnote.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 7)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(isActive ? (option?.color ?? ShotPriority.noneColor) : Color.clear)
+                        )
+                        .foregroundStyle(isActive ? .white : .secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(4)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color(.tertiarySystemFill)))
     }
 }
