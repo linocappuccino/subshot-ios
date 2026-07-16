@@ -10,6 +10,13 @@ struct ShotDetailSheet: View {
     @State private var goodTake: String
     @State private var uploadedImage: UIImage?
     @State private var isSaving = false
+    /// Autosave (2026-07-16, Lino: "es muss alles was man aendert in allen
+    /// Kacheln sofort gespeichert werden") — pending debounced save, see
+    /// SceneEditSheet's own scheduleAutosave doc comment for the same
+    /// coalescing reasoning. Photo add/remove already autosave separately
+    /// (handlePhotoPicked/removePhoto above, pre-existing), this covers the
+    /// rest: description, priority, good take, all camera settings.
+    @State private var autosaveTask: Task<Void, Never>?
 
     // Camera settings (2026-07-13, Lino) — re-added after having been
     // deliberately dropped from this sheet earlier ("nicht so viel
@@ -121,6 +128,7 @@ struct ShotDetailSheet: View {
                 Section("Beschreibung") {
                     TextField("z.B. Weitwinkel Establishing Shot", text: $description, axis: .vertical)
                         .lineLimit(3...6)
+                        .onChange(of: description) { _, _ in scheduleAutosave() }
                 }
 
                 Section("Priorität") {
@@ -131,6 +139,7 @@ struct ShotDetailSheet: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                    .onChange(of: priority) { _, _ in scheduleAutosave() }
                 }
 
                 // For noting the keeper take's filename on set, once picture
@@ -140,6 +149,7 @@ struct ShotDetailSheet: View {
                     TextField("Dateiname, z.B. A003_C012", text: $goodTake)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                        .onChange(of: goodTake) { _, _ in scheduleAutosave() }
                 }
 
                 Section("Kamera") {
@@ -152,6 +162,7 @@ struct ShotDetailSheet: View {
                     TextField("Kamera-ID (A, B, C…)", text: $cameraId)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                        .onChange(of: cameraId) { _, _ in scheduleAutosave() }
                     // Objektiv/F-Stop/ISO: picker over the real-world range
                     // instead of free text (2026-07-14) — Winkel removed
                     // entirely per the same request.
@@ -160,33 +171,40 @@ struct ShotDetailSheet: View {
                             Text("\(mm)mm").tag(mm)
                         }
                     }
+                    .onChange(of: lens) { _, _ in scheduleAutosave() }
                     Picker("F-Stop", selection: fStopBinding) {
                         ForEach(Self.fStopRange, id: \.self) { value in
                             Text(String(format: "f/%.1f", value)).tag(value)
                         }
                     }
+                    .onChange(of: fStop) { _, _ in scheduleAutosave() }
                     Picker("Framerate", selection: $frameRate) {
                         Text("Keine").tag("")
                         ForEach(Self.frameRateOptions, id: \.self) { rate in
                             Text("\(rate) fps").tag(rate)
                         }
                     }
+                    .onChange(of: frameRate) { _, _ in scheduleAutosave() }
                     TextField("Shutterangle", text: $shutterAngle)
                         .keyboardType(.decimalPad)
+                        .onChange(of: shutterAngle) { _, _ in scheduleAutosave() }
                     Picker("ISO", selection: isoBinding) {
                         ForEach(Self.isoRange, id: \.self) { value in
                             Text("\(value)").tag(value)
                         }
                     }
+                    .onChange(of: iso) { _, _ in scheduleAutosave() }
                     TextField("Codec", text: $codec)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                        .onChange(of: codec) { _, _ in scheduleAutosave() }
                     Picker("Aufnahme-Art", selection: $cameraSupport) {
                         Text("Keine").tag(CameraSupport?.none)
                         ForEach(CameraSupport.allCases) { support in
                             Text(support.label).tag(CameraSupport?.some(support))
                         }
                     }
+                    .onChange(of: cameraSupport) { _, _ in scheduleAutosave() }
                 }
             }
             .navigationTitle("Einstellung bearbeiten")
@@ -244,37 +262,59 @@ struct ShotDetailSheet: View {
         }
     }
 
+    /// Passes the shot's EXISTING durationSeconds back unchanged (not nil)
+    /// — patchShotFull always includes every key in its JSON body, and the
+    /// backend treats a present-but-null field as "clear it" (see
+    /// app/main.py's patch_shot), so nil here would silently wipe
+    /// durationSeconds even though this sheet doesn't offer a way to edit
+    /// it. Shared by both the explicit "Fertig" save and the debounced
+    /// autosave below — one save path, two triggers.
+    private func persistShot() async throws {
+        let trimmedGoodTake = goodTake.trimmingCharacters(in: .whitespacesAndNewlines)
+        let updated = try await APIClient.shared.patchShotFull(
+            shot.id,
+            description: description,
+            durationSeconds: shot.durationSeconds,
+            cameraAngle: cameraAngle.trimmingCharacters(in: .whitespaces).isEmpty ? nil : cameraAngle,
+            priority: priority?.rawValue,
+            goodTakeFilename: trimmedGoodTake.isEmpty ? nil : trimmedGoodTake,
+            lens: lens.trimmingCharacters(in: .whitespaces).isEmpty ? nil : lens,
+            fStop: fStop.trimmingCharacters(in: .whitespaces).isEmpty ? nil : fStop,
+            frameRate: frameRate.trimmingCharacters(in: .whitespaces).isEmpty ? nil : frameRate,
+            shutterAngle: Double(shutterAngle),
+            iso: Int(iso),
+            codec: codec.trimmingCharacters(in: .whitespaces).isEmpty ? nil : codec,
+            cameraId: cameraId.trimmingCharacters(in: .whitespaces).isEmpty ? nil : cameraId,
+            cameraSupport: cameraSupport?.rawValue
+        )
+        shot = updated
+        viewModel.replace(updated)
+    }
+
     private func save() async {
         isSaving = true
         defer { isSaving = false }
         do {
-            let trimmedGoodTake = goodTake.trimmingCharacters(in: .whitespacesAndNewlines)
-            // Passes the shot's EXISTING durationSeconds back unchanged (not
-            // nil) — patchShotFull always includes every key in its JSON
-            // body, and the backend treats a present-but-null field as
-            // "clear it" (see app/main.py's patch_shot), so nil here would
-            // silently wipe durationSeconds even though this sheet doesn't
-            // offer a way to edit it.
-            let updated = try await APIClient.shared.patchShotFull(
-                shot.id,
-                description: description,
-                durationSeconds: shot.durationSeconds,
-                cameraAngle: cameraAngle.trimmingCharacters(in: .whitespaces).isEmpty ? nil : cameraAngle,
-                priority: priority?.rawValue,
-                goodTakeFilename: trimmedGoodTake.isEmpty ? nil : trimmedGoodTake,
-                lens: lens.trimmingCharacters(in: .whitespaces).isEmpty ? nil : lens,
-                fStop: fStop.trimmingCharacters(in: .whitespaces).isEmpty ? nil : fStop,
-                frameRate: frameRate.trimmingCharacters(in: .whitespaces).isEmpty ? nil : frameRate,
-                shutterAngle: Double(shutterAngle),
-                iso: Int(iso),
-                codec: codec.trimmingCharacters(in: .whitespaces).isEmpty ? nil : codec,
-                cameraId: cameraId.trimmingCharacters(in: .whitespaces).isEmpty ? nil : cameraId,
-                cameraSupport: cameraSupport?.rawValue
-            )
-            viewModel.replace(updated)
+            try await persistShot()
         } catch {
             viewModel.errorMessage = error.localizedDescription
         }
         dismiss()
+    }
+
+    /// Debounced autosave (2026-07-16) — see SceneEditSheet's own
+    /// scheduleAutosave doc comment for the coalescing reasoning; identical
+    /// pattern here.
+    private func scheduleAutosave() {
+        autosaveTask?.cancel()
+        autosaveTask = Task {
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled else { return }
+            do {
+                try await persistShot()
+            } catch {
+                viewModel.errorMessage = error.localizedDescription
+            }
+        }
     }
 }

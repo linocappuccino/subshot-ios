@@ -69,6 +69,15 @@ struct SceneEditSheet: View {
     /// fast 202 response lands) so the "wird im Hintergrund erstellt"
     /// hint doesn't just flash and disappear.
     @State private var imageGenerationStarted = false
+    /// Autosave (2026-07-16, Lino: "es muss alles was man aendert in allen
+    /// Kacheln sofort gespeichert werden") — pending debounced save, kept so
+    /// a new edit can cancel+replace it instead of piling up parallel
+    /// PATCHes. Only relevant for an already-created scene (see
+    /// scheduleAutosave); location/assignee/good-take/image-remove already
+    /// autosaved before this via their own direct calls (see their own
+    /// call sites below), this covers the remaining fields that used to
+    /// wait for "Fertig": name, description, priority, date/duration.
+    @State private var autosaveTask: Task<Void, Never>?
     @State private var isAddingShot = false
     @State private var newShotText = ""
     @FocusState private var newShotFocused: Bool
@@ -155,6 +164,34 @@ struct SceneEditSheet: View {
     private func syncDurationMinutes() {
         let total = durationHours * 60 + durationMins
         durationMinutes = total == 0 ? nil : total
+    }
+
+    /// Debounced autosave (2026-07-16) — cancels any pending save and
+    /// schedules a new one ~600ms out, same coalescing idea as the web
+    /// app's useAutosave hook. Only for an already-created scene: a
+    /// brand-new one has no id to PATCH against yet (stays create-on-
+    /// Fertig, same reasoning as the AI-image section's existing-only
+    /// guard). Reuses `renameScene` — the exact same call "Fertig" already
+    /// makes, including its time-cascade-confirmation follow-up when the
+    /// start time actually changed — so this isn't a second, divergent save
+    /// path, just an automatic trigger for the existing one.
+    private func scheduleAutosave() {
+        autosaveTask?.cancel()
+        guard let existing else { return }
+        autosaveTask = Task {
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled else { return }
+            await viewModel.renameScene(
+                existing,
+                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                color: color,
+                description: description.trimmingCharacters(in: .whitespacesAndNewlines),
+                dialogue: existing.dialogue ?? "",
+                scheduledAt: hasDate ? scheduledDate : nil,
+                durationMinutes: hasDate ? durationMinutes : nil,
+                priority: priority
+            )
+        }
     }
 
     /// Mirrors ShotDetailSheet's removePhoto. A locally staged (not yet
@@ -345,6 +382,7 @@ struct SceneEditSheet: View {
 
                 Section("Name") {
                     TextField("z.B. Küche, Aussen Tag 1", text: $name)
+                        .onChange(of: name) { _, _ in scheduleAutosave() }
                 }
                 if !isIntermediateStep {
                     Section("Priorität") {
@@ -355,11 +393,13 @@ struct SceneEditSheet: View {
                             }
                         }
                         .pickerStyle(.segmented)
+                        .onChange(of: priority) { _, _ in scheduleAutosave() }
                     }
                 }
                 Section("Beschreibung") {
                     TextField("z.B. Handlung, Notizen", text: $description, axis: .vertical)
                         .lineLimit(3...6)
+                        .onChange(of: description) { _, _ in scheduleAutosave() }
                 }
 
                 if !isIntermediateStep {
@@ -415,10 +455,12 @@ struct SceneEditSheet: View {
 
                 Section("Datum & Uhrzeit") {
                     Toggle("Drehtermin festlegen", isOn: $hasDate.animation(.spring(response: 0.35, dampingFraction: 0.86)))
+                        .onChange(of: hasDate) { _, _ in scheduleAutosave() }
                     if hasDate {
                         // Default (.compact) style in a Form — tap the value to get the
                         // standard system calendar+wheel popover, same as Reminders/Calendar.
                         DatePicker("Start", selection: $scheduledDate, displayedComponents: [.date, .hourAndMinute])
+                            .onChange(of: scheduledDate) { _, _ in scheduleAutosave() }
                     }
                 }
 
@@ -440,8 +482,8 @@ struct SceneEditSheet: View {
                             }
                             .pickerStyle(.wheel)
                         }
-                        .onChange(of: durationHours) { _, _ in syncDurationMinutes() }
-                        .onChange(of: durationMins) { _, _ in syncDurationMinutes() }
+                        .onChange(of: durationHours) { _, _ in syncDurationMinutes(); scheduleAutosave() }
+                        .onChange(of: durationMins) { _, _ in syncDurationMinutes(); scheduleAutosave() }
                     }
                 }
 
