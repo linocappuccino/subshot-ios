@@ -74,12 +74,6 @@ struct SceneEditSheet: View {
     /// 2026-07-16 — set on a 402 (insufficient_credits) from
     /// generateSceneImage, see generateAIImage's own doc comment.
     @State private var showInsufficientCreditsAlert = false
-    /// Set once a generation request has been successfully queued —
-    /// stays true for the rest of this sheet's lifetime (unlike
-    /// `generatingStyle`, which flips back almost immediately once the
-    /// fast 202 response lands) so the "wird im Hintergrund erstellt"
-    /// hint doesn't just flash and disappear.
-    @State private var imageGenerationStarted = false
     /// Autosave (2026-07-16, Lino: "es muss alles was man aendert in allen
     /// Kacheln sofort gespeichert werden") — pending debounced save, kept so
     /// a new edit can cancel+replace it instead of piling up parallel
@@ -139,12 +133,6 @@ struct SceneEditSheet: View {
         _durationHours = State(initialValue: totalMinutes / 60)
         _durationMins = State(initialValue: (totalMinutes % 60) / 5 * 5)
         _priority = State(initialValue: existing?.priority)
-        // 2026-07-16: seed from the persistent flag so reopening the sheet
-        // mid-generation (job started earlier, this sheet instance is
-        // fresh) still shows the "wird im Hintergrund erstellt" hint
-        // instead of only ever showing it within the sheet instance that
-        // originally tapped the button.
-        _imageGenerationStarted = State(initialValue: existing?.imageGenerating ?? false)
     }
 
     /// Same fix as SceneLocationSection's own `liveScene` below — `existing`
@@ -239,7 +227,7 @@ struct SceneEditSheet: View {
     /// ready — this sheet does NOT wait for or apply the result itself
     /// anymore (that would require staying open the whole time, exactly
     /// what Lino wants to avoid). The scene's imageUrl updates server-side
-    /// once RunPod finishes; ShotListView's existing 12s poll picks it up
+    /// once generation finishes; ShotListView's existing 12s poll picks it up
     /// on its own the next time this scene renders, whether this sheet
     /// stayed open or was closed right after tapping the button.
     ///
@@ -264,7 +252,6 @@ struct SceneEditSheet: View {
                 viewModel.scenes[index] = updated
             }
             _ = try await APIClient.shared.generateSceneImage(existing.id, style: style, aspectRatio: aspectRatio)
-            imageGenerationStarted = true
         } catch {
             // 2026-07-16, Lino: "in der ios app soll es einfach ueber die
             // pop meldung gehen die kommt wenn man keine credits mehr hat" —
@@ -395,18 +382,6 @@ struct SceneEditSheet: View {
                             }
                             if description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                 Text("Erst eine Beschreibung eintragen")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            // 2026-07-15, Lino: fire-and-forget now (see
-                            // generateAIImage) — this stays visible for the
-                            // rest of the sheet's lifetime once a request
-                            // has been queued, not just the brief moment
-                            // generatingStyle is set, since the actual
-                            // generation (and the cold-start wait, kept at
-                            // 0 idle cost) happens server-side afterward.
-                            if imageGenerationStarted {
-                                Text("Wird im Hintergrund erstellt — landet automatisch im Bildfeld. Kann bis zu 2-3 Minuten dauern, falls der KI-Server gerade „kalt“ ist. Du kannst dieses Fenster schliessen.")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
