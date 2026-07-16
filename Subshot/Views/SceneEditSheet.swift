@@ -135,11 +135,17 @@ struct SceneEditSheet: View {
         viewModel.scenes.first(where: { $0.id == scene.id }) ?? scene
     }
 
-    /// The persistent, poll-backed generation flag (see Scene.imageGenerating
-    /// doc comment) — false whenever there's no `existing` (brand-new scene,
-    /// AI section isn't even shown then).
+    /// The full live scene (see Scene.imageGenerating doc comment) — nil
+    /// whenever there's no `existing` (brand-new scene, AI section isn't
+    /// even shown then). Exposed as the whole Scene, not just the bool, so
+    /// the onChange below can watch it — see that modifier's own comment
+    /// for why watching only the bool misses fast generations.
+    private var liveExistingScene: Scene? {
+        existing.map { liveExisting($0) }
+    }
+
     private var liveImageGenerating: Bool {
-        existing.map { liveExisting($0).imageGenerating } ?? false
+        liveExistingScene?.imageGenerating ?? false
     }
 
     /// Keeps `durationMinutes` (what actually gets sent to the backend, see
@@ -296,8 +302,25 @@ struct SceneEditSheet: View {
                             // actually finished, not just that it was
                             // queued — mirrors the web app's own useEffect
                             // in SceneEditModal.tsx.
-                            .onChange(of: liveImageGenerating) { _, stillGenerating in
-                                if !stillGenerating { generatingStyle = nil }
+                            //
+                            // 2026-07-16 fix: watching just `liveImageGenerating`
+                            // (a Bool) meant this only fired when that ONE
+                            // value changed between two 12s polls. A
+                            // generation that finishes faster than 12s (warm
+                            // RunPod worker, e.g. right after a first
+                            // generation) can complete between two polls with
+                            // neither ever observing it as true — the Bool
+                            // reads false→false the whole time, onChange
+                            // never fires, and generatingStyle (thus the
+                            // disabled button) stays stuck forever, matching
+                            // the reported "second generation does nothing"
+                            // bug. Watching the whole `liveExistingScene`
+                            // instead re-checks on any field change (e.g.
+                            // imageUrl, which always changes on a
+                            // successful generation) between polls, not just
+                            // the one flag this view happens to also read.
+                            .onChange(of: liveExistingScene) { _, updated in
+                                if let updated, !updated.imageGenerating { generatingStyle = nil }
                             }
                             if description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                 Text("Erst eine Beschreibung eintragen")
