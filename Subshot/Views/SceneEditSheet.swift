@@ -47,10 +47,12 @@ struct SceneEditSheet: View {
     /// replace it — mirrors ShotDetailSheet's own removePhoto (shots
     /// already got this 2026-07-14).
     @State private var removingImage = false
-    /// AI-generated cover photo (2026-07-15) — overrides `existing?.imageUrl`
-    /// for display once a generation succeeds, since `existing` is a
-    /// one-time snapshot (see liveExisting's own doc comment) and wouldn't
-    /// otherwise reflect the new image until the sheet is reopened.
+    /// Displayed cover photo. Seeded from `existing?.imageUrl` at open, then
+    /// kept in sync live while an AI generation is in flight by the
+    /// `liveExistingScene` onChange below (2026-07-16) — `existing` itself
+    /// is a one-time snapshot (see `liveExisting`'s own doc comment) and
+    /// wouldn't otherwise reflect a finished generation until the sheet is
+    /// closed and reopened.
     @State private var displayedImageUrl: String?
     /// Which AI style is currently generating (nil = idle) — "realistic" or
     /// "sketch", matches the backend's SceneImageGenerate.style values.
@@ -357,7 +359,21 @@ struct SceneEditSheet: View {
                             // successful generation) between polls, not just
                             // the one flag this view happens to also read.
                             .onChange(of: liveExistingScene) { _, updated in
-                                if let updated, !updated.imageGenerating { generatingStyle = nil }
+                                guard let updated else { return }
+                                if !updated.imageGenerating { generatingStyle = nil }
+                                // 2026-07-16, Lino: "aktualisiert er dann das
+                                // bild auch direkt in der offenen karte?" —
+                                // previously the finished image only showed
+                                // up once this sheet was closed and reopened
+                                // (see displayedImageUrl's own doc comment,
+                                // now outdated). liveExistingScene is
+                                // poll-backed (viewModel.scenes gets fresh
+                                // values every 12s, see liveExisting), so
+                                // this now picks up the new imageUrl live,
+                                // same as the web app's equivalent fix.
+                                if updated.imageUrl != displayedImageUrl {
+                                    displayedImageUrl = updated.imageUrl
+                                }
                             }
                             if description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                 Text("Erst eine Beschreibung eintragen")
