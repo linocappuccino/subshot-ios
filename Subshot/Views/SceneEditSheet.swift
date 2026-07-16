@@ -71,6 +71,9 @@ struct SceneEditSheet: View {
     /// explicit style switch next to the aspect-ratio one, plus a single
     /// "Bild generieren" button that fires whichever style is selected.
     @State private var style = "realistic"
+    /// 2026-07-16 — set on a 402 (insufficient_credits) from
+    /// generateSceneImage, see generateAIImage's own doc comment.
+    @State private var showInsufficientCreditsAlert = false
     /// Set once a generation request has been successfully queued —
     /// stays true for the rest of this sheet's lifetime (unlike
     /// `generatingStyle`, which flips back almost immediately once the
@@ -263,7 +266,21 @@ struct SceneEditSheet: View {
             _ = try await APIClient.shared.generateSceneImage(existing.id, style: style, aspectRatio: aspectRatio)
             imageGenerationStarted = true
         } catch {
-            viewModel.errorMessage = error.localizedDescription
+            // 2026-07-16, Lino: "in der ios app soll es einfach ueber die
+            // pop meldung gehen die kommt wenn man keine credits mehr hat" —
+            // 402 from generate_scene_image_endpoint (insufficient_credits,
+            // see gemini_image_client's Web counterpart / api.ts's matching
+            // event dispatch) gets its own alert instead of the generic
+            // error banner, with a button that hands off to the WEB
+            // credits page in the system browser — no Apple In-App Purchase
+            // flow, no embedded webview with a payment form, just an
+            // external link (Lino's explicit decision, avoids the ~30%
+            // Apple IAP cut question entirely).
+            if case APIError.server(402, _) = error {
+                showInsufficientCreditsAlert = true
+            } else {
+                viewModel.errorMessage = error.localizedDescription
+            }
             generatingStyle = nil
         }
     }
@@ -611,6 +628,16 @@ struct SceneEditSheet: View {
             }
         }
         .preferredColorScheme(.dark)
+        .alert("Keine Credits mehr", isPresented: $showInsufficientCreditsAlert) {
+            Button("Später", role: .cancel) {}
+            Button("Credits kaufen") {
+                if let url = URL(string: "https://app.subshot.ch/credits") {
+                    UIApplication.shared.open(url)
+                }
+            }
+        } message: {
+            Text("Du hast keine AI Credits mehr übrig, um ein Bild zu generieren. Lade Credits über die Web-Seite nach.")
+        }
     }
 
     private func addShot(to scene: Scene) async {
