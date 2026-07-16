@@ -61,11 +61,10 @@ struct SubshotApp: App {
         // SDK v1: Clerk.configure(...) alone is enough — no separate .load() call
         // (that was the v0 API and no longer exists; caused a build error here
         // on 2026-07-07 when the installed package turned out to be v1).
-        Clerk.configure(publishableKey: "pk_test_YmlnLXNuYWtlLTY2LmNsZXJrLmFjY291bnRzLmRldiQ")
-        // NOTE: this is the TEST-mode key (pk_test_...) — fine for development,
-        // but swap to a pk_live_... key from a production Clerk instance before
-        // App Store submission (test instances have usage limits, see the
-        // "Development mode" banner already seen on the web test page).
+        // 2026-07-17 — switched to the production Clerk instance (clerk.subshot.ch),
+        // same key now used server-side as CLERK_PUBLISHABLE_KEY in /opt/subshot/.env
+        // and NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY in the web app.
+        Clerk.configure(publishableKey: "pk_live_Y2xlcmsuc3Vic2hvdC5jaCQ")
     }
 
     var body: some SwiftUI.Scene {
