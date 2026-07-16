@@ -1542,7 +1542,7 @@ struct ShotListView: View {
         // reserve extra space for that), which reads as the card bleeding
         // into/over its neighbors above and below in the list - not an
         // actual size change, but exactly what "vergrössert sich" describes.
-        let rotation = max(-16, min(16, Double(offset) / 20))
+        let rotation = max(-10, min(10, Double(offset) / 28))
         content()
             // 2026-07-14, third attempt — Lino finally pinned down the actual
             // visual precisely: "die kachel im hintergrund winkelt sich auch,
@@ -1589,9 +1589,42 @@ struct ShotListView: View {
             // to contain that risk to the brief moment a card is being
             // thrown, not to the list's normal at-rest appearance where the
             // glass look matters far more and for far longer.
+            //
+            // 2026-07-16, FIFTH attempt — Lino confirmed .drawingGroup()
+            // ALSO made zero difference, which rules out compositing/
+            // rasterization as the cause entirely: two different,
+            // independent fixes targeting "SwiftUI resamples effect layers
+            // mid-transform" both failed to change anything, so that whole
+            // theory is dead. NEW theory instead, purely geometric, not a
+            // rendering-layer issue at all: rotationEffect(anchor: .bottom)
+            // pivots around the BOTTOM edge, so for a TALL card (this
+            // list's cards are often very tall — dialogue, description,
+            // shots, photos, unlike Tinder's roughly square photo cards)
+            // even the existing ±16° cap swings the TOP corners sideways
+            // by height * sin(16°), which for a 300pt+ card is 80pt+ of
+            // lateral corner travel ON TOP of the offset() translation
+            // already applied. That corner sweep visually overlaps/covers
+            // the cards above and below in the list, which reads exactly
+            // like "wird viel grösser" even though no size value ever
+            // actually changes — a geometric side effect of rotating a
+            // tall rectangle around its bottom edge, not something any
+            // compositing/rasterization fix could ever touch (explains why
+            // both prior attempts changed nothing). Switched anchor to
+            // .center, which roughly halves the worst-case lateral swing
+            // (pivot is now mid-height, so both top AND bottom corners
+            // move, but each only about half as far as the bottom-anchored
+            // top corner did) — also reduced the rotation cap 16°→10° and
+            // steepened the divisor 20→28 so a full-throw swipe rotates
+            // less aggressively overall. UNVERIFIED (no Xcode/simulator
+            // here). If this theory is right, the bug should be visibly
+            // WORSE on tall cards (long dialogue/description) than on
+            // short ones (a bare Zwischenschritt card) — ask Lino to
+            // compare both specifically when testing, that's the signal
+            // that confirms or kills this theory regardless of whether
+            // .center alone fully fixes it.
             .modifier(SwipeCompositingModifier(isSwiping: offset != 0))
             .offset(x: offset)
-            .rotationEffect(.degrees(rotation), anchor: .bottom)
+            .rotationEffect(.degrees(rotation), anchor: .center)
             // Draws above its neighbors while actively being dragged, so the
             // now-smaller rotation overflow never gets visually clipped
             // behind/under the card above or below it in the list.
