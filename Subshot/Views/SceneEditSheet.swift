@@ -65,6 +65,12 @@ struct SceneEditSheet: View {
     /// default choice/reasoning (camera-footage aspect is the more likely
     /// default for a scene reference image).
     @State private var aspectRatio = "16:9"
+    /// 2026-07-16, Lino: "realistisch/sketch soll auch ein switch button
+    /// sein" — replaces the old two-buttons-double-as-style-picker design
+    /// (each button both selected AND fired its own style) with an
+    /// explicit style switch next to the aspect-ratio one, plus a single
+    /// "Bild generieren" button that fires whichever style is selected.
+    @State private var style = "realistic"
     /// Set once a generation request has been successfully queued —
     /// stays true for the rest of this sheet's lifetime (unlike
     /// `generatingStyle`, which flips back almost immediately once the
@@ -313,29 +319,24 @@ struct SceneEditSheet: View {
                                 Text("9:16").tag("9:16")
                             }
                             .pickerStyle(.segmented)
-                            HStack(spacing: 12) {
-                                Button {
-                                    Task { await generateAIImage("realistic") }
-                                } label: {
-                                    if generatingStyle == "realistic" {
-                                        ProgressView()
-                                    } else {
-                                        Label("Realistisch", systemImage: "sparkles")
-                                    }
-                                }
-                                .disabled(description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || generatingStyle != nil || liveImageGenerating)
-
-                                Button {
-                                    Task { await generateAIImage("sketch") }
-                                } label: {
-                                    if generatingStyle == "sketch" {
-                                        ProgressView()
-                                    } else {
-                                        Label("Sketch", systemImage: "pencil.and.scribble")
-                                    }
-                                }
-                                .disabled(description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || generatingStyle != nil || liveImageGenerating)
+                            Picker("Stil", selection: $style) {
+                                Text("Realistisch").tag("realistic")
+                                Text("Sketch").tag("sketch")
                             }
+                            .pickerStyle(.segmented)
+                            Button {
+                                Task { await generateAIImage(style) }
+                            } label: {
+                                if generatingStyle != nil {
+                                    HStack {
+                                        ProgressView()
+                                        Text("Erstellt…")
+                                    }
+                                } else {
+                                    Label("Bild generieren", systemImage: "sparkles")
+                                }
+                            }
+                            .disabled(description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || generatingStyle != nil || liveImageGenerating)
                             // Clears the optimistic local lock once the
                             // persistent server-side flag confirms the job
                             // actually finished, not just that it was
