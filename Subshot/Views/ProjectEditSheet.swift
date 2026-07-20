@@ -9,19 +9,28 @@ import SwiftUI
 /// time instead of only afterward via a separate edit step.
 struct ProjectEditSheet: View {
     let project: Project?
-    var onSave: (String, String, String?) async -> Void
+    var onSave: (String, String, String?, Bool, Bool, Bool) async -> Void
 
     @State private var name: String
     @State private var color: String
     @State private var emoji: String
+    @State private var moduleConcept: Bool
+    @State private var moduleScripting: Bool
+    @State private var modulePostproduction: Bool
     @Environment(\.dismiss) private var dismiss
 
-    init(project: Project?, defaultColor: String = Color.subshotPalette[0], onSave: @escaping (String, String, String?) async -> Void) {
+    init(
+        project: Project?, defaultColor: String = Color.subshotPalette[0],
+        onSave: @escaping (String, String, String?, Bool, Bool, Bool) async -> Void
+    ) {
         self.project = project
         self.onSave = onSave
         _name = State(initialValue: project?.name ?? "")
         _color = State(initialValue: project?.color ?? defaultColor)
         _emoji = State(initialValue: project?.emoji ?? "")
+        _moduleConcept = State(initialValue: project?.moduleConcept ?? true)
+        _moduleScripting = State(initialValue: project?.moduleScripting ?? true)
+        _modulePostproduction = State(initialValue: project?.modulePostproduction ?? true)
     }
 
     var body: some View {
@@ -53,6 +62,19 @@ struct ProjectEditSheet: View {
                     }
                     .padding(.vertical, 4)
                 }
+                // 2026-07-17, Lino, #96 (erster Baustein der grossen
+                // Pipeline-Vision: Idee -> Scripting -> Postproduction ->
+                // Video-Feedback): "Beim Projekt erstellen sollen
+                // Checkboxen kommen... einzeln markierbar, welche
+                // Pipelines fuer das Projekt genutzt werden." Rein
+                // informativ fuer jetzt, kein Freischalt-Gate. 2026-07-19:
+                // "Video Feedback" Toggle entfernt, mit Postproduction
+                // Tracking zusammengefuehrt (Lino: "sind das gleiche").
+                Section("Pipeline-Module") {
+                    Toggle("Konzept", isOn: $moduleConcept)
+                    Toggle("Script/Shotlist", isOn: $moduleScripting)
+                    Toggle("Postproduction Tracking", isOn: $modulePostproduction)
+                }
             }
             .navigationTitle(project == nil ? "Neues Projekt" : "Projekt bearbeiten")
             .navigationBarTitleDisplayMode(.inline)
@@ -70,7 +92,10 @@ struct ProjectEditSheet: View {
                         // the old bare name-only creation sheet had.
                         guard project != nil || !trimmed.isEmpty else { return }
                         Task {
-                            await onSave(trimmed.isEmpty ? (project?.name ?? "") : trimmed, color, trimmedEmoji.isEmpty ? nil : trimmedEmoji)
+                            await onSave(
+                                trimmed.isEmpty ? (project?.name ?? "") : trimmed, color, trimmedEmoji.isEmpty ? nil : trimmedEmoji,
+                                moduleConcept, moduleScripting, modulePostproduction
+                            )
                             dismiss()
                         }
                     }

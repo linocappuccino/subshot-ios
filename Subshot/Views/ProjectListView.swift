@@ -622,8 +622,12 @@ private struct GridSheets: ViewModifier {
     func body(content: Content) -> some View {
         content
             .sheet(isPresented: $creatingProject) {
-                ProjectEditSheet(project: nil, defaultColor: viewModel.nextDefaultColor) { name, color, emoji in
-                    if let project = await viewModel.create(name: name, color: color, emoji: emoji) { path.append(project) }
+                ProjectEditSheet(project: nil, defaultColor: viewModel.nextDefaultColor) { name, color, emoji, concept, scripting, postproduction in
+                    if let project = await viewModel.create(
+                        name: name, color: color, emoji: emoji,
+                        moduleConcept: concept, moduleScripting: scripting,
+                        modulePostproduction: postproduction
+                    ) { path.append(project) }
                 }
             }
             .sheet(isPresented: $creatingFolder) {
@@ -632,8 +636,12 @@ private struct GridSheets: ViewModifier {
                 }
             }
             .sheet(item: $editingProject) { project in
-                ProjectEditSheet(project: project) { name, color, emoji in
-                    await viewModel.update(project, name: name, color: color, emoji: emoji)
+                ProjectEditSheet(project: project) { name, color, emoji, concept, scripting, postproduction in
+                    await viewModel.update(
+                        project, name: name, color: color, emoji: emoji,
+                        moduleConcept: concept, moduleScripting: scripting,
+                        modulePostproduction: postproduction
+                    )
                 }
             }
             .sheet(item: $editingFolder) { folder in

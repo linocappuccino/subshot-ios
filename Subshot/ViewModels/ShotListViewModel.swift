@@ -55,6 +55,14 @@ final class ShotListViewModel: ObservableObject {
     @Published var members: [Member] = []
     @Published var todoLists: [TodoList] = []
     @Published var sections: [SceneSection] = []
+    /// #96 Pipeline-Module-Checkbox — gates the Postproduction-Tab (#11
+    /// Schritt 5+6) on/off per Projekt.
+    @Published var modulePostproduction: Bool = true
+    /// Planungssektor (2026-07-17 iOS port — see web app's IdeaGrid.tsx) —
+    /// not part of ProjectDetail server-side, always its own round trip
+    /// (see load() below), same "independent of the main load, a failure
+    /// here shouldn't block anything else" pattern as `members`.
+    @Published var ideas: [Idea] = []
 
     /// Owned here, not as a @StateObject inside LocationSection — that view
     /// lives inside the scrolling LazyVStack and gets torn down/rebuilt
@@ -136,6 +144,7 @@ final class ShotListViewModel: ObservableObject {
             clientName = detail.clientName
             todoLists = detail.todoLists.sorted { $0.sortOrder < $1.sortOrder }
             sections = detail.sections.sorted { $0.sortOrder < $1.sortOrder }
+            modulePostproduction = detail.modulePostproduction
         } catch {
             // A cancelled request (pull-to-refresh released mid-flight, or
             // the view disappearing) isn't a real failure — see
@@ -150,6 +159,119 @@ final class ShotListViewModel: ObservableObject {
         } catch {
             // Silent: the info box just shows an empty people list; the user
             // can still open "Team" from the toolbar, which surfaces errors.
+        }
+        // Same "independent, silent on failure" treatment — an Ideas-section
+        // outage shouldn't take the scene/shot list down with it.
+        do {
+            ideas = try await APIClient.shared.listIdeas(projectId: projectId).sorted { $0.sortOrder < $1.sortOrder }
+        } catch {
+            // Silent, same reasoning as members above.
+        }
+    }
+
+    // MARK: - Ideas (Planungssektor)
+
+    func createIdea(title: String = "Neue Idee", text: String = "") async -> Idea? {
+        do {
+            let sortOrder = (ideas.map(\.sortOrder).max() ?? -1) + 1
+            let idea = try await APIClient.shared.createIdea(projectId: projectId, title: title, text: text, sortOrder: sortOrder)
+            ideas.append(idea)
+            return idea
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    func patchIdea(_ idea: Idea, title: String? = nil, text: String? = nil) async {
+        do {
+            let updated = try await APIClient.shared.patchIdea(idea.id, title: title, text: text)
+            if let index = ideas.firstIndex(where: { $0.id == updated.id }) { ideas[index] = updated }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func deleteIdea(_ idea: Idea) async {
+        do {
+            try await APIClient.shared.deleteIdea(idea.id)
+            ideas.removeAll { $0.id == idea.id }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func moveIdea(_ idea: Idea, beforeIdeaId: String?) async {
+        do {
+            _ = try await APIClient.shared.moveIdea(idea.id, beforeIdeaId: beforeIdeaId)
+            // Server-authoritative reorder (mirrors moveScene) — re-fetch
+            // the whole list rather than trying to reconstruct every
+            // sibling's new sortOrder locally.
+            ideas = try await APIClient.shared.listIdeas(projectId: projectId).sorted { $0.sortOrder < $1.sortOrder }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// "Abgenommen" — creates a new Section + Scene server-side (see
+    /// APIClient.approveIdea's own doc comment). Reloads the whole project
+    /// (not just `ideas`) so the new Section/Scene shows up in the
+    /// Scripting-Tool list immediately, same screen, no extra navigation.
+    func approveIdea(_ idea: Idea) async {
+        do {
+            let updated = try await APIClient.shared.approveIdea(idea.id)
+            if let index = ideas.firstIndex(where: { $0.id == updated.id }) { ideas[index] = updated }
+            await load(resetGeneration: false)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    #if canImport(UIKit)
+    func uploadIdeaImage(_ idea: Idea, image: UIImage) async {
+        do {
+            _ = try await APIClient.shared.uploadIdeaImage(ideaId: idea.id, image: image)
+            await refreshIdea(idea.id)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+    #endif
+
+    func deleteIdeaImage(_ idea: Idea, imageId: String) async {
+        do {
+            try await APIClient.shared.deleteIdeaImage(ideaId: idea.id, imageId: imageId)
+            await refreshIdea(idea.id)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func reorderIdeaImages(_ idea: Idea, orderedImageIds: [String]) async {
+        do {
+            let updated = try await APIClient.shared.reorderIdeaImages(ideaId: idea.id, orderedImageIds: orderedImageIds)
+            if let index = ideas.firstIndex(where: { $0.id == updated.id }) { ideas[index] = updated }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// AI generation itself is NOT wrapped here — same split as Scenes
+    /// (see SceneEditSheet.generateAIImage): it calls
+    /// APIClient.shared.generateIdeaImage directly so it can show its own
+    /// sheet-local 402-insufficient-credits alert instead of the generic
+    /// errorMessage banner, then calls this to pick up the result. No
+    /// single-idea GET server-side (mirrors the web app's own
+    /// IdeaFloatingCard.refreshImages workaround) — cheapest way to pick up
+    /// one idea's freshly changed `images` is its own project list.
+    func refreshIdea(_ ideaId: String) async {
+        do {
+            let list = try await APIClient.shared.listIdeas(projectId: projectId)
+            if let fresh = list.first(where: { $0.id == ideaId }), let index = ideas.firstIndex(where: { $0.id == ideaId }) {
+                ideas[index] = fresh
+            }
+        } catch {
+            // Silent — the next 12s poll's full load() will catch it up anyway.
         }
     }
 
@@ -267,6 +389,33 @@ final class ShotListViewModel: ObservableObject {
         }
         do {
             try await APIClient.shared.deleteSection(section.id)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// #11 Schritt 5 — die bestaetigte Aktion hinter "Alle Szenen im Kasten?
+    /// Ab in die Postproduction?".
+    func sendSectionToPostproduction(_ section: SceneSection) async {
+        do {
+            let updated = try await APIClient.shared.sendSectionToPostproduction(section.id)
+            if let index = sections.firstIndex(where: { $0.id == updated.id }) { sections[index] = updated }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// #11 Schritt 6 — Status/Deadline im Postproduction-Tracking aendern;
+    /// Rollen-Gate (Status jede Rolle, Deadline ab "projektleiter") ist
+    /// serverseitig durchgesetzt, siehe APIClient.patchSectionPostproduction.
+    func patchSectionPostproduction(
+        _ section: SceneSection, status: PostproductionStatus? = nil, deadline: Date? = nil, clearDeadline: Bool = false
+    ) async {
+        do {
+            let updated = try await APIClient.shared.patchSectionPostproduction(
+                section.id, status: status, deadline: deadline, clearDeadline: clearDeadline
+            )
+            if let index = sections.firstIndex(where: { $0.id == updated.id }) { sections[index] = updated }
         } catch {
             errorMessage = error.localizedDescription
         }

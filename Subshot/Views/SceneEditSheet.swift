@@ -86,6 +86,12 @@ struct SceneEditSheet: View {
     @State private var isAddingShot = false
     @State private var newShotText = ""
     @FocusState private var newShotFocused: Bool
+    /// 2026-07-17, Lino: "+ Einstellung hinzufügen" moved out of the
+    /// always-visible tile into here (mirrors the web app's #123) — tapping
+    /// an existing row, or naming+confirming a new one, both open this the
+    /// same way ShotListView's own selectedShot already did before this
+    /// section existed there.
+    @State private var editingShot: Shot?
     /// Dialogue lines for a scene that doesn't exist yet — there's no scene
     /// id to attach a SceneDialogue to until "Fertig" actually creates it
     /// (same staging idea as `uploadedImage` above), so these are flushed to
@@ -541,9 +547,13 @@ struct SceneEditSheet: View {
                 if let existing, !isIntermediateStep {
                     Section("Einstellungen") {
                         ForEach(viewModel.shots(in: existing)) { shot in
-                            Text(shot.description?.isEmpty == false ? shot.description! : "Ohne Beschreibung")
-                                .strikethrough(shot.status == .done)
-                                .foregroundStyle(shot.status == .done ? .secondary : .primary)
+                            Button {
+                                editingShot = shot
+                            } label: {
+                                Text(shot.description?.isEmpty == false ? shot.description! : "Ohne Beschreibung")
+                                    .strikethrough(shot.status == .done)
+                                    .foregroundStyle(shot.status == .done ? .secondary : .primary)
+                            }
                         }
                         if isAddingShot {
                             TextField("Neue Einstellung", text: $newShotText)
@@ -606,6 +616,9 @@ struct SceneEditSheet: View {
             }
         }
         .preferredColorScheme(.dark)
+        .sheet(item: $editingShot) { shot in
+            ShotDetailSheet(shot: shot, viewModel: viewModel)
+        }
         .alert("Keine Credits mehr", isPresented: $showInsufficientCreditsAlert) {
             Button("Später", role: .cancel) {}
             Button("Credits kaufen") {
@@ -620,8 +633,15 @@ struct SceneEditSheet: View {
 
     private func addShot(to scene: Scene) async {
         isAddingShot = false
-        await viewModel.createShot(description: newShotText, sceneId: scene.id)
+        let text = newShotText
         newShotText = ""
+        // 2026-07-17, Lino: "dann geht direkt das Fenster auf wo man die
+        // Einstellungen für die neue erweiterte Einstellung machen kann" —
+        // straight into ShotDetailSheet right after naming it, same flow
+        // ShotListView's own (now-removed) commitNewShot had.
+        if let shot = await viewModel.createShot(description: text, sceneId: scene.id) {
+            editingShot = shot
+        }
     }
 
     /// Reads through the shared viewModel rather than `existing.dialogues`

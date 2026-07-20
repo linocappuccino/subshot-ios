@@ -7,6 +7,12 @@ import SwiftUI
 /// — password protection needs a place to live, and this is that place.
 struct ShareLinkSheet: View {
     let projectId: String
+    /// Mirrors the web app's ShareLinkModal ("storyboard" | "ideas" |
+    /// "video", 2026-07-17, #122) — which of a project's several possible
+    /// public pages this manages/shares. Defaults to "storyboard" so every
+    /// existing call site (the main scene-list Teilen button) keeps working
+    /// unchanged.
+    var kind: String = "storyboard"
     /// Called when the user taps "Teilen" with the current link URL — the
     /// caller (ShotListView) presents the actual OS share sheet, since that
     /// needs to live at the screen level, not inside this sheet.
@@ -116,7 +122,7 @@ struct ShareLinkSheet: View {
                     }
                 }
             }
-            .navigationTitle("Link teilen")
+            .navigationTitle(kind == "ideas" ? "Ideen-Link teilen" : kind == "video" ? "Video-Feedback-Link teilen" : "Link teilen")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -141,7 +147,7 @@ struct ShareLinkSheet: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            let result = try await APIClient.shared.projectShareLink(projectId)
+            let result = try await APIClient.shared.projectShareLink(projectId, kind: kind)
             url = URL(string: result.url)
             hasPassword = result.has_password
             isProtecting = result.has_password
@@ -156,7 +162,7 @@ struct ShareLinkSheet: View {
         isSavingPassword = true
         defer { isSavingPassword = false }
         do {
-            let result = try await APIClient.shared.projectShareLink(projectId, password: trimmed)
+            let result = try await APIClient.shared.projectShareLink(projectId, password: trimmed, kind: kind)
             url = URL(string: result.url)
             hasPassword = result.has_password
             passwordText = ""
@@ -172,7 +178,7 @@ struct ShareLinkSheet: View {
 
     private func clearPassword() async {
         do {
-            let result = try await APIClient.shared.projectShareLink(projectId, clearPassword: true)
+            let result = try await APIClient.shared.projectShareLink(projectId, clearPassword: true, kind: kind)
             url = URL(string: result.url)
             hasPassword = result.has_password
             isProtecting = false

@@ -67,8 +67,8 @@ struct TeamSheet: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                     Picker("Rolle", selection: $newRole) {
+                        Text("Projektleiter").tag("projektleiter")
                         Text("Editor").tag("editor")
-                        Text("Betrachter").tag("viewer")
                     }
                     .pickerStyle(.segmented)
                     Button("Einladen") { Task { await sendInvite() } }
@@ -104,8 +104,8 @@ struct TeamSheet: View {
     private func roleLabel(_ role: String) -> String {
         switch role {
         case "owner": return "Besitzer"
+        case "projektleiter": return "Projektleiter"
         case "editor": return "Editor"
-        case "viewer": return "Betrachter"
         default: return role
         }
     }

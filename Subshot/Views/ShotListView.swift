@@ -25,77 +25,6 @@ private func sceneAccentColor(_ priority: ShotPriority?) -> Color {
 }
 
 private extension View {
-    /// Suppresses sceneTile's reorder-drag while swipeableCard's own gesture
-    /// is active (see swipingSceneIds' doc comment on ShotListView for why:
-    /// both being live at once produced two overlapping renders during a
-    /// swipe).
-    ///
-    /// 2026-07-17, SIXTH attempt at the still-open "swipe freezes/hangs"
-    /// bug (Lino: "hängt fest wenn man nach links oder rechts swiped") —
-    /// no UX change this round (Lino explicitly declined the dedicated-
-    /// grip-handle restructure the standing theory calls for). NEW theory
-    /// instead, about THIS helper specifically: it used to be
-    /// `if condition { self.draggable(payload) {...} } else { self }` —
-    /// an `if/else` over two DIFFERENT view types. Toggling `condition`
-    /// (which happens mid-gesture, from inside the swipe DragGesture's own
-    /// `onChanged`, exactly when swipingSceneIds.insert(scene.id) flips
-    /// `suppressDrag`) forces SwiftUI to tear down and rebuild this part of
-    /// the view identity, since `if`/`else` branches are structurally
-    /// different view types to SwiftUI's diffing — as opposed to the same
-    /// view with a merely different modifier ARGUMENT. If that teardown
-    /// reaches far enough up to include the `.simultaneousGesture(
-    /// DragGesture...)` living on swipeableCard's `content()` (which wraps
-    /// sceneTile, i.e. exactly what this modifier lives inside), the very
-    /// act of suppressing .draggable() to fix the OTHER (already-fixed)
-    /// "grows" bug could sever the swipe gesture's own recognizer mid-touch
-    /// — SwiftUI's DragGesture has no onCancelled callback, so a torn-down
-    /// recognizer never fires onEnded, leaving sceneSwipeOffsets/
-    /// swipingSceneIds stuck at whatever they were mid-swipe forever. That
-    /// matches "hängt fest" exactly (the card visually stays offset/
-    /// unresponsive) far better than any theory tried so far, all of which
-    /// targeted what was VISIBLE (a second rendering) rather than a
-    /// recognizer being killed outright.
-    ///
-    /// Fix: always attach .draggable() (same view type in every render,
-    /// nothing to tear down) with an inert empty-string payload when
-    /// suppressed instead of removing the modifier — no valid "scene:"/
-    /// "section:" prefix ever starts with "", so every existing
-    /// onDrop/dropDestination handler in this file already ignores it
-    /// silently, same practical effect as not being draggable, with none
-    /// of the view-identity churn. UNVERIFIED (no Xcode/simulator here).
-    @ViewBuilder
-    func draggableIf(_ condition: Bool, _ payload: String, @ViewBuilder preview: () -> some View) -> some View {
-        self.draggable(condition ? payload : "") { preview() }
-    }
-
-    /// Conditionally attaches .contextMenu(menuItems:preview:) — 2026-07-14,
-    /// second attempt at the Tinder-swipe "card doubles/grows" bug: Lino
-    /// confirmed the draggableIf fix above (from a fresh build) made NO
-    /// visible difference at all, which means .draggable() was never the
-    /// (sole) real cause. The other gesture recognizer stacked on this same
-    /// card is .contextMenu's own long-press-triggered preview lift
-    /// (sceneContextMenuPreview) — same class of conflict, different
-    /// recognizer: a long-press starting to register at the same time as
-    /// the swipe's DragGesture would show ITS OWN elevated snapshot of the
-    /// tile on top of the swipe transform, which matches "two overlapping
-    /// renderings, one bigger than the other" far better than a drag-lift
-    /// preview would (a context menu preview visibly SCALES UP, a drag
-    /// preview does not). UNVERIFIED — reasoned from re-reading the code a
-    /// second time after the first fix failed, no new video was available
-    /// this round (see conversation).
-    @ViewBuilder
-    func contextMenuIf<MenuItems: View, Preview: View>(
-        _ condition: Bool,
-        @ViewBuilder menuItems: () -> MenuItems,
-        @ViewBuilder preview: () -> Preview
-    ) -> some View {
-        if condition {
-            self.contextMenu(menuItems: menuItems, preview: preview)
-        } else {
-            self
-        }
-    }
-
     /// Conditionally attaches .scrollTargetBehavior(.viewAligned) — 2026-07-14,
     /// Lino: "smoother tiktok scroll effekt" was only ever meant for the
     /// single-column list ("wir brauchen den swipe effect nur bei der
@@ -193,8 +122,6 @@ struct ShotListView: View {
     /// instead of just the size class.
     private var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
 
-    @State private var addingToScene: String??  // nil = not adding; .some(nil) = "no scene"; .some(id) = that scene
-    @State private var newShotText = ""
     @State private var selectedShot: Shot?
     @State private var showingTeamSheet = false
     /// Drives SceneAssigneeSheet (2026-07-14, multi-select) — see
@@ -210,6 +137,9 @@ struct ShotListView: View {
     @State private var creatingIntermediateStep = false
     @State private var editingSection: SceneSection??  // same nesting convention as editingScene
     @State private var sectionToDelete: SceneSection?
+    /// #11 Schritt 5 — "Alle Szenen im Kasten? Ab in die Postproduction?"
+    @State private var sectionToSendToPostproduction: SceneSection?
+    @State private var showingPostproductionList = false
     /// "Ohne Abschnitt" has no SceneSection id of its own to key off of (see
     /// isSectionCollapsed/toggleSectionCollapse) — this sentinel stands in
     /// for it so the same Set can track every section's collapsed state,
@@ -304,38 +234,6 @@ struct ShotListView: View {
     @State private var collapsedDialogSceneIds: Set<String> = []
     @State private var collapsedDescriptionSceneIds: Set<String> = []
     @State private var collapsedShotsSceneIds: Set<String> = []
-    /// Tinder-style swipe (2026-07-13, Lino: "genau so wie bei Tinder
-    /// aussehen") — horizontal drag offset per scene, keyed like the
-    /// collapse-state Sets above. Left past the threshold deletes
-    /// (immediately, no confirm dialog — the full-throw animation IS the
-    /// confirmation, exactly like Tinder's reject swipe); right marks "im
-    /// Kasten". Both are purely ADDITIVE — the existing long-press-menu
-    /// delete and the imKastenButton keep working exactly as before.
-    ///
-    /// UNVERIFIED ON DEVICE (2026-07-13, no simulator available here) —
-    /// attached via .simultaneousGesture (not .gesture/.highPriorityGesture)
-    /// specifically because this file has a DOCUMENTED case of a second
-    /// exclusive gesture recognizer stacked on this exact card hierarchy
-    /// breaking .contextMenu entirely on-device (see regularSceneCard's
-    /// "No dropDestination here anymore" comment) — simultaneous should be
-    /// far less likely to steal the touch from .draggable/.contextMenu, but
-    /// this is a reasoned guess, not a tested one. If the long-press menu
-    /// or scene reordering stops working after this, that's the first
-    /// place to look, and reverting this swipe gesture is a legitimate fix.
-    @State private var sceneSwipeOffsets: [String: CGFloat] = [:]
-    @State private var sceneSwipeExiting: Set<String> = []
-    /// Set the instant a horizontal swipe is recognized (see swipeableCard's
-    /// onChanged), cleared on release — sceneTile reads this to suppress its
-    /// own .draggable() while true. Root-caused 2026-07-14 from a screen
-    /// recording Lino sent: what looked like the card "growing weirdly
-    /// toward the text" was actually TWO overlapping renders — the custom
-    /// swipe transform on top of the system's own .draggable() drag-lift
-    /// preview, both live at once because .simultaneousGesture (see above)
-    /// deliberately lets both recognizers run together. This only ever
-    /// suppresses .draggable() during a swipe that's ALREADY past the
-    /// horizontal-vs-vertical threshold, so reordering via long-press+drag
-    /// when NOT swiping is untouched.
-    @State private var swipingSceneIds: Set<String> = []
     @State private var isExportingPdf = false
     @State private var exportedPdfURL: URL?
     @State private var shareLinkURL: URL?
@@ -378,8 +276,17 @@ struct ShotListView: View {
     /// id), same two-piece-state shape as editingGoodTakeScene above.
     @State private var editingDialogue: (dialogue: SceneDialogue, scene: Scene)?
     @State private var editingDialogueText = ""
-    @FocusState private var newRowFocused: Bool
     private let projectId: String
+    /// 2026-07-17, Lino: "lösche den Tinderswipe und setze das Swipen zum
+    /// nächsten oder vorherigen Workflow-Bereich um" — replaces the removed
+    /// scene-card swipe-to-delete/complete gesture entirely; this is a
+    /// screen-edge swipe instead (mirrors iOS's own system back-swipe
+    /// convention, and the web app's Ideen⇄Szenen edge-tab navigation, see
+    /// subshot-web's page.tsx). Only two workflow stages exist on this
+    /// screen today (Ideen/Planungssektor, Szenen/Scripting-Tool below it),
+    /// so "next" and "previous" are just this one toggle.
+    private enum WorkflowSection: Equatable { case ideas, scripting }
+    @State private var activeWorkflowSection: WorkflowSection = .ideas
 
     init(projectId: String, projectName: String) {
         self.projectId = projectId
@@ -388,6 +295,7 @@ struct ShotListView: View {
     }
 
     var body: some View {
+      ScrollViewReader { scrollProxy in
         ScrollView {
             // TikTok-style scroll (2026-07-13, Lino: "wenn man einmal
             // schnell... wischt kommt man direkt zur nächsten Kachel...
@@ -436,6 +344,26 @@ struct ShotListView: View {
                     // collapse @State) on every load()/refresh — see
                     // loadGeneration's own doc comment.
                     .id(viewModel.loadGeneration)
+
+                // Planungssektor (2026-07-17 iOS port of the web app's
+                // IdeaGrid.tsx) — sits above the Scripting-Tool below,
+                // matching the pipeline order (Idee → Scripting), same as
+                // web. A plain VStack child, NOT inside the scroll-snap-
+                // tracked LazyVStack below — same reasoning as
+                // ProjectInfoBox above (an empty/short Ideas section would
+                // otherwise become a phantom scroll-snap target, see that
+                // bug's own history in ProjectInfoBox's doc comment).
+                IdeaGridView(viewModel: viewModel)
+                    .id("ideas-section")
+
+                // Zero-size scroll-target anchor (2026-07-17, see
+                // activeWorkflowSection's doc comment) — a sibling right
+                // before the LazyVStack rather than `.id()` on the
+                // LazyVStack itself, deliberately: that view already
+                // carries a long, carefully-tuned modifier chain
+                // (.scrollTargetLayout() for the TikTok-snap behavior
+                // above) and this avoids touching any of it.
+                Color.clear.frame(height: 0).id("scripting-section")
 
                 LazyVStack(alignment: .leading, spacing: 16) {
                     // 2026-07-14: was unconditional — with zero unassigned
@@ -575,6 +503,13 @@ struct ShotListView: View {
                     Button { showingTeamSheet = true } label: {
                         Image(systemName: "person.2")
                     }
+                    // #11 Schritt 6 (Postproduction-Tracking) — nur sichtbar
+                    // wenn das Projekt dieses Modul nutzt (#96).
+                    if viewModel.modulePostproduction {
+                        Button { showingPostproductionList = true } label: {
+                            Image(systemName: "checklist.checked")
+                        }
+                    }
                 }
             }
         }
@@ -606,6 +541,9 @@ struct ShotListView: View {
         .sheet(item: $selectedShot) { shot in
             ShotDetailSheet(shot: shot, viewModel: viewModel)
         }
+        .sheet(isPresented: $showingPostproductionList) {
+            PostproductionListView(viewModel: viewModel)
+        }
         .sheet(item: $assigneeSheetScene) { scene in
             SceneAssigneeSheet(scene: scene, viewModel: viewModel)
         }
@@ -618,7 +556,12 @@ struct ShotListView: View {
             }
         }
         .sheet(isPresented: $showingShareLinkSheet) {
-            ShareLinkSheet(projectId: projectId) { url in
+            // 2026-07-17, #122 — mirrors the web app's "der Teilen-Button
+            // soll immer die Seite teilen auf der man gerade ist" (its
+            // shareKind tracks activeView live): shares whichever
+            // Workflow-Bereich is currently on screen instead of always
+            // the Szenen/storyboard link.
+            ShareLinkSheet(projectId: projectId, kind: activeWorkflowSection == .ideas ? "ideas" : "storyboard") { url in
                 shareLinkURL = url
                 isPresentingShareSheet = true
             }
@@ -701,7 +644,8 @@ struct ShotListView: View {
         .modifier(TileActionDialogs(
             viewModel: viewModel,
             sectionToDelete: $sectionToDelete,
-            sceneToDelete: $sceneToDelete
+            sceneToDelete: $sceneToDelete,
+            sectionToSendToPostproduction: $sectionToSendToPostproduction
         ))
         .sheet(isPresented: Binding(
             get: { editingScene != nil },
@@ -748,6 +692,58 @@ struct ShotListView: View {
                 undoToast(for: pending)
             }
         }
+        // 2026-07-17 — edge-swipe workflow navigation (see
+        // activeWorkflowSection's own doc comment). Two thin (24pt),
+        // full-height, otherwise-invisible strips at the true screen
+        // edges, each with their OWN DragGesture — deliberately NOT one
+        // gesture on the whole ScrollView. The removed Tinder-swipe's
+        // entire documented failure history (six numbered attempts, never
+        // resolved) was about a gesture stacked on top of scene tiles
+        // that ALSO carry .draggable()/.contextMenu()/tap — attaching
+        // this new gesture only to a narrow edge strip that no scene
+        // tile's content ever reaches (tiles already sit inset from the
+        // true edge via their own horizontal padding) sidesteps that
+        // entire class of conflict rather than repeating it.
+        .overlay(alignment: .leading) {
+            edgeSwipeZone(goingTo: .ideas, requiredDirection: 1, proxy: scrollProxy)
+        }
+        .overlay(alignment: .trailing) {
+            edgeSwipeZone(goingTo: .scripting, requiredDirection: -1, proxy: scrollProxy)
+        }
+      }
+    }
+
+    /// One edge-swipe hit zone. `requiredDirection`: +1 means only a
+    /// RIGHTWARD drag (translation.width > threshold) triggers — used on
+    /// the LEADING edge, matching "swipe from the left edge to the right
+    /// to go back", exactly like iOS's own system back gesture; -1 means
+    /// only a LEFTWARD drag triggers, used on the TRAILING edge ("swipe
+    /// in from the right edge" to advance).
+    @ViewBuilder
+    private func edgeSwipeZone(goingTo target: WorkflowSection, requiredDirection: CGFloat, proxy: ScrollViewProxy) -> some View {
+        Color.clear
+            .frame(width: 24)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 24)
+                    .onEnded { value in
+                        let h = value.translation.width
+                        let v = value.translation.height
+                        guard abs(h) > abs(v) * 1.5 else { return }
+                        guard h * requiredDirection > 40 else { return }
+                        goToWorkflowSection(target, proxy: proxy)
+                    }
+            )
+    }
+
+    private func goToWorkflowSection(_ section: WorkflowSection, proxy: ScrollViewProxy) {
+        guard section != activeWorkflowSection else { return }
+        activeWorkflowSection = section
+        withAnimation(.easeInOut(duration: 0.45)) {
+            proxy.scrollTo(section == .ideas ? "ideas-section" : "scripting-section", anchor: .top)
+        }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
     /// Always-visible floating add button, bottom-trailing — replaces the old
@@ -1046,6 +1042,13 @@ struct ShotListView: View {
                     } label: {
                         Label("Umbenennen", systemImage: "pencil")
                     }
+                    if viewModel.modulePostproduction && !section.inPostproduction {
+                        Button {
+                            sectionToSendToPostproduction = section
+                        } label: {
+                            Label("Ab in die Postproduction", systemImage: "arrow.forward.circle")
+                        }
+                    }
                     Button(role: .destructive) {
                         sectionToDelete = section
                     } label: {
@@ -1194,6 +1197,13 @@ struct ShotListView: View {
                 Text("\(done)/\(scenes.count)")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
+                // #11 Schritt 6 — kurzer Statushinweis direkt am Abschnitt,
+                // die eigentliche Bearbeitung passiert in PostproductionListView.
+                if section.inPostproduction, let status = section.postproductionStatus {
+                    Text("· \(status.label)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
         }
@@ -1316,8 +1326,7 @@ struct ShotListView: View {
         // architecture itself, which was already tried once in this exact
         // codebase and reverted (broke the tile's own long-press
         // .contextMenu on a real device via too many stacked gesture
-        // recognizers, see swipeableCard's docs for the same class of
-        // bug). This keeps the proven safe mechanism (gap-based
+        // recognizers). This keeps the proven safe mechanism (gap-based
         // dropDestination, never on the tile itself) and just makes its
         // invisible catch zone generous enough that landing anywhere in
         // roughly the top/bottom half of a neighboring tile reaches it.
@@ -1437,16 +1446,11 @@ struct ShotListView: View {
         // instead of a distinct placeholder sitting in the gap before it.
         VStack(alignment: .leading, spacing: 8) {
             sceneDropIndicator(before: scene)
-            // swipeableCard wraps OUTSIDE the card's own glassEffect/
-            // contextMenu/draggable stack (see its own doc comment) so the
-            // whole card — background included — moves together, same as
-            // Tinder, without touching the gesture stack living further in.
-            swipeableCard(scene: scene) {
             VStack(alignment: .leading, spacing: 14) {
                 if collapsed {
                     sceneCollapsedRow(scene: scene)
                 } else {
-                    sceneTile(scene: scene, columnLayout: columnLayout, suppressDrag: swipingSceneIds.contains(scene.id))
+                    sceneTile(scene: scene, columnLayout: columnLayout)
                     // Zwischenschritt: no shot list at all, not even the add-row
                     // — it's a lightweight connective beat, not a shootable
                     // scene. Also hidden while collapsed above, along with
@@ -1491,7 +1495,12 @@ struct ShotListView: View {
                                 }
                             }
                         }
-                        addRow(sceneId: scene.id)
+                        // 2026-07-17, Lino: "+ Einstellung hinzufügen" moved
+                        // out of the always-visible tile into SceneEditSheet
+                        // (same move as the web app's #123) — the tile keeps
+                        // showing existing shots read-only (toggle-done +
+                        // tap-to-edit via shotCardView above), adding one now
+                        // only happens once the scene is actually opened.
                     }
                 }
             }
@@ -1510,7 +1519,6 @@ struct ShotListView: View {
             .animation(.easeInOut(duration: 0.25), value: collapsed)
             .modifier(ScenePulseOnElapse(scene: scene))
             .modifier(SceneTimerRunningGlow(scene: scene))
-            }
         }
         // Grid mode owns its own outer horizontal padding + inter-column gap
         // (see sceneGrid) — a card shouldn't also pad itself in that case, or
@@ -1534,265 +1542,6 @@ struct ShotListView: View {
         // reading the SwiftUI code). Filing a shot into this scene by drag
         // now goes through sceneTile's own single dropDestination instead
         // (see its own doc comment) — one recognizer per tile, not two.
-    }
-
-    /// See swipeableCard's 2026-07-15 "fourth attempt" doc comment for the
-    /// full reasoning — .drawingGroup() only while actively mid-swipe,
-    /// .compositingGroup() (safe, already-shipped baseline) the rest of the
-    /// time, so the Liquid Glass look is never at risk for a card sitting
-    /// still in the list.
-    private struct SwipeCompositingModifier: ViewModifier {
-        let isSwiping: Bool
-        func body(content: Content) -> some View {
-            if isSwiping {
-                content.drawingGroup()
-            } else {
-                content.compositingGroup()
-            }
-        }
-    }
-
-    /// Tinder-style swipe wrapper — used by regularSceneCard only (2026-07-13,
-    /// Lino: "den swipe effect brauchen wir nur bei der 'einzel kachel'
-    /// ansicht!" — deliberately NOT the 2-column compact grid). See
-    /// sceneSwipeOffsets' doc comment for the full risk/reasoning writeup.
-    /// Applies the horizontal offset/rotation/exit-fade to whatever
-    /// `content` is (the card's own glass background moves WITH it, same
-    /// as Tinder — this wraps OUTSIDE the card's own
-    /// .glassEffect()/.contextMenu()/.draggable() stack, not inside it).
-    @ViewBuilder
-    private func swipeableCard<Content: View>(scene: Scene, @ViewBuilder content: () -> Content) -> some View {
-        let offset = sceneSwipeOffsets[scene.id] ?? 0
-        let isExiting = sceneSwipeExiting.contains(scene.id)
-        // Rotation capped at ±16° (2026-07-13, Lino: "die kachel verzieht und
-        // vergrössert sich noch komplett komisch") — uncapped, a fast/long
-        // swipe (easy to overshoot past the ~110pt threshold before letting
-        // go) could rotate the card 20-30°+, and a rotated rectangle's
-        // corners spill outside its own layout frame (SwiftUI doesn't
-        // reserve extra space for that), which reads as the card bleeding
-        // into/over its neighbors above and below in the list - not an
-        // actual size change, but exactly what "vergrössert sich" describes.
-        let rotation = max(-10, min(10, Double(offset) / 28))
-        content()
-            // 2026-07-14, third attempt — Lino finally pinned down the actual
-            // visual precisely: "die kachel im hintergrund winkelt sich auch,
-            // aber sie wird AUCH grösser, viel grösser" (the glass background
-            // angles correctly, like the content, but ALSO grows much bigger
-            // — two separate observations, not one). The 2026-07-13 rotation
-            // cap and this session's two earlier attempts (suppressing
-            // .draggable/.contextMenu during the swipe) all targeted GESTURE
-            // conflicts or overflow-from-rotation, not this: content() here
-            // already carries .glassEffect() (Liquid Glass, its own
-            // blur/refraction compositing pass) plus ScenePulseOnElapse's
-            // shadow and SceneTimerRunningGlow's blurred, padding(-20)
-            // oversized background — several DIFFERENT visual-effect layers
-            // that SwiftUI may recompute/resample independently as
-            // .offset/.rotationEffect below animate, instead of transforming
-            // one single already-rendered picture. .compositingGroup() is
-            // the standard fix for exactly this class of bug: it forces
-            // every effect above (glass, blur, shadow, opacity) to flatten
-            // into ONE fixed-size rasterized layer at the content's own
-            // (untransformed) size, so .offset/.rotationEffect afterward
-            // rotate/move that single flat picture instead of letting any
-            // individual effect's own rendering rescale mid-transform.
-            //
-            // 2026-07-15, FOURTH attempt — Lino confirmed compositingGroup()
-            // alone made ZERO visible difference. UNVERIFIED (still no
-            // Xcode/simulator here), reasoned guess: compositingGroup()
-            // only flattens the LAYER TREE for compositing (correct
-            // blend/opacity as one unit) but does NOT force a fixed-pixel
-            // GPU raster — during a live, fast-changing DragGesture offset,
-            // SwiftUI/UIKit can still resample a cached bitmap of that
-            // flattened layer at the wrong scale while it's actively being
-            // transformed, which would read as "grows" exactly during the
-            // swipe. .drawingGroup() forces a real fixed-resolution Core
-            // Image/Metal raster instead, which is the stronger, more
-            // deterministic version of this fix.
-            //
-            // RISK, flagged explicitly per Lino's own call to try this
-            // anyway (2026-07-15): .glassEffect() (Liquid Glass) samples
-            // its backdrop live for the refraction look — .drawingGroup()
-            // could in principle flatten that into a dead/opaque bitmap
-            // instead, i.e. this fix could trade the swipe bug for a worse
-            // one (glass effect breaking). Scoped to ONLY apply while
-            // offset != 0 (i.e. only during an active swipe) specifically
-            // to contain that risk to the brief moment a card is being
-            // thrown, not to the list's normal at-rest appearance where the
-            // glass look matters far more and for far longer.
-            //
-            // 2026-07-16, FIFTH attempt — Lino confirmed .drawingGroup()
-            // ALSO made zero difference, which rules out compositing/
-            // rasterization as the cause entirely: two different,
-            // independent fixes targeting "SwiftUI resamples effect layers
-            // mid-transform" both failed to change anything, so that whole
-            // theory is dead. NEW theory instead, purely geometric, not a
-            // rendering-layer issue at all: rotationEffect(anchor: .bottom)
-            // pivots around the BOTTOM edge, so for a TALL card (this
-            // list's cards are often very tall — dialogue, description,
-            // shots, photos, unlike Tinder's roughly square photo cards)
-            // even the existing ±16° cap swings the TOP corners sideways
-            // by height * sin(16°), which for a 300pt+ card is 80pt+ of
-            // lateral corner travel ON TOP of the offset() translation
-            // already applied. That corner sweep visually overlaps/covers
-            // the cards above and below in the list, which reads exactly
-            // like "wird viel grösser" even though no size value ever
-            // actually changes — a geometric side effect of rotating a
-            // tall rectangle around its bottom edge, not something any
-            // compositing/rasterization fix could ever touch (explains why
-            // both prior attempts changed nothing). Switched anchor to
-            // .center, which roughly halves the worst-case lateral swing
-            // (pivot is now mid-height, so both top AND bottom corners
-            // move, but each only about half as far as the bottom-anchored
-            // top corner did) — also reduced the rotation cap 16°→10° and
-            // steepened the divisor 20→28 so a full-throw swipe rotates
-            // less aggressively overall. UNVERIFIED (no Xcode/simulator
-            // here). If this theory is right, the bug should be visibly
-            // WORSE on tall cards (long dialogue/description) than on
-            // short ones (a bare Zwischenschritt card) — ask Lino to
-            // compare both specifically when testing, that's the signal
-            // that confirms or kills this theory regardless of whether
-            // .center alone fully fixes it.
-            .modifier(SwipeCompositingModifier(isSwiping: offset != 0))
-            .offset(x: offset)
-            .rotationEffect(.degrees(rotation), anchor: .center)
-            // Draws above its neighbors while actively being dragged, so the
-            // now-smaller rotation overflow never gets visually clipped
-            // behind/under the card above or below it in the list.
-            .zIndex(offset == 0 ? 0 : 1)
-            .opacity(isExiting ? 0 : 1)
-            .overlay(alignment: .leading) {
-                // Vertically centered (Lino, 2026-07-14: "muss immer
-                // vertikal mittig erscheinen und nicht oben bei der
-                // kachel") — was .topLeading, which pinned it to the
-                // tile's top edge instead of the middle.
-                if offset < -16 {
-                    swipeStamp(text: "LÖSCHEN", systemImage: "trash.fill", color: .red, rotation: -12)
-                        .opacity(min(1, Double(-offset) / 100))
-                }
-            }
-            .overlay(alignment: .trailing) {
-                if offset > 16 {
-                    swipeStamp(text: "IM KASTEN", systemImage: "checkmark", color: .green, rotation: 12)
-                        .opacity(min(1, Double(offset) / 100))
-                }
-            }
-            // Tried .highPriorityGesture here for one commit (2026-07-15,
-            // "fifth attempt" at the 🚫-badge race — see swipingSceneIds'
-            // own doc comment for the full history). Lino confirmed the 🚫
-            // badge went away but the freeze — which he then clarified was
-            // ALREADY happening before that change too, not new — remained
-            // either way, so that swap fixed nothing and added a real,
-            // documented risk for no gain: sceneSwipeOffsets' own comment
-            // (2026-07-13) already recorded that an exclusive gesture
-            // (.gesture/.highPriorityGesture) on this exact card hierarchy
-            // is DOCUMENTED to break .contextMenu entirely on-device
-            // elsewhere in this file. Reverted to .simultaneousGesture, the
-            // original, deliberately-chosen-for-that-exact-reason value.
-            // The freeze itself is still open — root cause not yet found;
-            // see swipingSceneIds' comment for the standing theory (the
-            // .draggable() vs. custom-DragGesture race) and the dedicated-
-            // grip-handle restructure as the most likely real fix, which
-            // hasn't been attempted yet because it changes the "long-press
-            // anywhere on the tile to reorder" UX and needs Lino's sign-off
-            // first.
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 20)
-                    .onChanged { value in
-                        let h = value.translation.width
-                        let v = value.translation.height
-                        // Self-healing safety net (2026-07-17, alongside the
-                        // draggableIf fix above) — DragGesture has no
-                        // onCancelled callback, so if a PREVIOUS swipe's
-                        // recognizer was ever torn down/interrupted mid-
-                        // gesture without onEnded firing, sceneSwipeOffsets/
-                        // swipingSceneIds could stay stuck at that old,
-                        // non-zero value forever (exactly "hängt fest").
-                        // minimumDistance: 20 already means onChanged never
-                        // fires until translation exceeds 20pt in some
-                        // direction, so a magnitude still under 25 here can
-                        // only mean "the very start of a brand-new touch" —
-                        // clear any stale leftover from an old gesture
-                        // before doing anything else with this one.
-                        if abs(h) < 25, abs(v) < 25, sceneSwipeOffsets[scene.id] != nil {
-                            sceneSwipeOffsets[scene.id] = nil
-                            swipingSceneIds.remove(scene.id)
-                        }
-                        // Only react once the drag is CLEARLY more
-                        // horizontal than vertical — anything ambiguous is
-                        // left alone entirely (no state write at all) so a
-                        // vertical scroll that starts on a card is never
-                        // touched by this gesture in the first place.
-                        guard abs(h) > abs(v) * 1.5 else { return }
-                        sceneSwipeOffsets[scene.id] = h
-                        // See swipingSceneIds' doc comment — this is the fix
-                        // for the "card doubles/grows weirdly" bug: suppress
-                        // sceneTile's own .draggable() for as long as we're
-                        // clearly mid-swipe, so its system drag-lift preview
-                        // never renders on top of this transform at the same
-                        // time. Insert is idempotent, cheap to call every
-                        // onChanged tick.
-                        swipingSceneIds.insert(scene.id)
-                    }
-                    .onEnded { value in
-                        let h = value.translation.width
-                        let v = value.translation.height
-                        guard abs(h) > abs(v) * 1.5 else {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                                sceneSwipeOffsets[scene.id] = 0
-                            }
-                            swipingSceneIds.remove(scene.id)
-                            return
-                        }
-                        let threshold: CGFloat = 110
-                        if h < -threshold {
-                            // Immediate, no confirm dialog — the full-throw-
-                            // off-screen animation itself IS the
-                            // confirmation, exactly like Tinder's reject
-                            // swipe. The long-press "Löschen" menu item
-                            // still goes through the normal confirm dialog
-                            // for anyone who prefers that safer path.
-                            withAnimation(.easeIn(duration: 0.3)) {
-                                sceneSwipeOffsets[scene.id] = -1000
-                                sceneSwipeExiting.insert(scene.id)
-                            }
-                            Task {
-                                try? await Task.sleep(nanoseconds: 280_000_000)
-                                await viewModel.deleteScene(scene)
-                                sceneSwipeOffsets[scene.id] = nil
-                                sceneSwipeExiting.remove(scene.id)
-                                swipingSceneIds.remove(scene.id)
-                            }
-                        } else if h > threshold {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                                sceneSwipeOffsets[scene.id] = 0
-                            }
-                            Task { await viewModel.setSceneCompleted(scene, completed: true) }
-                            swipingSceneIds.remove(scene.id)
-                        } else {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                                sceneSwipeOffsets[scene.id] = 0
-                            }
-                            swipingSceneIds.remove(scene.id)
-                        }
-                    }
-            )
-    }
-
-    /// A filled capsule + icon (2026-07-13, Lino: "den Text der erscheint
-    /// schöner machen") — was a plain bordered rectangle of text, which read
-    /// as a placeholder debug label rather than a deliberate Tinder-style
-    /// like/reject stamp.
-    private func swipeStamp(text: String, systemImage: String, color: Color, rotation: Double) -> some View {
-        Label(text, systemImage: systemImage)
-            .font(.subheadline.weight(.heavy))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(color.gradient, in: Capsule())
-            .shadow(color: color.opacity(0.5), radius: 10, y: 3)
-            .rotationEffect(.degrees(rotation))
-            .padding(18)
-            .allowsHitTesting(false)
     }
 
     /// Collapsed "im Kasten" summary — just number/title/priority plus the
@@ -1875,13 +1624,8 @@ struct ShotListView: View {
     /// now on explicit request. MUST be verified on a real device before
     /// trusting it; if the same hang reappears, revert to a menu-based
     /// reorder rather than debugging blind from this server.
-    // suppressDrag now also suppresses .contextMenu (2026-07-14, second
-    // attempt at the Tinder-swipe bug — see contextMenuIf's doc comment)
-    // — name kept as-is to avoid touching every call site, but it really
-    // means "suppress every OTHER gesture recognizer on this tile while a
-    // swipe is active", not literally just drag anymore.
     @ViewBuilder
-    private func sceneTile(scene: Scene, columnLayout: Bool = false, suppressDrag: Bool = false) -> some View {
+    private func sceneTile(scene: Scene, columnLayout: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             if let imageUrl = scene.imageUrl {
                 AsyncShotThumbnail(path: imageUrl, size: nil, lockAspectRatio: true)
@@ -2066,7 +1810,7 @@ struct ShotListView: View {
                 editingScene = .some(scene)
             }
         }
-        .contextMenuIf(!suppressDrag, menuItems: {
+        .contextMenu(menuItems: {
             Button {
                 editingScene = .some(scene)
             } label: {
@@ -2092,7 +1836,7 @@ struct ShotListView: View {
         }, preview: {
             sceneContextMenuPreview(scene: scene)
         })
-        .draggableIf(!suppressDrag, "scene:\(scene.id)") {
+        .draggable("scene:\(scene.id)") {
             sceneDragPreview(scene: scene)
         }
         // Handles a SHOT being filed into this scene (unprefixed id), PLUS
@@ -2142,10 +1886,6 @@ struct ShotListView: View {
         // gap before it.
         VStack(alignment: .leading, spacing: 6) {
             sceneDropIndicator(before: scene, showsVisual: false)
-            // No swipeableCard here (2026-07-13, Lino: "den swipe effect
-            // brauchen wir nur bei der 'einzel kachel' ansicht!") — Tinder-
-            // swipe is single-column (regularSceneCard) only, deliberately
-            // not the 2-column compact grid.
             VStack(alignment: .leading, spacing: 8) {
                 if let imageUrl = scene.imageUrl {
                     AsyncShotThumbnail(path: imageUrl, size: nil, lockAspectRatio: true)
@@ -2495,27 +2235,6 @@ struct ShotListView: View {
         }
     }
 
-    @ViewBuilder
-    private func addRow(sceneId: String?) -> some View {
-        if addingToScene == .some(sceneId) {
-            TextField("Neue Einstellung", text: $newShotText)
-                .focused($newRowFocused)
-                .submitLabel(.done)
-                .onSubmit { Task { await commitNewShot(sceneId: sceneId) } }
-                .padding(10)
-                .background(Color(.tertiarySystemGroupedBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-        } else {
-            Button {
-                startAdding(sceneId: sceneId)
-            } label: {
-                Label("Einstellung hinzufügen", systemImage: "plus")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
     private func undoToast(for shot: Shot) -> some View {
         HStack {
             Text("„\(shot.description ?? "Einstellung")" + "“ gelöscht")
@@ -2531,28 +2250,6 @@ struct ShotListView: View {
     }
 
     // MARK: - Actions
-
-    private func startAdding(sceneId: String?) {
-        newShotText = ""
-        addingToScene = .some(sceneId)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            newRowFocused = true
-        }
-    }
-
-    private func commitNewShot(sceneId: String?) async {
-        addingToScene = nil
-        let text = newShotText
-        newShotText = ""
-        // 2026-07-14, Lino: "sobald man der einstellung einen namen gegeben
-        // hat" muss die kamera-info direkt eingebbar sein — straight into
-        // ShotDetailSheet (same sheet as tapping an existing shot, see
-        // selectedShot above) right after naming it, instead of leaving the
-        // user to find and reopen it later just to add camera settings.
-        if let shot = await viewModel.createShot(description: text, sceneId: sceneId) {
-            selectedShot = shot
-        }
-    }
 
     /// Downloads the project's PDF once and caches it at a temp URL — the
     /// toolbar swaps to a `ShareLink` for that URL afterward so re-tapping
@@ -2592,6 +2289,8 @@ private struct TileActionDialogs: ViewModifier {
     @ObservedObject var viewModel: ShotListViewModel
     @Binding var sectionToDelete: SceneSection?
     @Binding var sceneToDelete: Scene?
+    /// #11 Schritt 5 — "Alle Szenen im Kasten? Ab in die Postproduction?"
+    @Binding var sectionToSendToPostproduction: SceneSection?
 
     func body(content: Content) -> some View {
         content
@@ -2621,6 +2320,19 @@ private struct TileActionDialogs: ViewModifier {
             } message: {
                 Text(sceneDeleteMessage)
             }
+            .alert("Alle Szenen im Kasten?", isPresented: Binding(
+                get: { sectionToSendToPostproduction != nil },
+                set: { if !$0 { sectionToSendToPostproduction = nil } }
+            )) {
+                Button("Abbrechen", role: .cancel) {}
+                Button("Ab in die Postproduction") {
+                    if let section = sectionToSendToPostproduction {
+                        Task { await viewModel.sendSectionToPostproduction(section) }
+                    }
+                }
+            } message: {
+                Text("\"\(sectionToSendToPostproduction?.name ?? "")\" wandert in die Postproduction-Tracking-Liste.")
+            }
     }
 
     // Scenes ARE deleted along with their section now (2026-07-11, Lino) —
@@ -2644,8 +2356,10 @@ private struct TileActionDialogs: ViewModifier {
 /// (`.sheet(isPresented:)`) the instant the link URL is ready — SwiftUI's own
 /// `ShareLink` only presents in response to a tap on itself, which is exactly
 /// what forced the old two-tap flow (tap to fetch the URL, tap again on the
-/// now-swapped-in `ShareLink` to actually see the share sheet).
-private struct ActivityView: UIViewControllerRepresentable {
+/// now-swapped-in `ShareLink` to actually see the share sheet). Not private
+/// (2026-07-17, #122) — PostproductionListView's own Teilen button reuses
+/// this instead of a second copy.
+struct ActivityView: UIViewControllerRepresentable {
     let activityItems: [Any]
 
     func makeUIViewController(context: Context) -> UIActivityViewController {

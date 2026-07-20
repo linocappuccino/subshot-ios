@@ -35,6 +35,14 @@ struct Project: Codable, Identifiable, Hashable {
     var thumbnailUrl: String?
     let lastOpenedAt: Date
     let createdAt: Date
+    /// Pipeline-Module-Checkboxen (2026-07-17, #96 — erster Baustein der
+    /// "Grossen Pipeline-Vision"). Rein informativ fuer jetzt, kein
+    /// Freischalt-Gate. 2026-07-19: moduleVideoFeedback entfernt, gleiche
+    /// Begruendung wie Web (siehe ProjectEditModal.tsx) — Postproduction
+    /// Tracking und Video Feedback sind das gleiche Modul jetzt.
+    var moduleConcept: Bool = true
+    var moduleScripting: Bool = true
+    var modulePostproduction: Bool = true
 
     enum CodingKeys: String, CodingKey {
         case id, name, color, emoji
@@ -48,6 +56,9 @@ struct Project: Codable, Identifiable, Hashable {
         case thumbnailUrl = "thumbnail_url"
         case lastOpenedAt = "last_opened_at"
         case createdAt = "created_at"
+        case moduleConcept = "module_concept"
+        case moduleScripting = "module_scripting"
+        case modulePostproduction = "module_postproduction"
     }
 
     /// Deletion cron (scripts/deletion_job.py) warns at day 25, deletes at
@@ -107,6 +118,10 @@ struct ProjectDetail: Codable {
     var shots: [Shot]
     var todoLists: [TodoList]
     var sections: [SceneSection]
+    /// Pipeline-Module-Checkboxen (#96) — hier nur modulePostproduction
+    /// gebraucht, um den Postproduction-Tab (#11 Schritt 5+6) ein-/
+    /// auszublenden.
+    var modulePostproduction: Bool = true
 
     enum CodingKeys: String, CodingKey {
         case id, name, color, scenes, shots
@@ -120,6 +135,7 @@ struct ProjectDetail: Codable {
         case createdAt = "created_at"
         case todoLists = "todo_lists"
         case sections
+        case modulePostproduction = "module_postproduction"
     }
 }
 
@@ -256,6 +272,162 @@ enum ShotPriority: String, Codable, CaseIterable, Identifiable {
 
 enum ShotStatus: String, Codable {
     case open, done, deleted
+}
+
+// MARK: - Ideas (Planungssektor)
+//
+// 2026-07-17 — ported from the web app (app/projects/[id]/page.tsx's
+// IdeaGrid + backend app/schemas.py's IdeaOut/IdeaImageOut/IdeaFeedbackOut).
+// An Idea lives in a project's "Planungssektor", the stage BEFORE the
+// Scripting-Tool (Sections/Scenes/Shots above): title + free text + up to
+// 10 images, client feedback collected via a public no-login share link
+// (feedback itself is written on the WEB share page only — this app is
+// PL-facing read-only for feedback, see IdeaFeedbackSheet), "Abgenommen"
+// converts it into a real Section + Scene (see approveIdea).
+//
+// NOT included in ProjectDetail (unlike Scene/Shot/TodoList/SceneSection)
+// — ideas are always a separate `listIdeas` round trip on the web app too,
+// so ShotListViewModel.loadIdeas() is its own call, same pattern as its
+// existing independent `members` fetch in load().
+
+enum IdeaStatus: String, Codable {
+    case open, approved
+}
+
+enum IdeaImageStatus: String, Codable {
+    case ready, generating
+}
+
+enum IdeaImageSource: String, Codable {
+    case upload, ai
+}
+
+struct IdeaImage: Codable, Identifiable, Hashable {
+    let id: String
+    let ideaId: String
+    var imageUrl: String?
+    var source: IdeaImageSource
+    var status: IdeaImageStatus
+    var sortOrder: Int
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, source, status
+        case ideaId = "idea_id"
+        case imageUrl = "image_url"
+        case sortOrder = "sort_order"
+        case createdAt = "created_at"
+    }
+}
+
+/// Client comment on an Idea, left from the public share page (no login) —
+/// read-only here, this app never writes one. `status`: "draft" (client
+/// saved but hasn't sent yet, 2026-07-17) or "sent" (final/locked) — see
+/// backend IdeaFeedback's own doc comment. Only "sent" ones are ever
+/// included in an Idea's `feedbackCount` or in `GET /ideas/{id}/feedback`
+/// (drafts are filtered out server-side), so every IdeaFeedback this app
+/// ever sees is already final.
+/// 2026-07-18, web-parity: `round`/`resolved` added alongside the web app's
+/// same-day IdeaFeedback additions (see [[feedback_ios_web_parity]]) — round
+/// groups entries into "01 Feedback"/"02 Feedback"/... (see
+/// IdeaFeedbackSheet), resolved is the PL-side "abgehakt" toggle.
+struct IdeaFeedback: Codable, Identifiable, Hashable {
+    let id: String
+    let ideaId: String
+    var authorName: String
+    var comment: String
+    var status: String
+    var round: Int
+    var resolved: Bool
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, comment, status, round, resolved
+        case ideaId = "idea_id"
+        case authorName = "author_name"
+        case createdAt = "created_at"
+    }
+}
+
+struct Idea: Codable, Identifiable, Hashable {
+    let id: String
+    let projectId: String
+    var title: String
+    /// May contain a small whitelisted set of rich-text HTML tags
+    /// (`<b>/<strong>/<i>/<em>/<br>/<div>`) written by the web app's
+    /// RichTextEditor — this app has no rich-text editor of its own (see
+    /// IdeaEditSheet), so it edits/displays this as plain text. `plainText`
+    /// below strips tags for anywhere a preview snippet is needed, mirroring
+    /// the web app's IdeaTile.tsx textPreview regex.
+    var text: String
+    var sortOrder: Int
+    var status: IdeaStatus
+    var sectionId: String?
+    var sceneId: String?
+    let createdAt: Date
+    /// Wann die Idee angenommen wurde (2026-07-17) — nil solange status
+    /// "open" ist, einmalig gesetzt beim Wechsel zu "approved".
+    var approvedAt: Date?
+    var images: [IdeaImage] = []
+    /// Count of "sent" client feedback only (drafts never counted) — drives
+    /// the Idee/1. Feedback/2. Feedback/Abgenommen grouping, see
+    /// IdeaStatusGroup below. Not a mapped DB column server-side (see
+    /// backend IdeaOut.feedback_count's own doc comment), always present in
+    /// every response regardless.
+    var feedbackCount: Int = 0
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, text, status, images
+        case projectId = "project_id"
+        case sortOrder = "sort_order"
+        case sectionId = "section_id"
+        case sceneId = "scene_id"
+        case createdAt = "created_at"
+        case approvedAt = "approved_at"
+        case feedbackCount = "feedback_count"
+    }
+
+    var plainText: String {
+        var result = ""
+        var insideTag = false
+        for ch in text {
+            if ch == "<" { insideTag = true }
+            else if ch == ">" { insideTag = false }
+            else if !insideTag { result.append(ch) }
+        }
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var readyImages: [IdeaImage] {
+        images.filter { $0.status == .ready && $0.imageUrl != nil }
+    }
+
+    var isGeneratingAnyImage: Bool {
+        images.contains { $0.status == .generating }
+    }
+}
+
+/// Idee / 1. Feedback / 2. Feedback / Abgenommen (2026-07-17, Lino — same
+/// grouping as the web app's IdeaGrid.tsx IDEA_STATUS_GROUPS) — purely
+/// derived from status/feedbackCount, never set directly.
+enum IdeaStatusGroup: Int, CaseIterable, Hashable {
+    case idea, firstFeedback, secondFeedback, approved
+
+    var label: String {
+        switch self {
+        case .idea: return "Idee"
+        case .firstFeedback: return "1. Feedback"
+        case .secondFeedback: return "2. Feedback"
+        case .approved: return "Abgenommen"
+        }
+    }
+
+    static func of(_ idea: Idea) -> IdeaStatusGroup {
+        if idea.status == .approved { return .approved }
+        if idea.feedbackCount >= 2 { return .secondFeedback }
+        if idea.feedbackCount == 1 { return .firstFeedback }
+        return .idea
+    }
 }
 
 struct Shot: Codable, Identifiable, Hashable {
@@ -411,6 +583,12 @@ struct SceneSection: Codable, Identifiable, Hashable {
     /// mirrors the project-level Projektinfo tile field-for-field.
     var clientName: String?
     var todoLists: [TodoList] = []
+    /// Postproduction-Tracking (2026-07-17, #11 Schritt 5+6). Eine Section
+    /// wandert erst nach expliziter Bestaetigung ("Alle Szenen im Kasten?
+    /// Ab in die Postproduction?") ins Tracking, nicht automatisch.
+    var inPostproduction: Bool = false
+    var postproductionStatus: PostproductionStatus?
+    var postproductionDeadline: Date?
 
     enum CodingKeys: String, CodingKey {
         case id, name
@@ -423,6 +601,91 @@ struct SceneSection: Codable, Identifiable, Hashable {
         case locationLng = "location_lng"
         case clientName = "client_name"
         case todoLists = "todo_lists"
+        case inPostproduction = "in_postproduction"
+        case postproductionStatus = "postproduction_status"
+        case postproductionDeadline = "postproduction_deadline"
+    }
+}
+
+enum PostproductionStatus: String, Codable, CaseIterable {
+    case wartend, inBearbeitung = "in_bearbeitung", wartetAufFeedback = "wartet_auf_feedback"
+    case abgeschlossen, abgelehnt
+
+    var label: String {
+        switch self {
+        case .wartend: return "Wartend"
+        case .inBearbeitung: return "In Bearbeitung"
+        case .wartetAufFeedback: return "Wartet auf Feedback"
+        case .abgeschlossen: return "Abgeschlossen"
+        case .abgelehnt: return "Abgelehnt"
+        }
+    }
+}
+
+/// Video-Feedback-Tool (2026-07-17, #11 Schritt 7) — haengt an einer
+/// SceneSection (siehe backend Video's Doc-Kommentar: 0-n Videos pro
+/// Section, jedes mit eigener VideoVersion-Historie).
+struct Video: Codable, Identifiable, Hashable {
+    let id: String
+    let sectionId: String
+    var title: String
+    var sortOrder: Int
+    let createdAt: Date
+    var versions: [VideoVersion] = []
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, versions
+        case sectionId = "section_id"
+        case sortOrder = "sort_order"
+        case createdAt = "created_at"
+    }
+}
+
+struct VideoVersion: Codable, Identifiable, Hashable {
+    let id: String
+    let videoId: String
+    var versionNumber: Int
+    var originalFilename: String?
+    var contentType: String?
+    var fileSizeBytes: Int?
+    var durationSeconds: Double?
+    var status: String
+    let createdAt: Date
+    /// Presigned R2 URL, frisch pro Response generiert. Bei einer gerade
+    /// erst erzeugten ('uploading') Version ist das die presigned PUT-
+    /// Ziel-URL fuer den Upload, nicht zum Abspielen — siehe backend
+    /// create_video_version's Doc-Kommentar, dasselbe Feld fuer beide
+    /// Richtungen.
+    var playbackUrl: String?
+    var comments: [VideoComment] = []
+
+    enum CodingKeys: String, CodingKey {
+        case id, status, comments
+        case videoId = "video_id"
+        case versionNumber = "version_number"
+        case originalFilename = "original_filename"
+        case contentType = "content_type"
+        case fileSizeBytes = "file_size_bytes"
+        case durationSeconds = "duration_seconds"
+        case createdAt = "created_at"
+        case playbackUrl = "playback_url"
+    }
+}
+
+struct VideoComment: Codable, Identifiable, Hashable {
+    let id: String
+    let versionId: String
+    var timestampSeconds: Double
+    var authorName: String
+    var comment: String
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, comment
+        case versionId = "version_id"
+        case timestampSeconds = "timestamp_seconds"
+        case authorName = "author_name"
+        case createdAt = "created_at"
     }
 }
 

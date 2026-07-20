@@ -150,11 +150,23 @@ final class APIClient {
         return try await send(req)
     }
 
-    func createProject(name: String, color: String, emoji: String? = nil, folderId: String? = nil, sortOrder: Int = 0) async throws -> Project {
+    func createProject(
+        name: String, color: String, emoji: String? = nil, folderId: String? = nil, sortOrder: Int = 0,
+        moduleConcept: Bool = true, moduleScripting: Bool = true,
+        modulePostproduction: Bool = true
+    ) async throws -> Project {
         var req = try await authorizedRequest("projects", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        struct Body: Encodable { let name: String; let color: String; let emoji: String?; let sort_order: Int }
-        req.httpBody = try encoder.encode(Body(name: name, color: color, emoji: emoji, sort_order: sortOrder))
+        struct Body: Encodable {
+            let name: String; let color: String; let emoji: String?; let sort_order: Int
+            let module_concept: Bool; let module_scripting: Bool
+            let module_postproduction: Bool
+        }
+        req.httpBody = try encoder.encode(Body(
+            name: name, color: color, emoji: emoji, sort_order: sortOrder,
+            module_concept: moduleConcept, module_scripting: moduleScripting,
+            module_postproduction: modulePostproduction
+        ))
         let project: Project = try await send(req)
         // Creation has no folder_id param server-side (ProjectCreate doesn't
         // carry one) — a second patch is the simplest way to land a new
@@ -175,7 +187,9 @@ final class APIClient {
         locationLat: Double? = nil, locationLng: Double? = nil,
         clearLocation: Bool = false,
         clientName: String? = nil,
-        folderId: String? = nil, clearFolder: Bool = false, sortOrder: Int? = nil
+        folderId: String? = nil, clearFolder: Bool = false, sortOrder: Int? = nil,
+        moduleConcept: Bool? = nil, moduleScripting: Bool? = nil,
+        modulePostproduction: Bool? = nil
     ) async throws -> Project {
         var req = try await authorizedRequest("projects/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -188,13 +202,17 @@ final class APIClient {
             let client_name: String?
             let folder_id: String?; let clear_folder: Bool
             let sort_order: Int?
+            let module_concept: Bool?; let module_scripting: Bool?
+            let module_postproduction: Bool?
         }
         req.httpBody = try encoder.encode(Body(
             name: name, color: color, emoji: emoji, clear_emoji: clearEmoji, shoot_date: shootDate,
             location_address: locationAddress, location_lat: locationLat, location_lng: locationLng,
             clear_location: clearLocation,
             client_name: clientName,
-            folder_id: folderId, clear_folder: clearFolder, sort_order: sortOrder
+            folder_id: folderId, clear_folder: clearFolder, sort_order: sortOrder,
+            module_concept: moduleConcept, module_scripting: moduleScripting,
+            module_postproduction: modulePostproduction
         ))
         return try await send(req)
     }
@@ -269,11 +287,15 @@ final class APIClient {
     /// `password`/`clearPassword` are optional on purpose: omitting both
     /// leaves whatever password an existing link already had untouched, so
     /// re-sharing without touching password settings can't silently wipe one.
-    func projectShareLink(_ id: String, password: String? = nil, clearPassword: Bool = false) async throws -> ShareLinkResult {
+    /// `kind` mirrors the web app's ShareLinkModal ("storyboard" | "ideas" |
+    /// "video", 2026-07-17) — a project can have one LIVE link per kind at
+    /// once (see backend get_or_create_share_link), so passing the wrong
+    /// one here would silently fetch/rotate a different page's link.
+    func projectShareLink(_ id: String, password: String? = nil, clearPassword: Bool = false, kind: String = "storyboard") async throws -> ShareLinkResult {
         var req = try await authorizedRequest("projects/\(id)/share-link", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        struct Body: Encodable { let password: String?; let clear_password: Bool }
-        req.httpBody = try encoder.encode(Body(password: password, clear_password: clearPassword))
+        struct Body: Encodable { let password: String?; let clear_password: Bool; let kind: String }
+        req.httpBody = try encoder.encode(Body(password: password, clear_password: clearPassword, kind: kind))
         return try await send(req)
     }
 
@@ -527,6 +549,137 @@ final class APIClient {
         return try await send(req)
     }
     #endif
+
+    // MARK: - Ideas
+    //
+    // 2026-07-17 — ported from the web app's lib/api.ts idea* methods /
+    // backend main.py's idea endpoints (§3039-3421). Same auth/Body/send
+    // conventions as the Scenes section above.
+
+    func listIdeas(projectId: String) async throws -> [Idea] {
+        let req = try await authorizedRequest("projects/\(projectId)/ideas")
+        return try await send(req)
+    }
+
+    func createIdea(projectId: String, title: String, text: String = "", sortOrder: Int = 0) async throws -> Idea {
+        var req = try await authorizedRequest("projects/\(projectId)/ideas", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let title: String; let text: String; let sort_order: Int }
+        req.httpBody = try encoder.encode(Body(title: title, text: text, sort_order: sortOrder))
+        return try await send(req)
+    }
+
+    func patchIdea(_ id: String, title: String? = nil, text: String? = nil) async throws -> Idea {
+        var req = try await authorizedRequest("ideas/\(id)", method: "PATCH")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let title: String?; let text: String? }
+        req.httpBody = try encoder.encode(Body(title: title, text: text))
+        return try await send(req)
+    }
+
+    func moveIdea(_ id: String, beforeIdeaId: String?) async throws -> Idea {
+        var req = try await authorizedRequest("ideas/\(id)/move", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let before_idea_id: String? }
+        req.httpBody = try encoder.encode(Body(before_idea_id: beforeIdeaId))
+        return try await send(req)
+    }
+
+    func deleteIdea(_ id: String) async throws {
+        let req = try await authorizedRequest("ideas/\(id)", method: "DELETE")
+        try await sendNoContent(req)
+    }
+
+    /// "Abgenommen" — idempotent server-side (a second call on an
+    /// already-approved idea is a no-op, see backend approve_idea's own doc
+    /// comment): creates a new Section named after the idea's title plus
+    /// one real Scene inside it (title/text/cover image copied over),
+    /// linked via the returned Idea's sectionId/sceneId.
+    func approveIdea(_ id: String) async throws -> Idea {
+        let req = try await authorizedRequest("ideas/\(id)/approve", method: "POST")
+        return try await send(req)
+    }
+
+    /// Read-only from this app's side — client feedback is only ever
+    /// WRITTEN on the public web share page (no login there). Only "sent"
+    /// feedback is ever returned (drafts filtered out server-side).
+    func ideaFeedback(_ ideaId: String) async throws -> [IdeaFeedback] {
+        let req = try await authorizedRequest("ideas/\(ideaId)/feedback")
+        return try await send(req)
+    }
+
+    /// 2026-07-18, web-parity: PL-side "abgehakt" toggle (see
+    /// [[feedback_ios_web_parity]] and the web app's IdeaFeedbackPanel) —
+    /// never reachable from the public share page, this is the same
+    /// project-role-gated endpoint the logged-in web app uses.
+    func setIdeaFeedbackResolved(ideaId: String, feedbackId: String, resolved: Bool) async throws -> IdeaFeedback {
+        var req = try await authorizedRequest("ideas/\(ideaId)/feedback/\(feedbackId)", method: "PATCH")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let resolved: Bool }
+        req.httpBody = try encoder.encode(Body(resolved: resolved))
+        return try await send(req)
+    }
+
+    #if canImport(UIKit)
+    /// Mirrors uploadSceneImage exactly (same multipart shape, same "file"
+    /// field name) — the one difference is the response: an idea can hold
+    /// up to 10 images, so this returns just the new IdeaImage, not the
+    /// whole parent Idea (caller re-fetches/patches its local Idea's
+    /// `images` array, see ShotListViewModel.uploadIdeaImage).
+    func uploadIdeaImage(ideaId: String, image: UIImage) async throws -> IdeaImage {
+        guard let jpegData = image.jpegData(compressionQuality: 0.85) else {
+            throw APIError.network(URLError(.cannotCreateFile))
+        }
+        var req = try await authorizedRequest("ideas/\(ideaId)/images", method: "POST")
+        let boundary = "Boundary-\(UUID().uuidString)"
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"idea.jpg\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+        body.append(jpegData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        req.httpBody = body
+
+        return try await send(req)
+    }
+    #endif
+
+    func deleteIdeaImage(ideaId: String, imageId: String) async throws {
+        let req = try await authorizedRequest("ideas/\(ideaId)/images/\(imageId)", method: "DELETE")
+        try await sendNoContent(req)
+    }
+
+    func reorderIdeaImages(ideaId: String, orderedImageIds: [String]) async throws -> Idea {
+        var req = try await authorizedRequest("ideas/\(ideaId)/images/reorder", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let ordered_image_ids: [String] }
+        req.httpBody = try encoder.encode(Body(ordered_image_ids: orderedImageIds))
+        return try await send(req)
+    }
+
+    /// Fire-and-forget, same 202-immediately/poll-for-completion contract as
+    /// generateSceneImage — reserves a slot (IdeaImage row, status
+    /// "generating") and returns right away; ShotListView's existing 12s
+    /// poll (via loadIdeas) picks up the finished image once the
+    /// background job flips that row to status "ready" (or removes it on
+    /// failure, refunding credits — see backend
+    /// _generate_and_save_idea_image). `prompt` nil/empty falls back
+    /// server-side to the idea's own text (tags stripped).
+    struct GenerateIdeaImageAck: Decodable {
+        let status: String
+        let imageId: String
+        enum CodingKeys: String, CodingKey { case status; case imageId = "image_id" }
+    }
+
+    func generateIdeaImage(_ ideaId: String, style: String, aspectRatio: String, prompt: String? = nil) async throws -> GenerateIdeaImageAck {
+        var req = try await authorizedRequest("ideas/\(ideaId)/images/generate", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let style: String; let aspect_ratio: String; let prompt: String? }
+        req.httpBody = try encoder.encode(Body(style: style, aspect_ratio: aspectRatio, prompt: prompt))
+        return try await send(req)
+    }
 
     // MARK: - Shots
 
@@ -859,6 +1012,101 @@ final class APIClient {
 
     func deleteSection(_ id: String) async throws {
         let req = try await authorizedRequest("sections/\(id)", method: "DELETE")
+        try await sendNoContent(req)
+    }
+
+    /// #11 Schritt 5 (Postproduction-Tracking) — die bestaetigte Aktion
+    /// hinter dem "Alle Szenen im Kasten? Ab in die Postproduction?"-Dialog.
+    func sendSectionToPostproduction(_ id: String) async throws -> SceneSection {
+        let req = try await authorizedRequest("sections/\(id)/send-to-postproduction", method: "POST")
+        return try await send(req)
+    }
+
+    /// #11 Schritt 6 — Status von jeder Rolle aenderbar, Deadline nur ab
+    /// "projektleiter" (2026-07-19, Lino's finale Rollen-Spezifikation),
+    /// serverseitig durchgesetzt (siehe Backend-Kommentar auf
+    /// patch_section_postproduction). `clearDeadline` und
+    /// `deadline` sind bewusst getrennt (nicht einfach `deadline: nil`),
+    /// gleiches "clear-Flag"-Muster wie patchProject/patchSection sonst
+    /// auch — sonst liesse sich "Feld nicht anfassen" nicht von "Feld
+    /// leeren" unterscheiden.
+    func patchSectionPostproduction(
+        _ id: String, status: PostproductionStatus? = nil, deadline: Date? = nil, clearDeadline: Bool = false
+    ) async throws -> SceneSection {
+        var req = try await authorizedRequest("sections/\(id)/postproduction", method: "PATCH")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let status: PostproductionStatus?; let deadline: Date?; let clear_deadline: Bool }
+        req.httpBody = try encoder.encode(Body(status: status, deadline: deadline, clear_deadline: clearDeadline))
+        return try await send(req)
+    }
+
+    // MARK: - Videos (#11 Schritt 7)
+
+    func listVideos(sectionId: String) async throws -> [Video] {
+        let req = try await authorizedRequest("sections/\(sectionId)/videos")
+        return try await send(req)
+    }
+
+    func createVideo(sectionId: String, title: String = "Video", sortOrder: Int = 0) async throws -> Video {
+        var req = try await authorizedRequest("sections/\(sectionId)/videos", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let title: String; let sort_order: Int }
+        req.httpBody = try encoder.encode(Body(title: title, sort_order: sortOrder))
+        return try await send(req)
+    }
+
+    func deleteVideo(_ id: String) async throws {
+        let req = try await authorizedRequest("videos/\(id)", method: "DELETE")
+        try await sendNoContent(req)
+    }
+
+    func createVideoVersion(videoId: String, filename: String, contentType: String) async throws -> VideoVersion {
+        var req = try await authorizedRequest("videos/\(videoId)/versions", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let original_filename: String; let content_type: String }
+        req.httpBody = try encoder.encode(Body(original_filename: filename, content_type: contentType))
+        return try await send(req)
+    }
+
+    /// Direct device -> R2 PUT (bypasses this API entirely, see
+    /// create_video_version's presigned_upload_url) — plain URLRequest, no
+    /// Authorization header (an external R2 URL neither needs nor accepts
+    /// the Subshot Bearer token). `upload(for:fromFile:)` (not a body-Data
+    /// request) so a large video file streams from disk instead of sitting
+    /// fully loaded in memory.
+    func uploadVideoFile(to presignedURL: URL, fileURL: URL, contentType: String) async throws {
+        var req = URLRequest(url: presignedURL)
+        req.httpMethod = "PUT"
+        req.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        let (_, response) = try await URLSession.shared.upload(for: req, fromFile: fileURL)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw APIError.server(status: (response as? HTTPURLResponse)?.statusCode ?? 0, message: "R2 upload failed")
+        }
+    }
+
+    func completeVideoVersion(_ id: String, fileSizeBytes: Int?, durationSeconds: Double?) async throws -> VideoVersion {
+        var req = try await authorizedRequest("video-versions/\(id)/complete", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let file_size_bytes: Int?; let duration_seconds: Double? }
+        req.httpBody = try encoder.encode(Body(file_size_bytes: fileSizeBytes, duration_seconds: durationSeconds))
+        return try await send(req)
+    }
+
+    func deleteVideoVersion(_ id: String) async throws {
+        let req = try await authorizedRequest("video-versions/\(id)", method: "DELETE")
+        try await sendNoContent(req)
+    }
+
+    func createVideoComment(versionId: String, timestampSeconds: Double, authorName: String, comment: String) async throws -> VideoComment {
+        var req = try await authorizedRequest("video-versions/\(versionId)/comments", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let timestamp_seconds: Double; let author_name: String; let comment: String }
+        req.httpBody = try encoder.encode(Body(timestamp_seconds: timestampSeconds, author_name: authorName, comment: comment))
+        return try await send(req)
+    }
+
+    func deleteVideoComment(_ id: String) async throws {
+        let req = try await authorizedRequest("video-comments/\(id)", method: "DELETE")
         try await sendNoContent(req)
     }
 

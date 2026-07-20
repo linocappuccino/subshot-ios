@@ -138,7 +138,11 @@ final class ProjectListViewModel: ObservableObject {
 
     /// Returns the newly created project so the caller can navigate straight
     /// into it (Reminders-style: name it, hit return, you're in the list).
-    func create(name: String, color: String? = nil, emoji: String? = nil) async -> Project? {
+    func create(
+        name: String, color: String? = nil, emoji: String? = nil,
+        moduleConcept: Bool = true, moduleScripting: Bool = true,
+        modulePostproduction: Bool = true
+    ) async -> Project? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         do {
@@ -149,7 +153,9 @@ final class ProjectListViewModel: ObservableObject {
             // there, not after.
             let sortOrder = (projects.map(\.sortOrder).min() ?? 0) - 1
             let project = try await APIClient.shared.createProject(
-                name: trimmed, color: color ?? nextDefaultColor, emoji: emoji, folderId: folderId, sortOrder: sortOrder
+                name: trimmed, color: color ?? nextDefaultColor, emoji: emoji, folderId: folderId, sortOrder: sortOrder,
+                moduleConcept: moduleConcept, moduleScripting: moduleScripting,
+                modulePostproduction: modulePostproduction
             )
             projects.insert(project, at: 0)
             return project
@@ -205,11 +211,16 @@ final class ProjectListViewModel: ObservableObject {
         }
     }
 
-    func update(_ project: Project, name: String, color: String, emoji: String?) async {
+    func update(
+        _ project: Project, name: String, color: String, emoji: String?,
+        moduleConcept: Bool, moduleScripting: Bool, modulePostproduction: Bool
+    ) async {
         do {
             let updated = try await APIClient.shared.patchProject(
                 project.id, name: name, color: color,
-                emoji: emoji, clearEmoji: emoji == nil
+                emoji: emoji, clearEmoji: emoji == nil,
+                moduleConcept: moduleConcept, moduleScripting: moduleScripting,
+                modulePostproduction: modulePostproduction
             )
             if let index = projects.firstIndex(where: { $0.id == updated.id }) {
                 projects[index] = updated
