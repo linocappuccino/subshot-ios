@@ -235,16 +235,20 @@ final class APIClient {
 
     // MARK: - Folders
 
-    func listFolders() async throws -> [ProjectFolder] {
-        let req = try await authorizedRequest("folders")
+    /// nil = root level (parent_folder_id IS NULL on the backend), a
+    /// folder's id = that folder's direct subfolders (2026-07-20, see
+    /// ProjectFolder.folderCount's own doc comment for why this changed).
+    func listFolders(parentFolderId: String? = nil) async throws -> [ProjectFolder] {
+        let path = parentFolderId.map { "folders?parent_folder_id=\($0)" } ?? "folders"
+        let req = try await authorizedRequest(path)
         return try await send(req)
     }
 
-    func createFolder(name: String, color: String? = nil, emoji: String? = nil, sortOrder: Int) async throws -> ProjectFolder {
+    func createFolder(name: String, color: String? = nil, emoji: String? = nil, sortOrder: Int, parentFolderId: String? = nil) async throws -> ProjectFolder {
         var req = try await authorizedRequest("folders", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        struct Body: Encodable { let name: String; let color: String?; let emoji: String?; let sort_order: Int }
-        req.httpBody = try encoder.encode(Body(name: name, color: color, emoji: emoji, sort_order: sortOrder))
+        struct Body: Encodable { let name: String; let color: String?; let emoji: String?; let sort_order: Int; let parent_folder_id: String? }
+        req.httpBody = try encoder.encode(Body(name: name, color: color, emoji: emoji, sort_order: sortOrder, parent_folder_id: parentFolderId))
         return try await send(req)
     }
 

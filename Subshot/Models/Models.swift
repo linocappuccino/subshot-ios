@@ -84,11 +84,29 @@ struct ProjectFolder: Codable, Identifiable, Hashable {
     var backgroundImageFocusX: Double?
     var backgroundImageFocusY: Double?
     var projectCount: Int
+    /// 2026-07-20 — folders can nest (web #249, 2026-07-19); this iOS model
+    /// never picked up `folder_count`/`parent_folder_id` even though the
+    /// backend's FolderOut always sent them, so a folder containing only a
+    /// SUBFOLDER (no direct project) looked like an empty dead end here —
+    /// its real content (a project nested one level deeper) was completely
+    /// unreachable, see ProjectListView's own updated doc comment.
+    var folderCount: Int
+    var parentFolderId: String?
     let createdAt: Date
 
     var backgroundImageFocusPoint: UnitPoint? {
         guard let backgroundImageFocusX, let backgroundImageFocusY else { return nil }
         return UnitPoint(x: backgroundImageFocusX, y: backgroundImageFocusY)
+    }
+
+    /// Same wording/branching as the web app's projects/page.tsx folder tile
+    /// subtitle — a folder holding only subfolders (no direct project) used
+    /// to just show "0 Projekte" here, indistinguishable from a genuinely
+    /// empty folder even though real content sat one level deeper.
+    var tileSubtitle: String {
+        let projectPart = "\(projectCount) Projekt\(projectCount == 1 ? "" : "e")"
+        guard folderCount > 0 else { return projectPart }
+        return "\(folderCount) Ordner, \(projectPart)"
     }
 
     enum CodingKeys: String, CodingKey {
@@ -98,6 +116,8 @@ struct ProjectFolder: Codable, Identifiable, Hashable {
         case backgroundImageFocusX = "background_image_focus_x"
         case backgroundImageFocusY = "background_image_focus_y"
         case projectCount = "project_count"
+        case folderCount = "folder_count"
+        case parentFolderId = "parent_folder_id"
         case createdAt = "created_at"
     }
 }

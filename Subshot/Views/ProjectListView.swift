@@ -77,8 +77,10 @@ fileprivate struct TileDropDelegate: DropDelegate {
 
 /// Root project screen AND every folder's contents use this same view —
 /// `folderId`/`folderName` nil means the root (all top-level projects +
-/// folder tiles), non-nil means we're inside a folder (its projects only,
-/// no nested folders). Grid of tiles throughout: a project tile shows a
+/// folder tiles), non-nil means we're inside a folder (its own direct
+/// projects AND subfolders — folders can nest, see ProjectFolder.folderCount's
+/// doc comment; this view recurses into itself via .navigationDestination
+/// below for any depth). Grid of tiles throughout: a project tile shows a
 /// thumbnail pulled from one of its scenes, a folder tile looks identical
 /// (no folder chrome) so the two read as one consistent tile system.
 struct ProjectListView: View {
@@ -167,10 +169,8 @@ struct ProjectListView: View {
     private var gridContent: some View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 16) {
-                if folderId == nil {
-                    ForEach(viewModel.folders) { folder in
-                        folderTile(folder)
-                    }
+                ForEach(viewModel.folders) { folder in
+                    folderTile(folder)
                 }
                 ForEach(viewModel.projects) { project in
                     projectTile(project)
@@ -202,28 +202,24 @@ struct ProjectListView: View {
     /// reach spot for the same action (thumb-friendly on a big grid).
     @ViewBuilder
     private var addButton: some View {
+        // 2026-07-20: "Neuer Ordner" used to only show at root (folders
+        // couldn't nest yet) — now offered at every level, matching the web
+        // app's #249 nested-folders behavior (a folder created while inside
+        // another folder nests one level deeper, same as web).
         Group {
-            if folderId == nil {
-                Menu {
-                    Button {
-                        creatingProject = true
-                    } label: {
-                        Label("Neues Projekt", systemImage: "film.stack")
-                    }
-                    Button {
-                        creatingFolder = true
-                    } label: {
-                        Label("Neuer Ordner", systemImage: "folder.badge.plus")
-                    }
-                } label: {
-                    fabIcon
-                }
-            } else {
+            Menu {
                 Button {
                     creatingProject = true
                 } label: {
-                    fabIcon
+                    Label("Neues Projekt", systemImage: "film.stack")
                 }
+                Button {
+                    creatingFolder = true
+                } label: {
+                    Label("Neuer Ordner", systemImage: "folder.badge.plus")
+                }
+            } label: {
+                fabIcon
             }
         }
         .padding(.trailing, 20)
@@ -409,7 +405,7 @@ struct ProjectListView: View {
         NavigationLink(value: folder) {
             tileBody(
                 title: folder.name,
-                subtitle: folder.projectCount == 1 ? "1 Projekt" : "\(folder.projectCount) Projekte",
+                subtitle: folder.tileSubtitle,
                 color: folder.color,
                 thumbnailPath: folder.backgroundImageURL,
                 fallbackIcon: "folder.fill",
@@ -432,7 +428,7 @@ struct ProjectListView: View {
         } preview: {
             tileBody(
                 title: folder.name,
-                subtitle: folder.projectCount == 1 ? "1 Projekt" : "\(folder.projectCount) Projekte",
+                subtitle: folder.tileSubtitle,
                 color: folder.color,
                 thumbnailPath: folder.backgroundImageURL,
                 fallbackIcon: "folder.fill",

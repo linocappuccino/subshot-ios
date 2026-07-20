@@ -10,7 +10,10 @@ final class ProjectListViewModel: ObservableObject {
     let folderId: String?
 
     @Published var projects: [Project] = []
-    /// Only populated at the root level — folders don't nest.
+    /// This screen's DIRECT subfolders — root when `folderId` is nil, this
+    /// folder's own children otherwise (2026-07-20: folders can nest, see
+    /// ProjectFolder.folderCount's doc comment — used to just be root-only,
+    /// which made anything nested two levels deep completely unreachable).
     @Published var folders: [ProjectFolder] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
@@ -27,9 +30,7 @@ final class ProjectListViewModel: ObservableObject {
         defer { isLoading = false }
         do {
             projects = try await APIClient.shared.listProjects(folderId: folderId)
-            if folderId == nil {
-                folders = try await APIClient.shared.listFolders()
-            }
+            folders = try await APIClient.shared.listFolders(parentFolderId: folderId)
         } catch {
             // See APIError.isCancellation — a cancelled request (e.g. this
             // same load() still running from the initial .task when
@@ -45,7 +46,7 @@ final class ProjectListViewModel: ObservableObject {
         guard !trimmed.isEmpty else { return nil }
         do {
             let sortOrder = (folders.map(\.sortOrder).max() ?? -1) + 1
-            var folder = try await APIClient.shared.createFolder(name: trimmed, color: color, emoji: emoji, sortOrder: sortOrder)
+            var folder = try await APIClient.shared.createFolder(name: trimmed, color: color, emoji: emoji, sortOrder: sortOrder, parentFolderId: folderId)
             if let image {
                 folder = try await APIClient.shared.uploadFolderImage(folderId: folder.id, image: image)
             }
