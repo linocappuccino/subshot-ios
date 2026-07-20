@@ -90,6 +90,17 @@ final class APIClient {
         var req = URLRequest(url: url)
         req.httpMethod = method
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        // 2026-07-20, Lino: "es hat noch alte Projekte drin die schon lange
+        // gelöscht wurden" — the backend's DB was already confirmed clean
+        // (only 2 real projects for his account), so this was iOS's own
+        // URLCache serving a stale disk-cached GET response instead of
+        // hitting the network — `.useProtocolCachePolicy` (the default)
+        // lets URLSession.shared cache and replay API responses on
+        // heuristic freshness even with no explicit Cache-Control header
+        // from the backend, a well-known URLSession gotcha for JSON APIs.
+        // Every request through this app goes through this one function, so
+        // bypassing the cache here covers all of them, not just /projects.
+        req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         return req
     }
 
