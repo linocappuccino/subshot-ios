@@ -30,6 +30,12 @@ final class BackendAuth: ObservableObject {
 
     func refreshMe() async {
         currentUser = try? await APIClient.shared.me()
+        // 2026-07-21 — reconcile the locally-cached language against the
+        // DB-stored one (source of truth) every time /me is refetched, same
+        // shape as AppShell.tsx's own effect on web.
+        if let language = currentUser?.language {
+            AppLanguage.shared.reconcile(fromBackend: language)
+        }
     }
 
     func clear() {

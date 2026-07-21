@@ -290,6 +290,15 @@ struct ProjectListView: View {
                         }
                 }
             }
+            // 2026-07-21, Lino: "oben soll man auf seinen avatar klicken
+            // koennen dann geht ein dialog auf bei dem man sich von der app
+            // ausloggen kann, und die sprache der app aendern kann" — same
+            // root-only scoping as the notification bell above (mirrors
+            // web's AppShell header, which only ever renders once per
+            // screen too, not per nested folder level).
+            ToolbarItem(placement: .navigationBarTrailing) {
+                AvatarMenu()
+            }
         }
     }
 

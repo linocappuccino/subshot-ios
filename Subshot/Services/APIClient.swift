@@ -151,6 +151,17 @@ final class APIClient {
         return try await send(req)
     }
 
+    /// 2026-07-21 — Avatar-Dialog Sprachumschalter, siehe LanguageDialog.swift.
+    /// Pro Account statt lokal (UserDefaults) gespeichert, damit Web und iOS
+    /// immer dieselbe Sprache zeigen (matcht PATCH /me in main.py).
+    func patchMe(language: String) async throws -> Me {
+        var req = try await authorizedRequest("me", method: "PATCH")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let language: String }
+        req.httpBody = try encoder.encode(Body(language: language))
+        return try await send(req)
+    }
+
     // MARK: - Projects
 
     /// nil = root level (folder_id IS NULL on the backend), a folder's id =

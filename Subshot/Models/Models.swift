@@ -9,9 +9,13 @@ struct Me: Codable {
     let email: String
     let name: String?
     let avatarUrl: String?
+    // 2026-07-21 — Avatar-Dialog Sprachumschalter (siehe LanguageDialog.swift).
+    // Backend liefert das Feld IMMER (Default "de", nie null), darum hier
+    // non-optional statt String? — matcht MeOut.language in schemas.py.
+    let language: String
 
     enum CodingKeys: String, CodingKey {
-        case id, email, name
+        case id, email, name, language
         case avatarUrl = "avatar_url"
     }
 }
