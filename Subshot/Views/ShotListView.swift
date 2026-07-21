@@ -140,6 +140,14 @@ struct ShotListView: View {
     /// #11 Schritt 5 — "Alle Szenen im Kasten? Ab in die Postproduction?"
     @State private var sectionToSendToPostproduction: SceneSection?
     @State private var showingPostproductionList = false
+    /// 2026-07-21, #276 — the Ideas page's own bottom-right FAB (mirrors
+    /// addSceneButton's role on the Scripting page): creates a new idea
+    /// and opens it directly, no intermediate sheet/menu. Kept separate
+    /// from IdeaGridView's own `editingIdea` (used for tapping an
+    /// EXISTING tile) — two independent, mutually-exclusive sheet
+    /// triggers is simpler than threading a callback down into that view.
+    @State private var creatingIdeaViaFAB = false
+    @State private var ideaCreatedByFAB: Idea?
     /// "Ohne Abschnitt" has no SceneSection id of its own to key off of (see
     /// isSectionCollapsed/toggleSectionCollapse) — this sentinel stands in
     /// for it so the same Set can track every section's collapsed state,
@@ -282,11 +290,36 @@ struct ShotListView: View {
     /// scene-card swipe-to-delete/complete gesture entirely; this is a
     /// screen-edge swipe instead (mirrors iOS's own system back-swipe
     /// convention, and the web app's Ideen⇄Szenen edge-tab navigation, see
-    /// subshot-web's page.tsx). Only two workflow stages exist on this
-    /// screen today (Ideen/Planungssektor, Szenen/Scripting-Tool below it),
-    /// so "next" and "previous" are just this one toggle.
-    private enum WorkflowSection: Equatable { case ideas, scripting }
+    /// subshot-web's page.tsx).
+    /// 2026-07-21, #283: extended to a THIRD stage, Postproduction — was
+    /// completely unreachable except via the toolbar's small
+    /// "checklist.checked" icon (opens it as a separate sheet, see
+    /// showingPostproductionList below; that sheet path still exists
+    /// unchanged as a shortcut). Int-backed + Comparable so
+    /// previous/nextWorkflowSection below can just walk rawValue by ±1
+    /// instead of hand-listing every pair.
+    private enum WorkflowSection: Int, Equatable, CaseIterable, Comparable {
+        case ideas, scripting, postproduction
+        static func < (lhs: WorkflowSection, rhs: WorkflowSection) -> Bool { lhs.rawValue < rhs.rawValue }
+    }
     @State private var activeWorkflowSection: WorkflowSection = .ideas
+    /// nil at either end of the pipeline (no section before Ideen, none
+    /// after Postproduction) — the corresponding edge-swipe zone below is
+    /// simply omitted in that case, same as iOS's own back-swipe being a
+    /// no-op on a stack's root screen.
+    private var previousWorkflowSection: WorkflowSection? {
+        WorkflowSection(rawValue: activeWorkflowSection.rawValue - 1)
+    }
+    private var nextWorkflowSection: WorkflowSection? {
+        WorkflowSection(rawValue: activeWorkflowSection.rawValue + 1)
+    }
+    private var shareKindForActiveWorkflowSection: String {
+        switch activeWorkflowSection {
+        case .ideas: return "ideas"
+        case .scripting: return "storyboard"
+        case .postproduction: return "video"
+        }
+    }
 
     init(projectId: String, projectName: String) {
         self.projectId = projectId
@@ -295,7 +328,18 @@ struct ShotListView: View {
     }
 
     var body: some View {
-      ScrollViewReader { scrollProxy in
+      Group {
+        // 2026-07-21, #283 — Postproduction renders as a completely
+        // separate branch, NOT inside the ScrollView below (its content,
+        // PostproductionListView's own `List`, doesn't lay out correctly
+        // nested inside another ScrollView — a List needs to own its own
+        // scrolling). Also matches the web app's real postproduction/
+        // page.tsx, which has no ProjectInfoBox at all, unlike the Ideas/
+        // Scripting panels below.
+        if activeWorkflowSection == .postproduction {
+            PostproductionListView(viewModel: viewModel, embedded: true)
+                .transition(.opacity)
+        } else {
         ScrollView {
             // TikTok-style scroll (2026-07-13, Lino: "wenn man einmal
             // schnell... wischt kommt man direkt zur nächsten Kachel...
@@ -345,74 +389,91 @@ struct ShotListView: View {
                     // loadGeneration's own doc comment.
                     .id(viewModel.loadGeneration)
 
-                // Planungssektor (2026-07-17 iOS port of the web app's
-                // IdeaGrid.tsx) — sits above the Scripting-Tool below,
-                // matching the pipeline order (Idee → Scripting), same as
-                // web. A plain VStack child, NOT inside the scroll-snap-
-                // tracked LazyVStack below — same reasoning as
-                // ProjectInfoBox above (an empty/short Ideas section would
-                // otherwise become a phantom scroll-snap target, see that
-                // bug's own history in ProjectInfoBox's doc comment).
-                IdeaGridView(viewModel: viewModel)
-                    .id("ideas-section")
-
-                // Zero-size scroll-target anchor (2026-07-17, see
-                // activeWorkflowSection's doc comment) — a sibling right
-                // before the LazyVStack rather than `.id()` on the
-                // LazyVStack itself, deliberately: that view already
-                // carries a long, carefully-tuned modifier chain
-                // (.scrollTargetLayout() for the TikTok-snap behavior
-                // above) and this avoids touching any of it.
-                Color.clear.frame(height: 0).id("scripting-section")
-
-                LazyVStack(alignment: .leading, spacing: 16) {
-                    // 2026-07-14: was unconditional — with zero unassigned
-                    // shots (the common case) this still rendered an empty,
-                    // near-invisible ~32pt VStack (just its own vertical
-                    // padding, no content). As a direct LazyVStack child it's
-                    // ALSO a .scrollTargetLayout() snap target (see the
-                    // TikTok-scroll doc comment above), so that empty sliver
-                    // sat as a real scroll-snap boundary wedged between
-                    // ProjectInfoBox and the first actual section — right
-                    // where Lino reported the top section becoming
-                    // unclickable/undraggable/uncollapsible (a snap target
-                    // with nothing in it still competes for the ScrollView's
-                    // own pan-gesture arbitration at that boundary). Guarding
-                    // it the same way sectionGroup(section: nil) already
-                    // guards its own empty case (below) removes that phantom
-                    // target entirely when there's nothing to show.
-                    if !viewModel.shots(in: nil).isEmpty {
-                        unassignedSection()
-                    }
-
-                    // Sections are opt-in — a project that's never created one
-                    // renders exactly like before (flat scene list, no headers).
-                    // Only once at least one section exists does grouping (with
-                    // an explicit "Ohne Abschnitt" bucket for the rest) kick in.
-                    if viewModel.sections.isEmpty {
-                        // scenes(in: nil), not the raw array — a project with no
-                        // sections yet still has every scene's sectionId == nil,
-                        // so this is equivalent to the unsectioned bucket below,
-                        // just without its own header.
-                        sceneGrid(viewModel.scenes(in: nil))
-                    } else {
-                        ForEach(viewModel.sections) { section in
-                            sectionGroup(section: section)
+                // 2026-07-21, #280 (Lino: "ganz falsch!" — a Scene resulting
+                // from an approved Idea was rendering inside a section at
+                // the bottom of THIS same continuous scroll, reading as
+                // part of the Ideas page). Ideas and Scripting are now two
+                // fully distinct, mutually-exclusive panels — exactly one
+                // is ever in the view tree at a time, matching the web
+                // app's own activeView AnimatePresence swap (page.tsx)
+                // instead of the old "both stacked in one ScrollView,
+                // swipe just scrolls to an anchor" approach. See
+                // activeWorkflowSection's own doc comment for the edge-
+                // swipe gesture that drives this switch. Only .ideas/
+                // .scripting ever reach here — .postproduction is handled
+                // by the sibling branch above, outside this ScrollView
+                // entirely.
+                if activeWorkflowSection == .ideas {
+                    // Planungssektor (2026-07-17 iOS port of the web app's
+                    // IdeaGrid.tsx) — filtered to OPEN ideas only; an
+                    // approved idea's resulting Scene lives exclusively on
+                    // the Scripting panel below (see IdeaGridView's own
+                    // filtering).
+                    IdeaGridView(viewModel: viewModel)
+                        .transition(.opacity)
+                } else {
+                    LazyVStack(alignment: .leading, spacing: 16) {
+                        // 2026-07-14: was unconditional — with zero unassigned
+                        // shots (the common case) this still rendered an empty,
+                        // near-invisible ~32pt VStack (just its own vertical
+                        // padding, no content). As a direct LazyVStack child it's
+                        // ALSO a .scrollTargetLayout() snap target (see the
+                        // TikTok-scroll doc comment above), so that empty sliver
+                        // sat as a real scroll-snap boundary wedged between
+                        // ProjectInfoBox and the first actual section — right
+                        // where Lino reported the top section becoming
+                        // unclickable/undraggable/uncollapsible (a snap target
+                        // with nothing in it still competes for the ScrollView's
+                        // own pan-gesture arbitration at that boundary). Guarding
+                        // it the same way sectionGroup(section: nil) already
+                        // guards its own empty case (below) removes that phantom
+                        // target entirely when there's nothing to show.
+                        if !viewModel.shots(in: nil).isEmpty {
+                            unassignedSection()
                         }
-                        let unassigned = viewModel.scenes(in: nil)
-                        if !unassigned.isEmpty {
-                            sectionGroup(section: nil)
+
+                        // Sections are opt-in — a project that's never created one
+                        // renders exactly like before (flat scene list, no headers).
+                        // Only once at least one section exists does grouping (with
+                        // an explicit "Ohne Abschnitt" bucket for the rest) kick in.
+                        if viewModel.sections.isEmpty {
+                            // scenes(in: nil), not the raw array — a project with no
+                            // sections yet still has every scene's sectionId == nil,
+                            // so this is equivalent to the unsectioned bucket below,
+                            // just without its own header.
+                            sceneGrid(viewModel.scenes(in: nil))
+                        } else {
+                            ForEach(viewModel.sections) { section in
+                                sectionGroup(section: section)
+                            }
+                            let unassigned = viewModel.scenes(in: nil)
+                            if !unassigned.isEmpty {
+                                sectionGroup(section: nil)
+                            }
                         }
                     }
+                    .scrollTargetLayout()
+                    .transition(.opacity)
                 }
-                .scrollTargetLayout()
             }
             .padding(.vertical, 16)
+            .animation(.easeInOut(duration: 0.25), value: activeWorkflowSection)
         }
-        .scrollTargetBehaviorIf(wantsScrollSnap)
+        .scrollTargetBehaviorIf(wantsScrollSnap && activeWorkflowSection == .scripting)
+        }
+      }
         .background(Color(.systemGroupedBackground))
         .overlay(alignment: .bottomTrailing) {
-            addSceneButton
+            // Scripting-only for addSceneButton (Neue Szene/Zwischenschritt/
+            // Abschnitt/Info menu makes no sense while looking at the Ideas
+            // panel) — the Ideas panel gets its own dedicated bottom-right
+            // "create idea" button instead (#276), Postproduction gets
+            // neither.
+            if activeWorkflowSection == .scripting {
+                addSceneButton
+            } else if activeWorkflowSection == .ideas {
+                addIdeaButton
+            }
         }
         .navigationTitle(projectName)
         .navigationBarTitleDisplayMode(.inline)
@@ -544,6 +605,12 @@ struct ShotListView: View {
         .sheet(isPresented: $showingPostproductionList) {
             PostproductionListView(viewModel: viewModel)
         }
+        // #276 — the Ideas page's bottom-right FAB's own "just created,
+        // now open it" sheet; independent of IdeaGridView's own
+        // editingIdea (that one's for tapping an EXISTING tile).
+        .sheet(item: $ideaCreatedByFAB) { idea in
+            IdeaEditSheet(idea: idea, viewModel: viewModel)
+        }
         .sheet(item: $assigneeSheetScene) { scene in
             SceneAssigneeSheet(scene: scene, viewModel: viewModel)
         }
@@ -560,8 +627,11 @@ struct ShotListView: View {
             // soll immer die Seite teilen auf der man gerade ist" (its
             // shareKind tracks activeView live): shares whichever
             // Workflow-Bereich is currently on screen instead of always
-            // the Szenen/storyboard link.
-            ShareLinkSheet(projectId: projectId, kind: activeWorkflowSection == .ideas ? "ideas" : "storyboard") { url in
+            // the Szenen/storyboard link. Extended 2026-07-21 (#283) for
+            // the new third Postproduction page — "video" matches the
+            // kind PostproductionListView's own (non-embedded) share
+            // button already uses.
+            ShareLinkSheet(projectId: projectId, kind: shareKindForActiveWorkflowSection) { url in
                 shareLinkURL = url
                 isPresentingShareSheet = true
             }
@@ -628,8 +698,17 @@ struct ShotListView: View {
                 viewModel.pendingTimeCascade = nil
             }
         }
+        // 2026-07-21, #282 — used to be a single "OK" dismiss-only alert;
+        // now offers a real choice: Abbrechen just closes it (already on
+        // the Scene overview, nothing else to do), "Alles im Kasten"
+        // navigates straight to the Postproduction page (same
+        // goToWorkflowSection this screen's edge-swipe already uses, see
+        // its own doc comment).
         .alert("Alles im Kasten?", isPresented: $viewModel.showAllTimedScenesDoneConfirmation) {
-            Button("OK", role: .cancel) {}
+            Button("Abbrechen", role: .cancel) {}
+            Button("Alles im Kasten") {
+                goToWorkflowSection(.postproduction)
+            }
         } message: {
             Text("Alle Shots wirklich im Kasten, hast du auch wirklich keine Aussage oder Szene vergessen?")
         }
@@ -704,13 +783,21 @@ struct ShotListView: View {
         // tile's content ever reaches (tiles already sit inset from the
         // true edge via their own horizontal padding) sidesteps that
         // entire class of conflict rather than repeating it.
+        // 2026-07-21, #283: three stages now (Ideen/Szenen/Postproduction)
+        // — each zone targets previous/nextWorkflowSection instead of a
+        // hardcoded .ideas/.scripting pair, and is omitted entirely at
+        // either end of the pipeline (nil), same as iOS's own back-swipe
+        // being a no-op on a stack's root screen.
         .overlay(alignment: .leading) {
-            edgeSwipeZone(goingTo: .ideas, requiredDirection: 1, proxy: scrollProxy)
+            if let previousWorkflowSection {
+                edgeSwipeZone(goingTo: previousWorkflowSection, requiredDirection: 1)
+            }
         }
         .overlay(alignment: .trailing) {
-            edgeSwipeZone(goingTo: .scripting, requiredDirection: -1, proxy: scrollProxy)
+            if let nextWorkflowSection {
+                edgeSwipeZone(goingTo: nextWorkflowSection, requiredDirection: -1)
+            }
         }
-      }
     }
 
     /// One edge-swipe hit zone. `requiredDirection`: +1 means only a
@@ -720,7 +807,7 @@ struct ShotListView: View {
     /// only a LEFTWARD drag triggers, used on the TRAILING edge ("swipe
     /// in from the right edge" to advance).
     @ViewBuilder
-    private func edgeSwipeZone(goingTo target: WorkflowSection, requiredDirection: CGFloat, proxy: ScrollViewProxy) -> some View {
+    private func edgeSwipeZone(goingTo target: WorkflowSection, requiredDirection: CGFloat) -> some View {
         Color.clear
             .frame(width: 24)
             .frame(maxHeight: .infinity)
@@ -732,16 +819,21 @@ struct ShotListView: View {
                         let v = value.translation.height
                         guard abs(h) > abs(v) * 1.5 else { return }
                         guard h * requiredDirection > 40 else { return }
-                        goToWorkflowSection(target, proxy: proxy)
+                        goToWorkflowSection(target)
                     }
             )
     }
 
-    private func goToWorkflowSection(_ section: WorkflowSection, proxy: ScrollViewProxy) {
+    // 2026-07-21, #280: no longer scrolls to an anchor (ScrollViewReader
+    // removed along with it) — Ideas/Scripting are two fully separate
+    // panels now (see the `switch activeWorkflowSection` in body), so
+    // "navigating" is just flipping which one is in the view tree, with
+    // the .transition(.opacity) + .animation pair on that switch providing
+    // the cross-fade.
+    private func goToWorkflowSection(_ section: WorkflowSection) {
         guard section != activeWorkflowSection else { return }
-        activeWorkflowSection = section
-        withAnimation(.easeInOut(duration: 0.45)) {
-            proxy.scrollTo(section == .ideas ? "ideas-section" : "scripting-section", anchor: .top)
+        withAnimation(.easeInOut(duration: 0.3)) {
+            activeWorkflowSection = section
         }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
@@ -805,6 +897,45 @@ struct ShotListView: View {
                 .background(Circle().fill(Color.accentColor))
                 .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
         }
+        .padding(.trailing, 20)
+        .padding(.bottom, 20)
+    }
+
+    /// 2026-07-21, #276 — Ideas-page equivalent of addSceneButton above: a
+    /// single tap creates a new idea AND opens it (no Menu, no naming
+    /// step — the old top-right "+ Idee" button in IdeaGridView already
+    /// worked this way, this just moves the same create-then-open call to
+    /// a bottom-right FAB instead).
+    private func createIdeaViaFAB() {
+        guard !creatingIdeaViaFAB else { return }
+        creatingIdeaViaFAB = true
+        Task {
+            if let created = await viewModel.createIdea() {
+                ideaCreatedByFAB = created
+            }
+            creatingIdeaViaFAB = false
+        }
+    }
+
+    private var addIdeaButton: some View {
+        Button {
+            createIdeaViaFAB()
+        } label: {
+            Group {
+                if creatingIdeaViaFAB {
+                    ProgressView()
+                        .tint(.white)
+                } else {
+                    Image(systemName: "plus")
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(.white)
+                }
+            }
+            .frame(width: 58, height: 58)
+            .background(Circle().fill(Color.accentColor))
+            .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
+        }
+        .disabled(creatingIdeaViaFAB)
         .padding(.trailing, 20)
         .padding(.bottom, 20)
     }

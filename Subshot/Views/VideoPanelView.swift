@@ -3,7 +3,7 @@ import PhotosUI
 import AVFoundation
 import UniformTypeIdentifiers
 
-/// Video-Feedback-Tool (2026-07-17, #11 Schritt 7) — eingebettet in
+/// Video-Feedback-Tool (2026-07-17, #11 Schritt 7) — war eingebettet in
 /// PostproductionListView (ein Video "gehört" zu einer Section, siehe
 /// backend Video's Doc-Kommentar). Ein Video pro Section im Normalfall,
 /// "+ weiteres Video" deckt den Ausnahmefall ab (Hauptschnitt + Trailer),
@@ -11,6 +11,19 @@ import UniformTypeIdentifiers
 /// (presigned PUT, siehe APIClient.createVideoVersion/uploadVideoFile) —
 /// diese App sieht den Video-Body selbst nie ausser beim lokalen Kopieren
 /// aus der Fotomediathek.
+///
+/// 2026-07-21, #284 — SUPERSEDED: PostproductionListView.swift's full
+/// grid overhaul reimplements this exact upload pipeline (and the
+/// per-section video list it drove) inline, matching web's VideoTile.tsx
+/// 2-column-grid layout instead of a List of expandable rows. `VideoRow`
+/// and `VideoPanelView` below are no longer referenced anywhere. Left in
+/// place rather than deleted — removing a source file from the Xcode
+/// project without Xcode itself (just deleting off disk) risks a
+/// dangling project-file reference with no compiler here to catch it;
+/// safe for Lino to delete via Xcode once he's confirmed the new grid
+/// view on his Mac. `MovieFile` below is NOT dead — the new grid view
+/// reuses it directly (now internal, not private, for exactly that
+/// reason).
 struct VideoPanelView: View {
     let sectionId: String
     let canEdit: Bool
@@ -154,7 +167,10 @@ private struct PlayingVideo: Identifiable {
 /// based Transferable copies the picked video straight to a temp file
 /// instead, so upload can stream from disk (see APIClient.uploadVideoFile's
 /// own doc comment on why it uses `upload(for:fromFile:)`).
-private struct MovieFile: Transferable {
+/// Not `private` (2026-07-21, #284) — PostproductionListView's own tile
+/// grid reuses this exact same picked-video-to-temp-file step for its
+/// empty-tile/"+" upload flows, no reason to duplicate it.
+struct MovieFile: Transferable {
     let url: URL
 
     static var transferRepresentation: some TransferRepresentation {

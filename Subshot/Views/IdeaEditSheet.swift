@@ -13,7 +13,10 @@ struct IdeaEditSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var title: String
-    @State private var text: String
+    /// 2026-07-21, #277 — owns the description text AND the whole
+    /// slash-command state machine (see IdeaSlashTextEditor.swift); text
+    /// itself lives at `slashController.text` now, not a plain @State.
+    @StateObject private var slashController: IdeaSlashEditorController
     @State private var uploading = false
     @State private var showGeneratePopup = false
     @State private var generating = false
@@ -28,12 +31,17 @@ struct IdeaEditSheet: View {
     @State private var showFeedback = false
     @State private var approving = false
     @State private var deleting = false
+    /// 2026-07-21, #278 — tap an idea image to view it fullscreen, tap
+    /// again to dismiss back to this card. Independent of the delete "x"
+    /// button (that stays its own small tap target inside the same tile,
+    /// see ideaImageThumb).
+    @State private var enlargedImage: IdeaImage?
 
     init(idea: Idea, viewModel: ShotListViewModel) {
         self.idea = idea
         self.viewModel = viewModel
         _title = State(initialValue: idea.title)
-        _text = State(initialValue: idea.plainText)
+        _slashController = StateObject(wrappedValue: IdeaSlashEditorController(initialText: idea.plainText))
     }
 
     /// Same "existing is a one-time snapshot, read the live copy for
@@ -60,7 +68,7 @@ struct IdeaEditSheet: View {
             try? await Task.sleep(nanoseconds: 600_000_000)
             guard !Task.isCancelled else { return }
             let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-            await viewModel.patchIdea(idea, title: cleanTitle.isEmpty ? "Neue Idee" : cleanTitle, text: text)
+            await viewModel.patchIdea(idea, title: cleanTitle.isEmpty ? "Neue Idee" : cleanTitle, text: slashController.text)
         }
     }
 
@@ -144,10 +152,16 @@ struct IdeaEditSheet: View {
                 }
 
                 Section("Beschreibung") {
-                    TextField("Beschreibung / Idee...", text: $text, axis: .vertical)
-                        .lineLimit(4...10)
-                        .disabled(approved)
-                        .onChange(of: text) { _, _ in scheduleAutosave() }
+                    // 2026-07-21, #277 — was a plain multi-line TextField;
+                    // now a custom UITextView wrapper with the same
+                    // slash-command state machine as web's RichTextEditor
+                    // (see IdeaSlashTextEditor.swift). scheduleAutosave is
+                    // wired via slashController.onTextChanged below.
+                    IdeaSlashTextEditor(controller: slashController, isEditable: !approved)
+                        .frame(minHeight: 180, maxHeight: 320)
+                    Text("Tippe „/“ für Szene/Zwischenschritt (oder für Titel/Dialog innerhalb einer Szene). Zweimal Enter schliesst den Block ab.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("Feedback") {
@@ -229,6 +243,35 @@ struct IdeaEditSheet: View {
             .sheet(isPresented: $showGeneratePopup) {
                 ideaGeneratePopup
             }
+            // 2026-07-21, #277 — the slash-menu itself: a plain
+            // .confirmationDialog rather than a floating popup positioned
+            // at the caret (see IdeaSlashTextEditor's own top-of-file doc
+            // comment for why). Dismissing without picking an option
+            // (swipe-down/tap-outside) also routes through
+            // slashController.cancelSlash() via the isPresented setter,
+            // same as tapping "Abbrechen" — matches web's Escape behavior
+            // of just closing the menu, the already-typed "/" stays put.
+            .confirmationDialog(
+                "Einfügen",
+                isPresented: Binding(
+                    get: { slashController.pendingSlashOptions != nil },
+                    set: { if !$0 { slashController.cancelSlash() } }
+                ),
+                titleVisibility: .visible
+            ) {
+                ForEach(slashController.pendingSlashOptions ?? []) { option in
+                    Button("\(option.icon) \(option.label)") {
+                        slashController.confirm(option)
+                    }
+                }
+                Button("Abbrechen", role: .cancel) { slashController.cancelSlash() }
+            }
+        }
+        .fullScreenCover(item: $enlargedImage) { image in
+            IdeaImageFullscreenView(image: image)
+        }
+        .onAppear {
+            slashController.onTextChanged = { scheduleAutosave() }
         }
         .preferredColorScheme(.dark)
         .alert("Keine Credits mehr", isPresented: $showInsufficientCreditsAlert) {
@@ -254,6 +297,11 @@ struct IdeaEditSheet: View {
             } else if let url = image.imageUrl {
                 AsyncShotThumbnail(path: url, size: 80)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
+                    // 2026-07-21, #278 — tap to enlarge; the delete "x"
+                    // button below sits in its own small corner Button, so
+                    // it keeps intercepting taps in ITS bounds first, this
+                    // gesture only ever fires for taps on the photo itself.
+                    .onTapGesture { enlargedImage = image }
             }
             if !approved && image.status != .generating {
                 Button {
@@ -310,6 +358,29 @@ struct IdeaEditSheet: View {
                 }
             }
         }
+        .preferredColorScheme(.dark)
+    }
+}
+
+/// 2026-07-21, #278 — fullscreen viewer for one idea image, opened by
+/// tapping its thumbnail in ideaImageThumb above. Tapping anywhere on the
+/// image (or its black backdrop) dismisses back to the card, matching
+/// "tap again to close".
+private struct IdeaImageFullscreenView: View {
+    let image: IdeaImage
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if let url = image.imageUrl {
+                AsyncShotThumbnail(path: url, size: nil)
+                    .aspectRatio(contentMode: .fit)
+                    .padding()
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { dismiss() }
         .preferredColorScheme(.dark)
     }
 }

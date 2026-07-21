@@ -445,6 +445,26 @@ struct SceneEditSheet: View {
                                 TextField("Neuer Dialog", text: $newDialogueText, axis: .vertical)
                                     .focused($newDialogueFocused)
                                     .lineLimit(1...6)
+                                    // 2026-07-21, #281 — matches the web app's
+                                    // Dialog-block close gesture (RichTextEditor
+                                    // .tsx's isDialogLineEmpty/double-Enter):
+                                    // Return on a multi-line TextField only
+                                    // inserts a newline, it never "submits" —
+                                    // pressing Return TWICE in a row (an empty
+                                    // continuation line right after a content
+                                    // line) leaves the string ending in "\n\n",
+                                    // which is exactly the same signal web uses
+                                    // to close a Dialog block. commitNewDialogue
+                                    // already trims all trailing whitespace/
+                                    // newlines before saving, so this just
+                                    // triggers the SAME commit the checkmark
+                                    // button below does — that button stays as
+                                    // a manual alternative, not replaced.
+                                    .onChange(of: newDialogueText) { _, newValue in
+                                        if newValue.hasSuffix("\n\n") {
+                                            commitNewDialogue()
+                                        }
+                                    }
                                 Button {
                                     commitNewDialogue()
                                 } label: {
@@ -452,6 +472,9 @@ struct SceneEditSheet: View {
                                 }
                                 .disabled(newDialogueText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             }
+                            Text("Zweimal Enter schliesst den Dialog ab.")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                         } else {
                             Button {
                                 newDialogueText = ""

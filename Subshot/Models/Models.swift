@@ -43,6 +43,11 @@ struct Project: Codable, Identifiable, Hashable {
     var moduleConcept: Bool = true
     var moduleScripting: Bool = true
     var modulePostproduction: Bool = true
+    /// 2026-07-21, #285 — server-computed, never set by this app
+    /// (`_set_project_pipeline_stage` in app/main.py, same field the web
+    /// app's Projektübersicht badge already reads, see
+    /// PIPELINE_STAGE_LABELS/stageStyle in app/projects/page.tsx).
+    var pipelineStage: ProjectPipelineStage = .idea
 
     enum CodingKeys: String, CodingKey {
         case id, name, color, emoji
@@ -59,6 +64,7 @@ struct Project: Codable, Identifiable, Hashable {
         case moduleConcept = "module_concept"
         case moduleScripting = "module_scripting"
         case modulePostproduction = "module_postproduction"
+        case pipelineStage = "pipeline_stage"
     }
 
     /// Deletion cron (scripts/deletion_job.py) warns at day 25, deletes at
@@ -67,6 +73,36 @@ struct Project: Codable, Identifiable, Hashable {
     var daysUntilDeletion: Int {
         let deletesAt = lastOpenedAt.addingTimeInterval(30 * 24 * 3600)
         return max(0, Calendar.current.dateComponents([.day], from: .now, to: deletesAt).day ?? 0)
+    }
+}
+
+/// 2026-07-21, #285 — same 4-stage vocabulary as the web app's
+/// `Project["pipeline_stage"]`/PIPELINE_STAGE_LABELS (lib/types.ts) and
+/// `_set_project_pipeline_stage` in app/main.py. Purely a read-only label
+/// derived server-side from a project's actual sections/scenes/module
+/// flags — never set directly by this app.
+enum ProjectPipelineStage: String, Codable {
+    case idea, scripting, postproduction, done
+
+    var label: String {
+        switch self {
+        case .idea: return "Idee / Konzept"
+        case .scripting: return "Scripting / Shooting"
+        case .postproduction: return "Postproduction"
+        case .done: return "Abgeschlossen"
+        }
+    }
+
+    /// Matches web's stageStyle exactly (Tailwind bg-*-500/20 text-*-300)
+    /// — amber/blue/violet/emerald, same semantics used elsewhere in this
+    /// app (green already means "fertig"/"Abgenommen").
+    var tintColor: Color {
+        switch self {
+        case .idea: return Color(red: 0xf5 / 255.0, green: 0x9e / 255.0, blue: 0x0b / 255.0) // amber-500
+        case .scripting: return .blue
+        case .postproduction: return .purple // violet
+        case .done: return .green
+        }
     }
 }
 
@@ -407,10 +443,33 @@ struct Idea: Codable, Identifiable, Hashable {
         case feedbackCount = "feedback_count"
     }
 
+    /// 2026-07-21, #277 — `<br>`/`<div>` line boundaries are converted to
+    /// real "\n" characters FIRST, before generic tag-stripping. Before
+    /// this, any tag character was simply dropped with no substitution,
+    /// silently collapsing every line of a web-edited idea into one
+    /// run-on string the instant it was opened on iOS — harmless while
+    /// this was a read-only preview, but actively wrong now that iOS
+    /// itself writes plain multi-line text using the same "🎬 Szene/Shot:"
+    /// slash-marker scheme the backend expects to split by line (see
+    /// IdeaSlashEditorController) — a web-authored idea needs its real
+    /// line breaks preserved so the marker lines it edits/adds stay on
+    /// their own lines too. Confirmed backend-safe: `_idea_plain_text` in
+    /// app/main.py only ever needs a "\n"-joined string (its own HTML-
+    /// stripping is a no-op on text that has none), so a plain string with
+    /// real newlines round-trips correctly through both clients — the web
+    /// editor's own textarea className already sets `whitespace-pre-wrap`,
+    /// so raw "\n"s from iOS render as real line breaks there too.
     var plainText: String {
+        let normalized = text
+            .replacingOccurrences(of: "<br />", with: "\n")
+            .replacingOccurrences(of: "<br/>", with: "\n")
+            .replacingOccurrences(of: "<br>", with: "\n")
+            .replacingOccurrences(of: "</div><div>", with: "\n")
+            .replacingOccurrences(of: "<div>", with: "")
+            .replacingOccurrences(of: "</div>", with: "")
         var result = ""
         var insideTag = false
-        for ch in text {
+        for ch in normalized {
             if ch == "<" { insideTag = true }
             else if ch == ">" { insideTag = false }
             else if !insideTag { result.append(ch) }
@@ -699,9 +758,15 @@ struct VideoComment: Codable, Identifiable, Hashable {
     var authorName: String
     var comment: String
     let createdAt: Date
+    /// 2026-07-21, #284 — "open"/"resolved" (backend CHECK constraint,
+    /// same two values as web's VideoReviewModal.toggleResolved), the
+    /// checkbox on a comment in VideoPlayerSheet's comment list.
+    var status: String = "open"
+
+    var resolved: Bool { status == "resolved" }
 
     enum CodingKeys: String, CodingKey {
-        case id, comment
+        case id, comment, status
         case versionId = "version_id"
         case timestampSeconds = "timestamp_seconds"
         case authorName = "author_name"

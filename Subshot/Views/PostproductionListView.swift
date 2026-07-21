@@ -1,79 +1,207 @@
 import SwiftUI
+import PhotosUI
+import AVFoundation
 
 /// #11 Schritt 6 (Postproduction-Tracking) — eigener Bereich pro Projekt
 /// (2026-07-17, Lino: eigener Tab statt Einbau in die bestehende
 /// Szenenübersicht). Listet jede Section, die per "Ab in die
 /// Postproduction"-Aktion (ShotListView's Section-Kontextmenü) explizit
-/// dorthin geschickt wurde. Status von jeder Rolle änderbar, Deadline nur
-/// ab "projektleiter" (2026-07-19, Lino's finale Rollen-Spezifikation) —
-/// serverseitig durchgesetzt, hier nur gespiegelt, damit ein Editor gar
-/// nicht erst ein Deadline-Feld sieht, das der Server ohnehin ablehnen
-/// würde.
+/// dorthin geschickt wurde.
+///
+/// 2026-07-21, #284 — full overhaul, 2-column grid of video tiles
+/// (mirrors web's VideoTile.tsx layout) replacing the old List of
+/// expandable Section rows + VideoPanelView (see that file's own doc
+/// comment — superseded, not deleted). One Section can have zero, one, or
+/// several Videos (0-n per backend Video's own doc comment; several is
+/// the "Hauptschnitt + Trailer" exception) — a Section with zero Videos
+/// still gets exactly ONE placeholder tile so its upload slot exists at
+/// all; a Section with N videos gets N tiles. Status/deadline are Section-
+/// level fields (patch_section_postproduction) shared across every tile
+/// under that Section; a Video's own `title` is the one per-TILE editable
+/// field (PATCH /videos/{id}).
 struct PostproductionListView: View {
     @ObservedObject var viewModel: ShotListViewModel
     @Environment(\.dismiss) private var dismiss
+    /// See ShotListView.body's `switch activeWorkflowSection` (#283) —
+    /// true when this is the inline third workflow page rather than the
+    /// toolbar's own "checklist.checked" sheet shortcut.
+    var embedded: Bool = false
+
     @State private var myRole: String?
-    /// #122 — Video-Feedback-Link teilen (kind="video"), gleicher
-    /// Share-Sheet-Mechanismus wie ShotListView's eigener Teilen-Button.
     @State private var showingShareLinkSheet = false
     @State private var shareLinkURL: URL?
     @State private var isPresentingShareSheet = false
 
-    private var sections: [SceneSection] {
-        viewModel.sections.filter(\.inPostproduction)
-    }
-    private var canEditStatus: Bool { myRole == "editor" || myRole == "projektleiter" || myRole == "owner" }
-    private var canEditDeadline: Bool { myRole == "projektleiter" || myRole == "owner" }
+    /// One entry per Section, loaded once on appear then kept in sync
+    /// locally after every upload/title/status/deadline change — no
+    /// separate ShotListViewModel-published state, matching the same
+    /// "video data stays local to this screen" precedent the old
+    /// VideoPanelView already established.
+    @State private var sectionVideos: [String: [Video]] = [:]
+    @State private var isLoadingVideos = true
+    @State private var errorMessage: String?
 
-    var body: some View {
-        NavigationStack {
-            Group {
-                if sections.isEmpty {
-                    ContentUnavailableView(
-                        "Noch keine Abschnitte",
-                        systemImage: "checklist",
-                        description: Text("Auf der Szenenübersicht: Abschnitt gedrückt halten → „Ab in die Postproduction“, sobald alle Szenen im Kasten sind.")
-                    )
-                } else {
-                    List(sections) { section in
-                        PostproductionRow(
-                            section: section,
+    /// Which (Section, optionally a specific already-existing Video)
+    /// slot the PhotosPicker upload is for — captured at tap time so
+    /// uploadPickedVideo knows exactly which Video row to attach the new
+    /// version to (nil videoId = truly empty slot, create one first).
+    private struct PickerTarget { let sectionId: String; let videoId: String? }
+    @State private var pickerTarget: PickerTarget?
+    @State private var pickerItem: PhotosPickerItem?
+    @State private var uploadingSectionId: String?
+    @State private var creatingUnplanned = false
+
+    /// Title-edit alert (2026-07-21, #284) — admin/Projektleiter only,
+    /// see canEditTitleAndDeadline.
+    @State private var editingTitleVideo: Video?
+    @State private var editingTitleText = ""
+
+    @State private var playing: (video: Video, version: VideoVersion)?
+
+    private var sections: [SceneSection] { viewModel.sections.filter(\.inPostproduction) }
+    /// Status stays broadly editable (any real project role) — matches
+    /// the backend's own patch_section_postproduction gating exactly
+    /// (confirmed: any editor+ may change status there).
+    private var canEditStatus: Bool { myRole == "editor" || myRole == "projektleiter" || myRole == "owner" }
+    /// 2026-07-21, #284 — title editing uses the SAME gate as deadline.
+    /// patch_section_postproduction's deadline check is confirmed
+    /// admin/Projektleiter-only; the separate PATCH /videos/{id} title
+    /// endpoint's own exact role requirement wasn't pinned down as
+    /// precisely, so this errs conservative and matches this ticket's own
+    /// explicit wording ("gated to admin/Projektleiter role only") rather
+    /// than assuming title is as broadly editable as status.
+    private var canEditTitleAndDeadline: Bool { myRole == "projektleiter" || myRole == "owner" }
+
+    private struct Tile: Identifiable {
+        let id: String
+        let section: SceneSection
+        let video: Video?
+    }
+
+    private var tiles: [Tile] {
+        sections.flatMap { section -> [Tile] in
+            let videos = sectionVideos[section.id] ?? []
+            if videos.isEmpty {
+                return [Tile(id: "empty-\(section.id)", section: section, video: nil)]
+            }
+            return videos.map { Tile(id: $0.id, section: section, video: $0) }
+        }
+    }
+
+    @ViewBuilder
+    private var gridContent: some View {
+        if isLoadingVideos {
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if sections.isEmpty {
+            ContentUnavailableView(
+                "Noch keine Abschnitte",
+                systemImage: "checklist",
+                description: Text("Auf der Szenenübersicht: Abschnitt gedrückt halten → „Ab in die Postproduction“, sobald alle Szenen im Kasten sind — oder unten rechts direkt ein unabhängiges Video hochladen.")
+            )
+        } else {
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                    ForEach(tiles) { tile in
+                        PostproductionVideoTile(
+                            section: tile.section,
+                            video: tile.video,
                             canEditStatus: canEditStatus,
-                            canEditDeadline: canEditDeadline,
+                            canEditTitleAndDeadline: canEditTitleAndDeadline,
+                            uploading: uploadingSectionId == tile.section.id,
+                            onTapUpload: {
+                                pickerTarget = PickerTarget(sectionId: tile.section.id, videoId: tile.video?.id)
+                            },
+                            onPlay: { video, version in playing = (video, version) },
+                            onEditTitle: {
+                                guard let video = tile.video else { return }
+                                editingTitleVideo = video
+                                editingTitleText = video.title
+                            },
                             onStatusChange: { status in
-                                Task { await viewModel.patchSectionPostproduction(section, status: status) }
+                                Task { await viewModel.patchSectionPostproduction(tile.section, status: status) }
                             },
                             onDeadlineChange: { date in
                                 if let date {
-                                    Task { await viewModel.patchSectionPostproduction(section, deadline: date) }
+                                    Task { await viewModel.patchSectionPostproduction(tile.section, deadline: date) }
                                 } else {
-                                    Task { await viewModel.patchSectionPostproduction(section, clearDeadline: true) }
+                                    Task { await viewModel.patchSectionPostproduction(tile.section, clearDeadline: true) }
                                 }
                             }
                         )
                     }
                 }
+                .padding()
             }
-            .navigationTitle("Postproduction")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Fertig") { dismiss() }
-                }
-                if canEditStatus {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button {
-                            showingShareLinkSheet = true
-                        } label: {
-                            Image(systemName: "link")
+        }
+    }
+
+    var body: some View {
+        Group {
+            if embedded {
+                // No NavigationStack/own nav title here — ShotListView
+                // already owns the surrounding NavigationStack when this
+                // is the inline third workflow page (see #283).
+                gridContent
+            } else {
+                NavigationStack {
+                    gridContent
+                        .navigationTitle("Postproduction")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Fertig") { dismiss() }
+                            }
+                            if canEditStatus {
+                                ToolbarItem(placement: .confirmationAction) {
+                                    Button {
+                                        showingShareLinkSheet = true
+                                    } label: {
+                                        Image(systemName: "link")
+                                    }
+                                }
+                            }
                         }
-                    }
                 }
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            // 2026-07-21, #284 — separate from any per-tile upload tap:
+            // this always creates a brand-new Section (start_in_
+            // postproduction=true, matching web's is_unplanned "+ Video"
+            // flow) rather than filling an existing planned slot. Same
+            // role gate as status editing — any real project member with
+            // an editor+ role, not admin/PL-only (uploading a video isn't
+            // the same permission as changing a deadline).
+            if canEditStatus {
+                addUnplannedVideoButton
             }
         }
         .task {
             if let me = try? await APIClient.shared.me() {
                 myRole = viewModel.members.first(where: { $0.userId == me.id })?.role
+            }
+            await loadAllVideos()
+        }
+        .photosPicker(
+            isPresented: Binding(get: { pickerTarget != nil }, set: { if !$0 { pickerTarget = nil } }),
+            selection: $pickerItem, matching: .videos
+        )
+        .onChange(of: pickerItem) { _, newItem in
+            guard let newItem, let target = pickerTarget else { return }
+            pickerTarget = nil
+            pickerItem = nil
+            Task { await uploadPickedVideo(newItem, target: target) }
+        }
+        .alert("Titel", isPresented: Binding(
+            get: { editingTitleVideo != nil },
+            set: { if !$0 { editingTitleVideo = nil } }
+        )) {
+            TextField("Titel", text: $editingTitleText)
+            Button("Abbrechen", role: .cancel) {}
+            Button("Speichern") {
+                if let video = editingTitleVideo {
+                    Task { await renameVideo(video, title: editingTitleText) }
+                }
             }
         }
         .sheet(isPresented: $showingShareLinkSheet) {
@@ -87,88 +215,279 @@ struct PostproductionListView: View {
                 ActivityView(activityItems: [shareLinkURL])
             }
         }
+        .fullScreenCover(item: Binding(
+            get: { playing.map { PlayingPostproductionVideo(video: $0.video, version: $0.version) } },
+            set: { if $0 == nil { playing = nil } }
+        )) { item in
+            VideoPlayerSheet(video: item.video, version: item.version) { updated in
+                updateVersion(updated, videoId: item.video.id)
+            }
+        }
+        .alert("Fehler", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "")
+        }
         .preferredColorScheme(.dark)
+    }
+
+    private var addUnplannedVideoButton: some View {
+        Button {
+            Task { await createUnplannedVideo() }
+        } label: {
+            if creatingUnplanned {
+                ProgressView()
+                    .frame(width: 58, height: 58)
+                    .background(Circle().fill(Color.accentColor))
+            } else {
+                Image(systemName: "plus")
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 58, height: 58)
+                    .background(Circle().fill(Color.accentColor))
+                    .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
+            }
+        }
+        .disabled(creatingUnplanned)
+        .padding(.trailing, 20)
+        .padding(.bottom, 20)
+    }
+
+    // MARK: - data loading
+
+    private func loadAllVideos() async {
+        isLoadingVideos = true
+        defer { isLoadingVideos = false }
+        for section in sections {
+            do {
+                sectionVideos[section.id] = try await APIClient.shared.listVideos(sectionId: section.id)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    // MARK: - unplanned video ("+"), one step: create Section (already
+    // in_postproduction) -> straight to the picker, no naming modal.
+
+    private func createUnplannedVideo() async {
+        guard !creatingUnplanned else { return }
+        creatingUnplanned = true
+        defer { creatingUnplanned = false }
+        guard let section = await viewModel.createSection(name: "Video", startInPostproduction: true) else { return }
+        sectionVideos[section.id] = []
+        pickerTarget = PickerTarget(sectionId: section.id, videoId: nil)
+    }
+
+    // MARK: - upload pipeline (same steps the old VideoPanelView.handlePicked used)
+
+    private func uploadPickedVideo(_ item: PhotosPickerItem, target: PickerTarget) async {
+        uploadingSectionId = target.sectionId
+        defer { uploadingSectionId = nil }
+        do {
+            let video: Video
+            if let videoId = target.videoId, let existing = sectionVideos[target.sectionId]?.first(where: { $0.id == videoId }) {
+                video = existing
+            } else if let firstExisting = sectionVideos[target.sectionId]?.first {
+                // Truly-empty-tile tap (target.videoId == nil) on a
+                // Section that already has a Video row but no ready
+                // version yet — reuse it instead of creating a second one.
+                video = firstExisting
+            } else {
+                video = try await APIClient.shared.createVideo(sectionId: target.sectionId, title: "Video", sortOrder: 0)
+                sectionVideos[target.sectionId, default: []].append(video)
+            }
+            guard let movie = try await item.loadTransferable(type: MovieFile.self) else {
+                errorMessage = "Video konnte nicht geladen werden."
+                return
+            }
+            defer { try? FileManager.default.removeItem(at: movie.url) }
+            let filename = movie.url.lastPathComponent
+            let contentType = movie.url.pathExtension.lowercased() == "mov" ? "video/quicktime" : "video/mp4"
+            let versionDraft = try await APIClient.shared.createVideoVersion(videoId: video.id, filename: filename, contentType: contentType)
+            guard let uploadURLString = versionDraft.playbackUrl, let uploadURL = URL(string: uploadURLString) else {
+                errorMessage = "Keine Upload-URL erhalten."
+                return
+            }
+            try await APIClient.shared.uploadVideoFile(to: uploadURL, fileURL: movie.url, contentType: contentType)
+            let fileSize = try? FileManager.default.attributesOfItem(atPath: movie.url.path)[.size] as? Int
+            let duration = try? await AVURLAsset(url: movie.url).load(.duration).seconds
+            let completed = try await APIClient.shared.completeVideoVersion(versionDraft.id, fileSizeBytes: fileSize, durationSeconds: duration)
+            if let index = sectionVideos[target.sectionId]?.firstIndex(where: { $0.id == video.id }) {
+                sectionVideos[target.sectionId]?[index].versions.append(completed)
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func renameVideo(_ video: Video, title: String) async {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            let updated = try await APIClient.shared.patchVideo(video.id, title: trimmed)
+            if let index = sectionVideos[video.sectionId]?.firstIndex(where: { $0.id == video.id }) {
+                sectionVideos[video.sectionId]?[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func updateVersion(_ updated: VideoVersion, videoId: String) {
+        for (sectionId, videos) in sectionVideos {
+            if let vIndex = videos.firstIndex(where: { $0.id == videoId }),
+               let verIndex = videos[vIndex].versions.firstIndex(where: { $0.id == updated.id }) {
+                sectionVideos[sectionId]?[vIndex].versions[verIndex] = updated
+            }
+        }
     }
 }
 
-private struct PostproductionRow: View {
+private struct PlayingPostproductionVideo: Identifiable {
+    let video: Video
+    let version: VideoVersion
+    var id: String { version.id }
+}
+
+/// One grid tile — empty (no Video uploaded for this Section slot yet,
+/// or a Video row exists but has no ready version) or filled. Status/
+/// deadline shown here are the ENCLOSING SECTION's (shared across every
+/// tile under it, see this file's own top-of-file doc comment) — only
+/// the title belongs to this specific Video.
+private struct PostproductionVideoTile: View {
     let section: SceneSection
+    let video: Video?
     let canEditStatus: Bool
-    let canEditDeadline: Bool
+    let canEditTitleAndDeadline: Bool
+    let uploading: Bool
+    let onTapUpload: () -> Void
+    let onPlay: (Video, VideoVersion) -> Void
+    let onEditTitle: () -> Void
     let onStatusChange: (PostproductionStatus) -> Void
     let onDeadlineChange: (Date?) -> Void
 
     @State private var deadline: Date
-    /// #11 Schritt 7 (Video-Feedback-Tool) — Videos einer Section lazily
-    /// geladen, nur wenn wirklich aufgeklappt (gleiche Begruendung wie
-    /// web's expandedVideos: nicht jedes <video>/AVPlayer sofort fuer
-    /// jede Zeile vorbereiten).
-    @State private var showingVideos = false
 
     init(
-        section: SceneSection, canEditStatus: Bool, canEditDeadline: Bool,
+        section: SceneSection, video: Video?, canEditStatus: Bool, canEditTitleAndDeadline: Bool, uploading: Bool,
+        onTapUpload: @escaping () -> Void, onPlay: @escaping (Video, VideoVersion) -> Void, onEditTitle: @escaping () -> Void,
         onStatusChange: @escaping (PostproductionStatus) -> Void, onDeadlineChange: @escaping (Date?) -> Void
     ) {
         self.section = section
+        self.video = video
         self.canEditStatus = canEditStatus
-        self.canEditDeadline = canEditDeadline
+        self.canEditTitleAndDeadline = canEditTitleAndDeadline
+        self.uploading = uploading
+        self.onTapUpload = onTapUpload
+        self.onPlay = onPlay
+        self.onEditTitle = onEditTitle
         self.onStatusChange = onStatusChange
         self.onDeadlineChange = onDeadlineChange
         _deadline = State(initialValue: section.postproductionDeadline ?? .now)
     }
 
+    private var readyVersion: VideoVersion? { video?.versions.last(where: { $0.status == "ready" }) }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                withAnimation { showingVideos.toggle() }
-            } label: {
-                HStack {
-                    Text(section.name).font(.headline).foregroundStyle(.primary)
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(showingVideos ? 90 : 0))
-                }
-            }
-            .buttonStyle(.plain)
-            if canEditStatus {
-                Picker("Status", selection: Binding(
-                    get: { section.postproductionStatus ?? .wartend },
-                    set: { onStatusChange($0) }
-                )) {
-                    ForEach(PostproductionStatus.allCases, id: \.self) { status in
-                        Text(status.label).tag(status)
+        VStack(alignment: .leading, spacing: 6) {
+            thumbnail
+            if let video {
+                HStack(spacing: 4) {
+                    Text(video.title)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    if canEditTitleAndDeadline {
+                        Button(action: onEditTitle) {
+                            Image(systemName: "pencil")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
-                .pickerStyle(.menu)
-            } else {
-                Text((section.postproductionStatus ?? .wartend).label)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            if canEditDeadline {
-                Toggle("Deadline", isOn: Binding(
-                    get: { section.postproductionDeadline != nil },
-                    set: { onDeadlineChange($0 ? deadline : nil) }
-                ))
-                if section.postproductionDeadline != nil {
-                    DatePicker("Datum", selection: Binding(
-                        get: { deadline },
-                        set: { deadline = $0; onDeadlineChange($0) }
-                    ), displayedComponents: .date)
-                    .labelsHidden()
-                }
-            } else if let deadline = section.postproductionDeadline {
-                Text("Deadline: \(deadline.formatted(date: .abbreviated, time: .omitted))")
+                if canEditStatus {
+                    Picker("Status", selection: Binding(
+                        get: { section.postproductionStatus ?? .wartend },
+                        set: { onStatusChange($0) }
+                    )) {
+                        ForEach(PostproductionStatus.allCases, id: \.self) { status in
+                            Text(status.label).tag(status)
+                        }
+                    }
+                    .pickerStyle(.menu)
                     .font(.caption)
+                } else {
+                    Text((section.postproductionStatus ?? .wartend).label)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if canEditTitleAndDeadline {
+                    Toggle("Deadline", isOn: Binding(
+                        get: { section.postproductionDeadline != nil },
+                        set: { onDeadlineChange($0 ? deadline : nil) }
+                    ))
+                    .font(.caption)
+                    if section.postproductionDeadline != nil {
+                        DatePicker("Datum", selection: Binding(
+                            get: { deadline },
+                            set: { deadline = $0; onDeadlineChange($0) }
+                        ), displayedComponents: .date)
+                        .labelsHidden()
+                        .font(.caption)
+                    }
+                } else if let deadline = section.postproductionDeadline {
+                    Text("Deadline: \(deadline.formatted(date: .abbreviated, time: .omitted))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text(section.name)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Text("Noch kein Video")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
-            }
-            if showingVideos {
-                VideoPanelView(sectionId: section.id, canEdit: canEditStatus)
-                    .padding(.top, 4)
             }
         }
-        .padding(.vertical, 4)
+        .padding(8)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    @ViewBuilder
+    private var thumbnail: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(.tertiarySystemFill))
+            if uploading {
+                ProgressView()
+            } else if let video, let readyVersion {
+                // Filled slot — tap opens the fullscreen player (#284).
+                Image(systemName: "play.circle.fill")
+                    .font(.system(size: 32))
+                    .foregroundStyle(.white, Color.accentColor)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onPlay(video, readyVersion) }
+            } else {
+                // 2026-07-21, #284 — both the true empty slot (no Video
+                // row at all) AND a Video row still waiting on its first
+                // ready version tap straight into the file picker, no
+                // intermediate modal/menu, matching this ticket's
+                // explicit spec for the empty-tile placeholder.
+                VStack(spacing: 4) {
+                    Image(systemName: video == nil ? "plus.circle" : "arrow.up.circle")
+                        .font(.system(size: 28))
+                    Text(video == nil ? "Video hochladen" : "Wird verarbeitet…")
+                        .font(.caption2)
+                }
+                .foregroundStyle(.secondary)
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onTapUpload)
+            }
+        }
+        .aspectRatio(16.0 / 9.0, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }

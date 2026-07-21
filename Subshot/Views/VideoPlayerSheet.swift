@@ -36,13 +36,48 @@ struct VideoPlayerSheet: View {
             if let player {
                 VideoPlayer(player: player)
                     .ignoresSafeArea()
+                    // 2026-07-21, #284 — "long-press while PLAYING OR
+                    // PAUSED" — this fires regardless of the player's
+                    // current play/pause state either way (it's a plain
+                    // gesture on the view, not conditioned on isPlaying),
+                    // pause() on an already-paused player is just a no-op.
                     .onLongPressGesture(minimumDuration: 0.4) {
                         player.pause()
                         showCommentField = true
                         commentFieldFocused = true
                     }
+                    // 2026-07-21, #284 — swipe down closes the player
+                    // (back to the Postproduction grid), swipe up reveals
+                    // the comment list; a plain vertical-translation
+                    // DragGesture rather than anything library-specific
+                    // (web's VideoReviewModal has no swipe gestures at
+                    // all to port from — this is a mobile-native addition
+                    // the ticket asks for directly). Horizontal drags are
+                    // ignored (scrubbing stays the system VideoPlayer's
+                    // own built-in seek bar).
+                    .gesture(
+                        DragGesture(minimumDistance: 30)
+                            .onEnded { value in
+                                let v = value.translation.height
+                                let h = value.translation.width
+                                guard abs(v) > abs(h) * 1.5 else { return }
+                                if v > 80 {
+                                    dismiss()
+                                } else if v < -80 {
+                                    withAnimation { showCommentList = true }
+                                }
+                            }
+                    )
             }
             VStack {
+                // Small handlebar (2026-07-21, #284: "a small handlebar
+                // shows at the top") — a purely visual affordance for the
+                // swipe-down-to-close gesture above, same idea as a
+                // native iOS sheet's own grabber.
+                Capsule()
+                    .fill(.white.opacity(0.35))
+                    .frame(width: 36, height: 5)
+                    .padding(.top, 6)
                 topBar
                 Spacer()
                 if let errorMessage {
@@ -105,16 +140,36 @@ struct VideoPlayerSheet: View {
                         .foregroundStyle(.white.opacity(0.6))
                 } else {
                     ForEach(comments.sorted(by: { $0.timestampSeconds < $1.timestampSeconds })) { comment in
-                        Button {
-                            player?.seek(to: CMTime(seconds: comment.timestampSeconds, preferredTimescale: 600))
-                        } label: {
-                            HStack(alignment: .top, spacing: 8) {
-                                Text(timeLabel(comment.timestampSeconds))
-                                    .font(.caption.monospacedDigit().weight(.semibold))
-                                    .foregroundStyle(.blue)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(comment.authorName).font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
-                                    Text(comment.comment).font(.caption).foregroundStyle(.white)
+                        HStack(alignment: .top, spacing: 8) {
+                            // 2026-07-21, #284 — resolved/open checkbox
+                            // (mirrors web's VideoReviewModal.
+                            // toggleResolved); its own tap target, kept
+                            // separate from the seek-to-timestamp Button
+                            // below so the two never fight over the same
+                            // tap.
+                            Button {
+                                Task { await toggleResolved(comment) }
+                            } label: {
+                                Image(systemName: comment.resolved ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(comment.resolved ? .green : .white.opacity(0.6))
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.top, 1)
+
+                            Button {
+                                player?.seek(to: CMTime(seconds: comment.timestampSeconds, preferredTimescale: 600))
+                            } label: {
+                                HStack(alignment: .top, spacing: 8) {
+                                    Text(timeLabel(comment.timestampSeconds))
+                                        .font(.caption.monospacedDigit().weight(.semibold))
+                                        .foregroundStyle(.blue)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(comment.authorName).font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
+                                        Text(comment.comment)
+                                            .font(.caption)
+                                            .foregroundStyle(comment.resolved ? .white.opacity(0.5) : .white)
+                                            .strikethrough(comment.resolved)
+                                    }
                                 }
                             }
                         }
@@ -176,6 +231,21 @@ struct VideoPlayerSheet: View {
             commentText = ""
             showCommentField = false
             player.play()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// 2026-07-21, #284 — see the checkbox in commentListOverlay above.
+    private func toggleResolved(_ comment: VideoComment) async {
+        guard let index = comments.firstIndex(where: { $0.id == comment.id }) else { return }
+        let nextStatus = comment.resolved ? "open" : "resolved"
+        do {
+            let updated = try await APIClient.shared.patchVideoCommentStatus(comment.id, status: nextStatus)
+            comments[index] = updated
+            var updatedVersion = version
+            updatedVersion.comments = comments
+            onVersionUpdated(updatedVersion)
         } catch {
             errorMessage = error.localizedDescription
         }

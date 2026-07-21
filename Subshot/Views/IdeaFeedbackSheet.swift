@@ -59,6 +59,14 @@ struct IdeaFeedbackSheet: View {
                                     }
                                 }
                             } header: {
+                                // 2026-07-21, #279 (Lino: "cramped, illegible")
+                                // — the round label, date/time and open-count
+                                // used to sit crammed onto one run-on line with
+                                // no spacing between them. Round label gets its
+                                // own row now; date/time + open-count move to a
+                                // clearly-separated secondary row underneath,
+                                // with real spacing (not just a parenthesis)
+                                // between the two.
                                 Button {
                                     if collapsedRounds.contains(group.round) {
                                         collapsedRounds.remove(group.round)
@@ -66,14 +74,27 @@ struct IdeaFeedbackSheet: View {
                                         collapsedRounds.insert(group.round)
                                     }
                                 } label: {
-                                    HStack {
-                                        Text(String(format: "%02d", group.round) + " Feedback — " + Self.dateFormatter.string(from: earliest))
-                                        if openCount > 0 {
-                                            Text("(\(openCount) offen)")
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        HStack {
+                                            Text(String(format: "%02d Feedback", group.round))
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundStyle(.primary)
+                                            Spacer()
+                                            Image(systemName: collapsedRounds.contains(group.round) ? "chevron.right" : "chevron.down")
+                                                .foregroundStyle(.secondary)
                                         }
-                                        Spacer()
-                                        Image(systemName: collapsedRounds.contains(group.round) ? "chevron.right" : "chevron.down")
+                                        HStack(spacing: 10) {
+                                            Text(Self.dateFormatter.string(from: earliest))
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                            if openCount > 0 {
+                                                Text("\(openCount) offen")
+                                                    .font(.caption.weight(.semibold))
+                                                    .foregroundStyle(.orange)
+                                            }
+                                        }
                                     }
+                                    .padding(.vertical, 6)
                                 }
                                 .buttonStyle(.plain)
                             }

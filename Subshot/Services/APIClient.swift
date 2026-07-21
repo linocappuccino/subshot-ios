@@ -991,11 +991,18 @@ final class APIClient {
 
     // MARK: - Sections
 
-    func createSection(projectId: String, name: String, sortOrder: Int) async throws -> SceneSection {
+    /// `startInPostproduction` (2026-07-21, #284): mirrors the web app's
+    /// "+ Video" unplanned-video flow (create_section's
+    /// `start_in_postproduction` param in app/main.py) — the server
+    /// itself sets `in_postproduction`/`postproduction_status="wartend"`/
+    /// `is_unplanned=true` on the new Section, no separate flag needed on
+    /// this request. Defaults to false so every existing call site
+    /// (plain "Neuer Abschnitt" in the Scripting tool) is unaffected.
+    func createSection(projectId: String, name: String, sortOrder: Int, startInPostproduction: Bool = false) async throws -> SceneSection {
         var req = try await authorizedRequest("projects/\(projectId)/sections", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        struct Body: Encodable { let name: String; let sort_order: Int }
-        req.httpBody = try encoder.encode(Body(name: name, sort_order: sortOrder))
+        struct Body: Encodable { let name: String; let sort_order: Int; let start_in_postproduction: Bool }
+        req.httpBody = try encoder.encode(Body(name: name, sort_order: sortOrder, start_in_postproduction: startInPostproduction))
         return try await send(req)
     }
 
@@ -1075,6 +1082,18 @@ final class APIClient {
         try await sendNoContent(req)
     }
 
+    /// 2026-07-21, #284 — a Video's own title (distinct from its enclosing
+    /// Section's name/postproduction status/deadline, which stay on
+    /// patchSectionPostproduction above). Matches backend's
+    /// `PATCH /videos/{id}` (VideoPatch: title, sort_order).
+    func patchVideo(_ id: String, title: String? = nil, sortOrder: Int? = nil) async throws -> Video {
+        var req = try await authorizedRequest("videos/\(id)", method: "PATCH")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let title: String?; let sort_order: Int? }
+        req.httpBody = try encoder.encode(Body(title: title, sort_order: sortOrder))
+        return try await send(req)
+    }
+
     func createVideoVersion(videoId: String, filename: String, contentType: String) async throws -> VideoVersion {
         var req = try await authorizedRequest("videos/\(videoId)/versions", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -1123,6 +1142,19 @@ final class APIClient {
     func deleteVideoComment(_ id: String) async throws {
         let req = try await authorizedRequest("video-comments/\(id)", method: "DELETE")
         try await sendNoContent(req)
+    }
+
+    /// 2026-07-21, #284 — the resolved/open checkbox on a video comment
+    /// (mirrors web's VideoReviewModal.toggleResolved, PATCH
+    /// /video-comments/{id} with {status: "open"|"resolved"}). Any
+    /// project member may toggle this (not gated to editor+/admin the
+    /// way title/deadline are).
+    func patchVideoCommentStatus(_ id: String, status: String) async throws -> VideoComment {
+        var req = try await authorizedRequest("video-comments/\(id)", method: "PATCH")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let status: String }
+        req.httpBody = try encoder.encode(Body(status: status))
+        return try await send(req)
     }
 
     // MARK: - Geocoding

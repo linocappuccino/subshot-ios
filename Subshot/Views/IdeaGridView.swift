@@ -9,46 +9,39 @@ import SwiftUI
 struct IdeaGridView: View {
     @ObservedObject var viewModel: ShotListViewModel
     @State private var editingIdea: Idea?
-    @State private var creating = false
+
+    /// 2026-07-21, #280 (Lino: "ganz falsch!") — this view is now the
+    /// Ideas page's ENTIRE content, no Scene/Section content sits below it
+    /// anymore (see ShotListView.body's `switch activeWorkflowSection`).
+    /// Filtering to `.open` here is what keeps an approved idea (and the
+    /// real Scene it turned into) from ever showing up here — that Scene
+    /// lives exclusively on the Scripting panel now, in its own Section,
+    /// same as the web app's separate Ideas/Scenes routes.
+    private var openIdeas: [Idea] {
+        viewModel.ideas.filter { $0.status == .open }
+    }
 
     private var groupedIdeas: [(group: IdeaStatusGroup, ideas: [Idea])] {
-        let grouped = Dictionary(grouping: viewModel.ideas, by: IdeaStatusGroup.of)
+        let grouped = Dictionary(grouping: openIdeas, by: IdeaStatusGroup.of)
         return IdeaStatusGroup.allCases.compactMap { group in
             guard let ideas = grouped[group], !ideas.isEmpty else { return nil }
             return (group, ideas.sorted { $0.sortOrder < $1.sortOrder })
         }
     }
 
-    private func createIdea() {
-        guard !creating else { return }
-        creating = true
-        Task {
-            if let created = await viewModel.createIdea() {
-                editingIdea = created
-            }
-            creating = false
-        }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("💡 Ideen" + (viewModel.ideas.isEmpty ? "" : " (\(viewModel.ideas.count))"))
-                    .font(.headline)
-                Spacer()
-                Button {
-                    createIdea()
-                } label: {
-                    if creating {
-                        ProgressView()
-                    } else {
-                        Label("Idee", systemImage: "plus")
-                    }
-                }
-                .disabled(creating)
-            }
+            // 2026-07-21, #276 — the top-right "+ Idee" button that used to
+            // sit here is gone; creating a new idea now only happens via
+            // the dedicated bottom-right FAB on the Ideas page (see
+            // ShotListView's addIdeaButton), which also skips the
+            // create-then-open round trip this button used to do (same
+            // direct-create-and-open behavior, just triggered from a
+            // single button instead of two).
+            Text("💡 Ideen" + (openIdeas.isEmpty ? "" : " (\(openIdeas.count))"))
+                .font(.headline)
 
-            if viewModel.ideas.isEmpty {
+            if openIdeas.isEmpty {
                 Text("Noch keine Ideen — leg die erste Idee für dieses Projekt an, bevor es ins Scripting geht.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)

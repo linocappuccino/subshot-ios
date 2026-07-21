@@ -319,7 +319,8 @@ struct ProjectListView: View {
                 color: project.color,
                 thumbnailPath: project.thumbnailUrl,
                 fallbackIcon: "film.stack",
-                emoji: project.emoji
+                emoji: project.emoji,
+                pipelineStage: project.pipelineStage
             )
         }
         .buttonStyle(.plain)
@@ -348,14 +349,38 @@ struct ProjectListView: View {
                 Label("Löschen", systemImage: "trash")
             }
         } preview: {
+            // 2026-07-21, #274 (Lino: long-press correctly opens the menu,
+            // but the tile itself renders squished into a "pill" behind
+            // it) — root cause: this preview reuses tileBody with no
+            // explicit size, but tileBody's own image box is
+            // `Color.clear.aspectRatio(4/3, contentMode: .fit)
+            // .frame(maxWidth: .infinity)`, which has no width to resolve
+            // against once it's laid out here, OUTSIDE the grid's
+            // adaptive GridItem column-sizing that gives it a real width
+            // everywhere else (see `columns` above:
+            // `.adaptive(minimum: 150)` — every tile's actual on-screen
+            // width is entirely a product of THAT layout, never an
+            // intrinsic size of its own). UIKit's context-menu preview
+            // sizing pass ends up proposing something unbounded/only
+            // loosely related to the real tile, so the 4:3 image box (and
+            // its `RoundedRectangle(cornerRadius: 14)`) render at the
+            // wrong aspect entirely — squashed short-and-wide enough that
+            // a 14pt corner radius reads as a fully rounded capsule/"pill".
+            // Fix: give the preview the SAME width the live tile actually
+            // measured via onGeometryChange (tileSizes, already tracked
+            // for the drag-and-drop indicator below) — Apple's own
+            // guidance for .contextMenu(preview:) is exactly this, make
+            // the preview's size match the source view's real size.
             tileBody(
                 title: project.name,
                 subtitle: "Wird gelöscht in \(project.daysUntilDeletion) Tagen",
                 color: project.color,
                 thumbnailPath: project.thumbnailUrl,
                 fallbackIcon: "film.stack",
-                emoji: project.emoji
+                emoji: project.emoji,
+                pipelineStage: project.pipelineStage
             )
+            .frame(width: tileSizes[project.id]?.width, height: tileSizes[project.id]?.height)
         }
         // Live directional landing indicator (2026-07-15, replaces the old
         // fixed top-only Capsule — see TileDropDelegate's doc comment for
@@ -426,6 +451,8 @@ struct ProjectListView: View {
                 Label("Löschen", systemImage: "trash")
             }
         } preview: {
+            // 2026-07-21, #274 — same fix as projectTile's preview above,
+            // see its doc comment for the full root-cause explanation.
             tileBody(
                 title: folder.name,
                 subtitle: folder.tileSubtitle,
@@ -435,6 +462,7 @@ struct ProjectListView: View {
                 emoji: folder.emoji,
                 thumbnailFocusPoint: folder.backgroundImageFocusPoint
             )
+            .frame(width: tileSizes[folder.id]?.width, height: tileSizes[folder.id]?.height)
         }
         .overlay {
             // Full-tile highlight — stays the generic "you're hovering over
@@ -493,7 +521,9 @@ struct ProjectListView: View {
         ))
     }
 
-    private func tileBody(title: String, subtitle: String?, color: String, thumbnailPath: String?, fallbackIcon: String, emoji: String? = nil, thumbnailFocusPoint: UnitPoint? = nil) -> some View {
+    /// `pipelineStage` is nil for folder tiles (they have no pipeline of
+    /// their own) — only project tiles pass one, see projectTile below.
+    private func tileBody(title: String, subtitle: String?, color: String, thumbnailPath: String?, fallbackIcon: String, emoji: String? = nil, thumbnailFocusPoint: UnitPoint? = nil, pipelineStage: ProjectPipelineStage? = nil) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             // Color.clear + .aspectRatio + .overlay, not relying on the
             // ZStack sizing itself from its content — the same bulletproof
@@ -572,6 +602,27 @@ struct ProjectListView: View {
                             endPoint: .bottomTrailing
                         )
                         .allowsHitTesting(false)
+                        // 2026-07-21, #285 — pipeline-stage badge (Idee/
+                        // Konzept, Scripting/Shooting, Postproduction,
+                        // Abgeschlossen), top-leading corner so it doesn't
+                        // collide with the emoji-over-photo badge above
+                        // (bottom-trailing). Server-computed, see
+                        // ProjectPipelineStage's own doc comment.
+                        if let pipelineStage {
+                            VStack {
+                                HStack {
+                                    Text(pipelineStage.label)
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundStyle(pipelineStage.tintColor)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3)
+                                        .background(pipelineStage.tintColor.opacity(0.2), in: Capsule())
+                                        .padding(6)
+                                    Spacer()
+                                }
+                                Spacer()
+                            }
+                        }
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 14))

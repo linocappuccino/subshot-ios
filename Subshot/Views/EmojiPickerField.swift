@@ -8,119 +8,79 @@ import SwiftUI
 /// actual in-app grid is the only reliable fix, same conclusion the web
 /// client already reached for the same reason.
 ///
-/// Was a ~40-emoji curated set (film/project-relevant only) — Lino asked for
-/// the full Apple emoji catalog with horizontal scrolling instead
-/// (2026-07-11: "können wir nicht ALLE Apple emojis darstellen... und im
-/// kleinen Fenster nach links oder rechts scrollen?"). Embedding the entire
-/// official Unicode set verbatim (3000+ entries incl. skin-tone/gender
-/// variants, family combinations, flags for every country) isn't practical
-/// to hand-maintain as a literal array with no bundled Unicode metadata
-/// source in this repo — this is instead a much broader set spanning every
-/// standard keyboard category (several hundred, not ~40), organized by
-/// category, in a horizontally scrolling grid — same idea, not literally
-/// exhaustive.
-private let emojiCategories: [(name: String, emojis: [String])] = [
-    ("Film & Projekt", [
-        "🎬", "🎥", "📹", "🎞️", "📽️", "🎙️", "🎧", "🎵", "🎶", "📝", "📋",
-        "📌", "📍", "🗓️", "📅", "⏰", "⏱️", "⭐️", "🔥", "💡", "🎯", "✅",
-        "🚀", "🏆", "🎉", "✨", "🎭", "🖼️", "📸", "📷", "🎨", "🎤", "📺",
-        "💻", "🖥️", "🎮", "📀", "💾", "🔊", "🔦", "🎇", "🎆",
-    ]),
-    ("Smileys", [
-        "😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "😊", "😇", "🙂",
-        "🙃", "😉", "😌", "😍", "🥰", "😘", "😗", "😙", "😚", "😋", "😛",
-        "😝", "😜", "🤪", "🤨", "🧐", "🤓", "😎", "🥸", "🤩", "🥳", "😏",
-        "😒", "😞", "😔", "😟", "😕", "🙁", "☹️", "😣", "😖", "😫", "😩",
-        "🥺", "😢", "😭", "😤", "😠", "😡", "🤬", "🤯", "😳", "🥵", "🥶",
-        "😱", "😨", "😰", "😥", "😓", "🤗", "🤔", "🤭", "🤫", "🤥", "😶",
-        "😐", "😑", "😬", "🙄", "😯", "😦", "😧", "😮", "😲", "🥱", "😴",
-        "🤤", "😪", "😵", "🤐", "🥴", "🤢", "🤮", "🤧", "😷", "🤒", "🤕",
-        "🤑", "🤠", "😈", "👿", "👹", "👺", "🤡", "💩", "👻", "💀", "👽",
-        "🤖", "😺", "😸", "😹", "😻", "😼", "😽", "🙀", "😿", "😾",
-    ]),
-    ("Menschen", [
-        "👋", "🤚", "🖐️", "✋", "🖖", "👌", "🤌", "🤏", "✌️", "🤞", "🤟",
-        "🤘", "🤙", "👈", "👉", "👆", "🖕", "👇", "☝️", "👍", "👎", "✊",
-        "👊", "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🙏", "✍️", "💅", "🤳",
-        "💪", "🦾", "👀", "👁️", "👤", "👥", "🧑", "👶", "🧒", "👦", "👧",
-        "🧑‍🦱", "🧑‍🦰", "🧑‍🦳", "🧑‍🦲", "👨", "👩", "🧓", "👴", "👵", "🙍", "🙎",
-        "🙅", "🙆", "💁", "🙋", "🧏", "🙇", "🤦", "🤷", "🧑‍💼", "🧑‍🎓", "🧑‍🏫",
-        "🧑‍⚕️", "🧑‍🌾", "🧑‍🍳", "🧑‍🎤", "🧑‍🎨", "🧑‍✈️", "🧑‍🚀", "🧑‍🚒", "👮", "🕵️", "💂",
-        "👷", "🤴", "👸", "👳", "👲", "🧕", "🤵", "👰", "🤰", "🤱",
-    ]),
-    ("Natur", [
-        "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁",
-        "🐮", "🐷", "🐸", "🐵", "🙈", "🙉", "🙊", "🐒", "🐔", "🐧", "🐦",
-        "🐤", "🦆", "🦅", "🦉", "🦇", "🐺", "🐗", "🐴", "🦄", "🐝", "🐛",
-        "🦋", "🐌", "🐞", "🐜", "🦟", "🦗", "🕷️", "🕸️", "🐢", "🐍", "🦎",
-        "🦖", "🦕", "🐙", "🦑", "🦐", "🦞", "🦀", "🐡", "🐠", "🐟", "🐬",
-        "🐳", "🐋", "🦈", "🐊", "🐅", "🐆", "🦓", "🦍", "🦧", "🐘", "🦛",
-        "🦏", "🐪", "🐫", "🦒", "🦘", "🐃", "🐂", "🐄", "🐎", "🐖", "🐑",
-        "🐐", "🦙", "🐕", "🐩", "🐈", "🐓", "🦃", "🦤", "🦚", "🦜", "🦢",
-        "🌵", "🎄", "🌲", "🌳", "🌴", "🌱", "🌿", "☘️", "🍀", "🎍", "🎋",
-        "🍃", "🍂", "🍁", "🍄", "🐚", "🌾", "💐", "🌷", "🌹", "🥀", "🌺",
-        "🌸", "🌼", "🌻", "🌞", "🌝", "🌛", "🌜", "🌚", "🌕", "🌖", "☀️",
-        "🌤️", "⛅️", "🌥️", "☁️", "🌦️", "🌧️", "⛈️", "🌩️", "🌨️", "❄️", "☃️",
-        "⛄️", "🌬️", "💨", "🌪️", "🌫️", "🌈", "☂️", "☔️", "⚡️", "🔥", "💧",
-        "🌊",
-    ]),
-    ("Essen", [
-        "🍏", "🍎", "🍐", "🍊", "🍋", "🍌", "🍉", "🍇", "🍓", "🫐", "🍈",
-        "🍒", "🍑", "🥭", "🍍", "🥥", "🥝", "🍅", "🍆", "🥑", "🥦", "🥬",
-        "🥒", "🌶️", "🫑", "🌽", "🥕", "🫒", "🧄", "🧅", "🥔", "🍠", "🥐",
-        "🥯", "🍞", "🥖", "🥨", "🧀", "🥚", "🍳", "🧈", "🥞", "🧇", "🥓",
-        "🥩", "🍗", "🍖", "🌭", "🍔", "🍟", "🍕", "🫓", "🥪", "🥙", "🧆",
-        "🌮", "🌯", "🥗", "🥘", "🫕", "🍝", "🍜", "🍲", "🍛", "🍣", "🍱",
-        "🥟", "🦪", "🍤", "🍙", "🍚", "🍘", "🍥", "🥠", "🥮", "🍢", "🍡",
-        "🍧", "🍨", "🍦", "🥧", "🧁", "🍰", "🎂", "🍮", "🍭", "🍬", "🍫",
-        "🍿", "🍩", "🍪", "🌰", "🥜", "🍯", "🥛", "🍼", "☕️", "🍵", "🧃",
-        "🥤", "🍶", "🍺", "🍻", "🥂", "🍷", "🥃", "🍸", "🍹", "🧉", "🍾",
-    ]),
-    ("Aktivität", [
-        "⚽️", "🏀", "🏈", "⚾️", "🥎", "🎾", "🏐", "🏉", "🥏", "🎱", "🪀",
-        "🏓", "🏸", "🏒", "🏑", "🥍", "🏏", "🥅", "⛳️", "🪁", "🏹", "🎣",
-        "🤿", "🥊", "🥋", "🎽", "🛹", "🛼", "🛷", "⛸️", "🥌", "🎿", "⛷️",
-        "🏂", "🪂", "🏋️", "🤼", "🤸", "⛹️", "🤺", "🤾", "🏌️", "🏇", "🧘",
-        "🏄", "🏊", "🤽", "🚣", "🧗", "🚵", "🚴", "🏆", "🥇", "🥈", "🥉",
-        "🏅", "🎖️", "🏵️", "🎗️", "🎫", "🎟️", "🎪", "🤹", "🎨", "🎭", "🩰",
-    ]),
-    ("Reisen", [
-        "🚗", "🚕", "🚙", "🚌", "🚎", "🏎️", "🚓", "🚑", "🚒", "🚐", "🛻",
-        "🚚", "🚛", "🚜", "🛵", "🏍️", "🛺", "🚲", "🛴", "🚨", "🚔", "🚍",
-        "🚘", "🚖", "🚡", "🚠", "🚟", "🚃", "🚋", "🚞", "🚝", "🚄", "🚅",
-        "🚈", "🚂", "🚆", "🚇", "🚊", "🚉", "✈️", "🛫", "🛬", "🛩️", "💺",
-        "🛰️", "🚀", "🛸", "🚁", "🛶", "⛵️", "🚤", "🛥️", "🛳️", "⛴️", "🚢",
-        "⚓️", "⛽️", "🚧", "🚦", "🚥", "🗺️", "🗿", "🗽", "🗼", "🏰", "🏯",
-        "🏟️", "🎡", "🎢", "🎠", "⛲️", "⛱️", "🏖️", "🏝️", "🏜️", "🌋", "⛰️",
-        "🏔️", "🗻", "🏕️", "⛺️", "🏠", "🏡", "🏘️", "🏚️", "🏗️", "🏭", "🏢",
-        "🏬", "🏣", "🏤", "🏥", "🏦", "🏨", "🏪", "🏫", "🏩", "💒", "🏛️",
-        "⛪️", "🕌", "🕍", "🛕", "🕋",
-    ]),
-    ("Symbole", [
-        "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❣️",
-        "💕", "💞", "💓", "💗", "💖", "💘", "💝", "💯", "💢", "💥", "💫",
-        "💦", "💨", "🕳️", "💣", "💬", "👁️‍🗨️", "🗨️", "🗯️", "💭", "💤", "✅",
-        "❌", "❓", "❗️", "⚠️", "🚫", "🔞", "📵", "🚭", "♻️", "✳️", "✴️",
-        "❇️", "©️", "®️", "™️", "🔟", "🔢", "🔤", "🅰️", "🆎", "🆑", "🆒",
-        "🆓", "🆔", "🆕", "🆖", "🆗", "🆘", "🆙", "🆚", "🈁", "🈂️", "🈷️",
-        "㊙️", "㊗️", "🈵", "🔴", "🟠", "🟡", "🟢", "🔵", "🟣", "🟤", "⚫️",
-        "⚪️", "🟥", "🟧", "🟨", "🟩", "🟦", "🟪", "🟫", "⬛️", "⬜️", "◼️",
-        "◻️", "◾️", "◽️", "▪️", "▫️", "🔶", "🔷", "🔸", "🔹", "🔺", "🔻",
-        "💠", "🔘", "🔳", "🔲",
-    ]),
-    ("Flaggen", [
-        "🏁", "🚩", "🎌", "🏴", "🏳️", "🏳️‍🌈", "🇨🇭", "🇩🇪", "🇦🇹", "🇺🇸", "🇬🇧",
-        "🇫🇷", "🇮🇹", "🇪🇸", "🇵🇹", "🇳🇱", "🇧🇪", "🇸🇪", "🇳🇴", "🇩🇰", "🇫🇮", "🇮🇪",
-        "🇵🇱", "🇬🇷", "🇹🇷", "🇷🇺", "🇺🇦", "🇨🇦", "🇲🇽", "🇧🇷", "🇦🇷", "🇯🇵", "🇰🇷",
-        "🇨🇳", "🇮🇳", "🇦🇺", "🇿🇦", "🇪🇬",
-    ]),
+/// 2026-07-21 (#275): rebuilt to load the same `emojibase-data` German
+/// dataset the web app's EmojiField.tsx uses (see its own doc comment for
+/// the "Zahn"/🦷 story — English-only names silently failed real searches),
+/// generated once by the web repo's `scripts/generate-emoji-data.mjs` and
+/// copied here as `Resources/emojiData.json` (1914 entries, real German
+/// names + keyword tags, same exclusions: no component/skin-tone swatches,
+/// no bare regional-indicator letters). Regenerate by re-running that script
+/// and copying the output over whenever the emoji set should refresh — no
+/// separate iOS generator, single source of truth.
+///
+/// IMPORTANT for whoever opens this in Xcode next: `Resources/emojiData.json`
+/// is a new file (git status shows it untracked) and was never added to a
+/// build target from this machine (no compiler here, no .xcodeproj in this
+/// repo either) — make sure it's included in the app target's "Copy Bundle
+/// Resources" build phase, or `Bundle.main.url(forResource:withExtension:)`
+/// below returns nil and the picker silently shows zero emoji.
+private struct EmojiEntry: Identifiable {
+    let emoji: String
+    let name: String
+    let tags: [String]
+    var id: String { emoji }
+}
+
+private struct RawEmojiEntry: Decodable {
+    let emoji: String
+    let name: String
+    let tags: [String]
+    let group: Int
+}
+
+private let groupLabels: [Int: String] = [
+    0: "Smileys & Emotionen", 1: "Menschen", 3: "Natur", 4: "Essen & Trinken",
+    5: "Reisen", 6: "Aktivität", 7: "Objekte", 8: "Symbole", 9: "Flaggen",
 ]
+private let groupOrder = [0, 1, 3, 4, 5, 6, 7, 8, 9]
+
+/// Lino's actual most-used picks for this app — kept pinned as its own
+/// first category, same as before and same as the web app's redesign.
+private let filmProjektEmojis = [
+    "🎬", "🎥", "📹", "🎞️", "📽️", "🎙️", "🎧", "🎵", "🎶", "📝", "📋",
+    "📌", "📍", "🗓️", "📅", "⏰", "⏱️", "⭐️", "🔥", "💡", "🎯", "✅",
+    "🚀", "🏆", "🎉", "✨", "🎭", "🖼️", "📸", "📷", "🎨", "🎤", "📺",
+    "💻", "🖥️", "🎮", "📀", "💾", "🔊", "🔦", "🎇", "🎆",
+]
+
+private let rawEmoji: [RawEmojiEntry] = {
+    guard let url = Bundle.main.url(forResource: "emojiData", withExtension: "json"),
+        let data = try? Data(contentsOf: url),
+        let decoded = try? JSONDecoder().decode([RawEmojiEntry].self, from: data)
+    else { return [] }
+    return decoded
+}()
+
+private let allEmoji: [EmojiEntry] = rawEmoji.map { EmojiEntry(emoji: $0.emoji, name: $0.name, tags: $0.tags) }
+private let byChar: [String: EmojiEntry] = Dictionary(uniqueKeysWithValues: allEmoji.map { ($0.emoji, $0) })
+
+private let emojiCategories: [(name: String, emojis: [EmojiEntry])] = {
+    var categories: [(name: String, emojis: [EmojiEntry])] = [
+        ("Film & Projekt", filmProjektEmojis.map { byChar[$0] ?? EmojiEntry(emoji: $0, name: $0, tags: []) }),
+    ]
+    for group in groupOrder {
+        let emojis = rawEmoji.filter { $0.group == group }.map { EmojiEntry(emoji: $0.emoji, name: $0.name, tags: $0.tags) }
+        categories.append((groupLabels[group] ?? "", emojis))
+    }
+    return categories
+}()
 
 /// Round "+" tile that becomes the emoji itself once one's set, with a small
 /// "x" badge to clear it again — mirrors the web app's EmojiField.tsx.
 struct EmojiPickerField: View {
     @Binding var emoji: String
     @State private var showingPicker = false
+    @State private var query = ""
     private let size: CGFloat = 48
 
     var body: some View {
@@ -148,8 +108,9 @@ struct EmojiPickerField: View {
             }
             .buttonStyle(.plain)
             .popover(isPresented: $showingPicker) {
-                emojiGrid
+                emojiPopover
                     .presentationCompactAdaptation(.popover)
+                    .onDisappear { query = "" }
             }
 
             if !emoji.isEmpty {
@@ -167,38 +128,67 @@ struct EmojiPickerField: View {
         .frame(width: size + 6, height: size + 6, alignment: .topTrailing)
     }
 
-    /// Flattened once for the grid — category boundaries above are purely
-    /// for keeping the source list organized/maintainable, the picker itself
-    /// just scrolls through all of them in order.
-    private var allEmoji: [String] {
-        emojiCategories.flatMap(\.emojis)
+    private var searchResults: [EmojiEntry]? {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return nil }
+        return allEmoji.filter { $0.name.lowercased().contains(q) || $0.tags.contains { $0.lowercased().contains(q) } }
     }
 
-    /// Was a fixed 8-column LazyVGrid inside a `.frame(width: 300)` — 8
-    /// columns of 36pt plus spacing added up to MORE than the 300pt frame
-    /// (minus its own 12pt padding on each side), so the leftmost and
-    /// rightmost emoji were clipped outside the popover's own bounds — not
-    /// just "many emoji don't fit," genuinely cut in half ("links und
-    /// rechts werden emojis abgeschnitten", 2026-07-11). A horizontally
-    /// scrolling grid (also what was explicitly asked for) sidesteps that
-    /// entirely — nothing needs to fit in a fixed width anymore.
-    private var emojiGrid: some View {
-        ScrollView(.horizontal, showsIndicators: true) {
-            LazyHGrid(rows: Array(repeating: GridItem(.fixed(36), spacing: 4), count: 6), spacing: 4) {
-                ForEach(Array(allEmoji.enumerated()), id: \.offset) { _, option in
-                    Button {
-                        emoji = option
-                        showingPicker = false
-                    } label: {
-                        Text(option)
-                            .font(.system(size: 20))
-                            .frame(width: 36, height: 36)
+    /// 2026-07-21 (#275), rebuilt from a horizontally scrolling flat strip
+    /// to a vertically scrolling grid grouped by category, with a search
+    /// field on top — same shape as the web app's EmojiField.tsx redesign
+    /// (#250/#252). The old strip was also the actual "oben/unten zu wenig
+    /// Platz" complaint: a fixed 260pt-tall `.frame` around 6 fixed 36pt
+    /// rows left almost no breathing room top/bottom; this layout isn't
+    /// height-starved the same way since it scrolls vertically instead.
+    private var emojiPopover: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Suchen…", text: $query)
+                .textFieldStyle(.roundedBorder)
+                .autocorrectionDisabled()
+
+            ScrollView(.vertical, showsIndicators: true) {
+                if let results = searchResults {
+                    if results.isEmpty {
+                        Text("Keine Treffer")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 24)
+                    } else {
+                        emojiGrid(results)
                     }
-                    .buttonStyle(.plain)
+                } else {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(emojiCategories, id: \.name) { category in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(category.name.uppercased())
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                                emojiGrid(category.emojis)
+                            }
+                        }
+                    }
                 }
             }
-            .padding(12)
         }
-        .frame(width: 300, height: 260)
+        .padding(12)
+        .frame(width: 300, height: 340)
+    }
+
+    private func emojiGrid(_ entries: [EmojiEntry]) -> some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.fixed(32), spacing: 2), count: 8), spacing: 2) {
+            ForEach(entries) { entry in
+                Button {
+                    emoji = entry.emoji
+                    showingPicker = false
+                } label: {
+                    Text(entry.emoji)
+                        .font(.system(size: 18))
+                        .frame(width: 32, height: 32)
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 }

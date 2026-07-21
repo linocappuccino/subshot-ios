@@ -42,6 +42,7 @@ struct ProjectEditSheet: View {
                 Section("Emoji") {
                     EmojiPickerField(emoji: $emoji)
                         .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 8)
                         .listRowBackground(Color.clear)
                 }
                 Section("Farbe") {

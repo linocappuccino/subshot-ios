@@ -349,11 +349,20 @@ final class ShotListViewModel: ObservableObject {
 
     // MARK: - Sections
 
+    /// `startInPostproduction` (2026-07-21, #284) — the "+" arbitrary/
+    /// unplanned-video button on the Postproduction page uses this to
+    /// create a fresh Section that lands directly in postproduction
+    /// tracking, matching web's own is_unplanned "+ Video" flow (see
+    /// APIClient.createSection's own doc comment). Defaults to false, so
+    /// every other caller (the plain "Neuer Abschnitt" FAB entry) is
+    /// unaffected.
     @discardableResult
-    func createSection(name: String) async -> SceneSection? {
+    func createSection(name: String, startInPostproduction: Bool = false) async -> SceneSection? {
         do {
             let sortOrder = (sections.map(\.sortOrder).max() ?? -1) + 1
-            let section = try await APIClient.shared.createSection(projectId: projectId, name: name, sortOrder: sortOrder)
+            let section = try await APIClient.shared.createSection(
+                projectId: projectId, name: name, sortOrder: sortOrder, startInPostproduction: startInPostproduction
+            )
             sections.append(section)
             return section
         } catch {
