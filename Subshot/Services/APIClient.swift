@@ -670,6 +670,31 @@ final class APIClient {
 
         return try await send(req)
     }
+
+    /// 2026-07-22, web parity (#297) — idea images can now also be real
+    /// video files (mp4/mov/webm) or GIFs, mirrors the backend's
+    /// `_ALLOWED_IDEA_MEDIA_TYPES` whitelist (app/main.py, only used by
+    /// this one endpoint — Scene/Shot cover photos stay photo-only). Same
+    /// endpoint/multipart shape as uploadIdeaImage above, just reading raw
+    /// file bytes off disk (via IdeaMediaSourceButton's picked MovieFile
+    /// temp copy) instead of always re-encoding a UIImage to JPEG — a video
+    /// obviously can't round-trip through UIImage/jpegData.
+    func uploadIdeaImage(ideaId: String, fileURL: URL, filename: String, contentType: String) async throws -> IdeaImage {
+        let fileData = try Data(contentsOf: fileURL)
+        var req = try await authorizedRequest("ideas/\(ideaId)/images", method: "POST")
+        let boundary = "Boundary-\(UUID().uuidString)"
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: \(contentType)\r\n\r\n".data(using: .utf8)!)
+        body.append(fileData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        req.httpBody = body
+
+        return try await send(req)
+    }
     #endif
 
     func deleteIdeaImage(ideaId: String, imageId: String) async throws {
@@ -852,7 +877,21 @@ final class APIClient {
     }
 
     func fetchImage(path: String) async throws -> UIImage {
-        let req = try await authorizedRequest(path)
+        // 2026-07-22 (#248) — Scene.imageUrl/Shot.imageUrl/Folder.
+        // backgroundImageUrl/IdeaImage.imageUrl are now presigned R2 URLs
+        // computed fresh per-response (see the backend's `_presign_image`
+        // field_validator), NOT a relative "/scenes/{id}/image/{filename}"
+        // path anymore — `authorizedRequest` below still assumes the latter
+        // and would append the whole absolute URL as a path component onto
+        // baseURL, producing garbage. A presigned URL carries its own auth
+        // in the query string, so it needs no Bearer header either — fetch
+        // it directly instead of routing through authorizedRequest at all.
+        let req: URLRequest
+        if let url = URL(string: path), path.hasPrefix("http") {
+            req = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
+        } else {
+            req = try await authorizedRequest(path)
+        }
         let (data, response) = try await perform(req)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw APIError.server(status: (response as? HTTPURLResponse)?.statusCode ?? 0, message: "Image fetch failed")
@@ -861,6 +900,26 @@ final class APIClient {
             throw APIError.decoding(URLError(.cannotDecodeContentData))
         }
         return image
+    }
+
+    /// 2026-07-22 — raw-bytes counterpart to fetchImage, for the defensive
+    /// old-scheme fallback in AsyncIdeaVideoThumbnail (idea images that
+    /// turned out to be real video files). Same dual-path handling as
+    /// fetchImage's own #248 doc comment above; no UIImage decode at the
+    /// end since the caller writes the bytes to a local temp file for
+    /// AVPlayer instead.
+    func fetchMediaData(path: String) async throws -> Data {
+        let req: URLRequest
+        if let url = URL(string: path), path.hasPrefix("http") {
+            req = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
+        } else {
+            req = try await authorizedRequest(path)
+        }
+        let (data, response) = try await perform(req)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw APIError.server(status: (response as? HTTPURLResponse)?.statusCode ?? 0, message: "Media fetch failed")
+        }
+        return data
     }
     #endif
 

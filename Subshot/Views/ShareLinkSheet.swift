@@ -17,6 +17,7 @@ struct ShareLinkSheet: View {
     /// caller (ShotListView) presents the actual OS share sheet, since that
     /// needs to live at the screen level, not inside this sheet.
     var onShare: (URL) -> Void
+    @ObservedObject private var language = AppLanguage.shared
 
     @Environment(\.dismiss) private var dismiss
     @State private var url: URL?
@@ -61,23 +62,23 @@ struct ShareLinkSheet: View {
                             }
                         } label: {
                             if showCopiedConfirmation {
-                                Label("Kopiert", systemImage: "checkmark")
+                                Label(language.t("shareLinkSheet.copied"), systemImage: "checkmark")
                                     .foregroundStyle(.green)
                             } else {
-                                Label("Link kopieren", systemImage: "doc.on.doc")
+                                Label(language.t("shareLinkSheet.copyLink"), systemImage: "doc.on.doc")
                             }
                         }
                         Button {
                             onShare(url)
                             dismiss()
                         } label: {
-                            Label("Teilen", systemImage: "square.and.arrow.up")
+                            Label(language.t("shareLinkSheet.share"), systemImage: "square.and.arrow.up")
                         }
                     }
                 } header: {
-                    Text("Öffentlicher Link")
+                    Text(language.t("shareLinkSheet.publicLinkHeader"))
                 } footer: {
-                    Text("Jeder mit diesem Link kann die Vorschau ansehen, auch ohne Subshot-Account. Läuft nach 7 Tagen ab.")
+                    Text(language.t("shareLinkSheet.linkHint"))
                 }
 
                 Section {
@@ -89,7 +90,7 @@ struct ShareLinkSheet: View {
                     // mit einem Switch an oder ausmachen, darunter ist aber nochmal
                     // eine Passwort-Meldung mit einem Schloss") — removed in favor of
                     // just this one.
-                    Toggle("Mit Passwort schützen", isOn: $isProtecting.animation())
+                    Toggle(language.t("shareLinkSheet.protectWithPassword"), isOn: $isProtecting.animation())
                         .disabled(isLoading)
                         .onChange(of: isProtecting) { _, newValue in
                             if !newValue && hasPassword {
@@ -97,43 +98,43 @@ struct ShareLinkSheet: View {
                             }
                         }
                     if isProtecting {
-                        SecureField(hasPassword ? "Neues Passwort (optional)" : "Passwort", text: $passwordText)
+                        SecureField(hasPassword ? language.t("shareLinkSheet.newPasswordOptional") : language.t("shareLinkSheet.passwordPlaceholder"), text: $passwordText)
                         Button {
                             Task { await savePassword() }
                         } label: {
                             if isSavingPassword {
                                 ProgressView()
                             } else if showPasswordSavedConfirmation {
-                                Label("Gespeichert", systemImage: "checkmark")
+                                Label(language.t("shareLinkSheet.saved"), systemImage: "checkmark")
                                     .foregroundStyle(.green)
                             } else {
-                                Text(hasPassword ? "Passwort ändern" : "Passwort setzen")
+                                Text(hasPassword ? language.t("shareLinkSheet.changePassword") : language.t("shareLinkSheet.setPassword"))
                             }
                         }
                         .disabled(passwordText.isEmpty || isSavingPassword)
                     }
                 } header: {
-                    Text("Passwortschutz")
+                    Text(language.t("shareLinkSheet.passwordProtectionHeader"))
                 } footer: {
                     if hasPassword {
-                        Text("Aktiv — Besucher müssen das Passwort eingeben, bevor sie die Vorschau sehen.")
+                        Text(language.t("shareLinkSheet.protectedHint"))
                     } else {
-                        Text("Sinnvoll für Projekte/Kunden, wo nichts öffentlich einsehbar sein soll, auch nicht mit dem Link.")
+                        Text(language.t("shareLinkSheet.unprotectedHint"))
                     }
                 }
             }
-            .navigationTitle(kind == "ideas" ? "Ideen-Link teilen" : kind == "video" ? "Video-Feedback-Link teilen" : "Link teilen")
+            .navigationTitle(kind == "ideas" ? language.t("shareLinkSheet.titleIdeas") : kind == "video" ? language.t("shareLinkSheet.titleVideo") : language.t("shareLinkSheet.titleDefault"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Fertig") { dismiss() }
+                    Button(language.t("common.done")) { dismiss() }
                 }
             }
-            .alert("Fehler", isPresented: Binding(
+            .alert(language.t("common.error"), isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
             )) {
-                Button("OK", role: .cancel) {}
+                Button(language.t("common.ok"), role: .cancel) {}
             } message: {
                 Text(errorMessage ?? "")
             }

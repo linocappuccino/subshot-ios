@@ -15,6 +15,7 @@ struct SectionInfoBox: View {
     @ObservedObject var viewModel: ShotListViewModel
     let section: SceneSection
     let projectId: String
+    @ObservedObject private var language = AppLanguage.shared
 
     @State private var isExpanded = false
     @State private var showingTeamSheet = false
@@ -66,13 +67,13 @@ struct SectionInfoBox: View {
         }) {
             TeamSheet(projectId: projectId)
         }
-        .confirmationDialog("Projektinfo löschen?", isPresented: $showingDeleteConfirm, titleVisibility: .visible) {
-            Button("Löschen", role: .destructive) {
+        .confirmationDialog(language.t("projectInfoBox.deleteConfirmTitle"), isPresented: $showingDeleteConfirm, titleVisibility: .visible) {
+            Button(language.t("common.delete"), role: .destructive) {
                 Task { await viewModel.removeSectionProjectInfo(section) }
             }
-            Button("Abbrechen", role: .cancel) {}
+            Button(language.t("common.cancel"), role: .cancel) {}
         } message: {
-            Text("Datum, Ort und Todo-Listen dieser Projektinfo werden entfernt.")
+            Text(language.t("projectInfoBox.deleteConfirmMessage"))
         }
     }
 
@@ -85,7 +86,7 @@ struct SectionInfoBox: View {
             HStack {
                 Image(systemName: "info.circle.fill")
                     .foregroundStyle(.secondary)
-                Text("Projektinfo: \(section.name)")
+                Text(language.t("projectInfoBox.infoTitleFor").replacingOccurrences(of: "{name}", with: section.name))
                     .font(.headline)
                     .lineLimit(1)
                 Spacer()
@@ -104,7 +105,7 @@ struct SectionInfoBox: View {
             Button(role: .destructive) {
                 showingDeleteConfirm = true
             } label: {
-                Label("Löschen", systemImage: "trash")
+                Label(language.t("common.delete"), systemImage: "trash")
             }
         }
     }
@@ -115,7 +116,7 @@ struct SectionInfoBox: View {
     /// invite-someone entry point (Team sheet) is shared too.
     private var peopleSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Personen", systemImage: "person.2")
+            Label(language.t("projectInfoBox.peopleLabel"), systemImage: "person.2")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
             HStack(spacing: -8) {
@@ -154,6 +155,7 @@ struct SceneProjectInfoTile: View {
     @ObservedObject var viewModel: ShotListViewModel
     let scene: Scene
     let projectId: String
+    @ObservedObject private var language = AppLanguage.shared
     /// True only inside the 2-column compact grid (2026-07-13, Lino: "Info
     /// und Szenenkacheln sollen immer gleich gross aussehen") — matches this
     /// tile's collapsed height to sceneCompactTile's fixed 4:5 box instead of
@@ -225,7 +227,7 @@ struct SceneProjectInfoTile: View {
             HStack {
                 Image(systemName: "info.circle.fill")
                     .foregroundStyle(.secondary)
-                Text("Info")
+                Text(language.t("projectInfoBox.infoTitle"))
                     .font(.headline)
                 Spacer()
                 Image(systemName: "chevron.right")
@@ -242,7 +244,7 @@ struct SceneProjectInfoTile: View {
     /// list rather than duplicating it.
     private var peopleSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Personen", systemImage: "person.2")
+            Label(language.t("projectInfoBox.peopleLabel"), systemImage: "person.2")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
             HStack(spacing: -8) {
@@ -276,6 +278,7 @@ struct SceneProjectInfoTile: View {
 struct ProjectInfoBox: View {
     @ObservedObject var viewModel: ShotListViewModel
     let projectId: String
+    @ObservedObject private var language = AppLanguage.shared
 
     @State private var isExpanded = false
     @State private var showingTeamSheet = false
@@ -339,7 +342,7 @@ struct ProjectInfoBox: View {
             HStack {
                 Image(systemName: "info.circle.fill")
                     .foregroundStyle(.secondary)
-                Text("Projektinfos")
+                Text(language.t("projectInfoBox.title"))
                     .font(.headline)
                 Spacer()
                 Image(systemName: "chevron.right")
@@ -360,7 +363,7 @@ struct ProjectInfoBox: View {
     private func deletionNotice(lastOpenedAt: Date) -> some View {
         let deletesAt = lastOpenedAt.addingTimeInterval(30 * 24 * 3600)
         let daysLeft = max(0, Calendar.current.dateComponents([.day], from: .now, to: deletesAt).day ?? 0)
-        return Label("Wird gelöscht in \(daysLeft) Tagen", systemImage: "clock")
+        return Label(language.t("common.deletingInDays").replacingOccurrences(of: "{days}", with: "\(daysLeft)"), systemImage: "clock")
             .font(.footnote)
             .foregroundStyle(.secondary)
             .padding(.top, 4)
@@ -368,7 +371,7 @@ struct ProjectInfoBox: View {
 
     private var peopleSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Personen", systemImage: "person.2")
+            Label(language.t("projectInfoBox.peopleLabel"), systemImage: "person.2")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
             HStack(spacing: -8) {
@@ -406,12 +409,13 @@ struct ProjectInfoBox: View {
 private struct ShootDateSection: View {
     let shootDate: Date?
     let onUpdate: (Date?) async -> Void
+    @ObservedObject private var language = AppLanguage.shared
     @State private var hasDate = false
     @State private var date = Date()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Drehdatum", systemImage: "calendar")
+            Label(language.t("projectInfoBox.shootDateLabel"), systemImage: "calendar")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
             // Plain $bindings + .onChange, not a custom Binding(get:set:) with
@@ -420,12 +424,12 @@ private struct ShootDateSection: View {
             // value"), almost certainly from mutating state and kicking off
             // a Task inside a Binding's set closure, which SwiftUI calls
             // synchronously mid-transaction.
-            Toggle("Datum festlegen", isOn: $hasDate.animation(.spring(response: 0.35, dampingFraction: 0.86)))
+            Toggle(language.t("projectInfoBox.setDateToggle"), isOn: $hasDate.animation(.spring(response: 0.35, dampingFraction: 0.86)))
                 .onChange(of: hasDate) { _, newValue in
                     Task { await onUpdate(newValue ? date : nil) }
                 }
             if hasDate {
-                DatePicker("Start", selection: $date, displayedComponents: [.date, .hourAndMinute])
+                DatePicker(language.t("projectInfoBox.startLabel"), selection: $date, displayedComponents: [.date, .hourAndMinute])
                     .onChange(of: date) { _, newValue in
                         Task { await onUpdate(newValue) }
                     }
@@ -444,6 +448,7 @@ private struct ShootDateSection: View {
 /// Generic over "where the location actually lives", same reasoning as
 /// ShootDateSection above.
 private struct LocationSection: View {
+    @ObservedObject private var language = AppLanguage.shared
     let address: String?
     let lat: Double?
     let lng: Double?
@@ -475,7 +480,7 @@ private struct LocationSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Location", systemImage: "mappin.and.ellipse")
+            Label(language.t("common.location"), systemImage: "mappin.and.ellipse")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
 
@@ -508,7 +513,7 @@ private struct LocationSection: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         HStack(spacing: 12) {
-                            Button("Ändern") {
+                            Button(language.t("common.change")) {
                                 // Clear on ENTRY too, not just exit — the
                                 // shared completer (see doc comment above)
                                 // may still be holding another field's
@@ -522,7 +527,7 @@ private struct LocationSection: View {
                             }
                             .font(.footnote)
                             if let onClear {
-                                Button("Entfernen", role: .destructive) {
+                                Button(language.t("common.remove"), role: .destructive) {
                                     Task { await onClear() }
                                 }
                                 .font(.footnote)
@@ -531,7 +536,7 @@ private struct LocationSection: View {
                     }
                 }
             } else {
-                TextField("Adresse eingeben", text: $query)
+                TextField(language.t("common.addressPlaceholder"), text: $query)
                     .textFieldStyle(.roundedBorder)
                     // Covers the brand-new-address case (address == nil,
                     // so this branch renders straight away, without ever
@@ -596,15 +601,16 @@ private struct LocationSection: View {
 private struct ClientNameSection: View {
     let clientName: String?
     let onUpdate: (String) async -> Void
+    @ObservedObject private var language = AppLanguage.shared
     @State private var text = ""
     @FocusState private var focused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Auftraggeber", systemImage: "person.text.rectangle")
+            Label(language.t("projectInfoBox.clientLabel"), systemImage: "person.text.rectangle")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
-            TextField("Name des Auftraggebers", text: $text)
+            TextField(language.t("projectInfoBox.clientPlaceholder"), text: $text)
                 .textFieldStyle(.roundedBorder)
                 .focused($focused)
                 .onSubmit { commit() }
@@ -637,13 +643,14 @@ private struct TodoListsSection: View {
     let maxLists: Int
     @ObservedObject var viewModel: ShotListViewModel
     let onCreate: (String) async -> Void
+    @ObservedObject private var language = AppLanguage.shared
     @State private var isAddingList = false
     @State private var newListName = ""
     @FocusState private var newListFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Todo-Listen", systemImage: "checklist")
+            Label(language.t("projectInfoBox.todoListsLabel"), systemImage: "checklist")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
 
@@ -653,7 +660,7 @@ private struct TodoListsSection: View {
 
             if isAddingList {
                 HStack(spacing: 10) {
-                    TextField("Listenname", text: $newListName)
+                    TextField(language.t("projectInfoBox.listNamePlaceholder"), text: $newListName)
                         .font(.body)
                         .padding(.horizontal, 14)
                         .frame(height: 46)
@@ -676,7 +683,7 @@ private struct TodoListsSection: View {
                     isAddingList = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { newListFocused = true }
                 } label: {
-                    Label("Liste hinzufügen", systemImage: "plus")
+                    Label(language.t("projectInfoBox.addListButton"), systemImage: "plus")
                         .font(.body.weight(.semibold))
                         .frame(maxWidth: .infinity, minHeight: 46)
                         .background(Color(.tertiarySystemGroupedBackground))
@@ -699,6 +706,7 @@ private struct TodoListsSection: View {
 private struct TodoListCard: View {
     let list: TodoList
     @ObservedObject var viewModel: ShotListViewModel
+    @ObservedObject private var language = AppLanguage.shared
 
     @State private var isRenaming = false
     @State private var renameText = ""
@@ -716,7 +724,7 @@ private struct TodoListCard: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 if isRenaming {
-                    TextField("Listenname", text: $renameText)
+                    TextField(language.t("projectInfoBox.listNamePlaceholder"), text: $renameText)
                         .font(.title3.weight(.semibold))
                         .focused($renameFocused)
                         .submitLabel(.done)
@@ -749,7 +757,7 @@ private struct TodoListCard: View {
 
             if isAddingItem {
                 HStack(spacing: 10) {
-                    TextField("Neuer Punkt", text: $newItemText)
+                    TextField(language.t("projectInfoBox.newItemPlaceholder"), text: $newItemText)
                         .font(.body)
                         .padding(.horizontal, 14)
                         .frame(height: 46)
@@ -782,7 +790,7 @@ private struct TodoListCard: View {
                     isAddingItem = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { newItemFocused = true }
                 } label: {
-                    Label("Punkt hinzufügen", systemImage: "plus")
+                    Label(language.t("projectInfoBox.addItemButton"), systemImage: "plus")
                         .font(.body.weight(.semibold))
                         .frame(maxWidth: .infinity, minHeight: 44)
                         .background(Color(.quaternarySystemFill))
@@ -819,6 +827,7 @@ private struct TodoListCard: View {
 private struct TodoItemRow: View {
     let item: TodoItem
     @ObservedObject var viewModel: ShotListViewModel
+    @ObservedObject private var language = AppLanguage.shared
 
     private var assignee: Member? {
         guard let id = item.assigneeId else { return nil }
@@ -859,7 +868,7 @@ private struct TodoItemRow: View {
             Button(role: .destructive) {
                 Task { await viewModel.deleteTodoItem(item) }
             } label: {
-                Label("Löschen", systemImage: "trash")
+                Label(language.t("common.delete"), systemImage: "trash")
             }
         }
     }
@@ -872,7 +881,7 @@ private struct TodoItemRow: View {
                 Button {
                     Task { await viewModel.assignTodoItem(item, to: nil) }
                 } label: {
-                    Label("Niemand zugewiesen", systemImage: "xmark.circle")
+                    Label(language.t("assignee.nobodyAssigned"), systemImage: "xmark.circle")
                 }
             }
             ForEach(viewModel.members) { member in
@@ -889,7 +898,7 @@ private struct TodoItemRow: View {
                 // A bare icon here read as decorative rather than tappable —
                 // "Zuweisen" makes it unmistakable that this is where you
                 // assign someone to the item, not just a placeholder avatar.
-                Label("Zuweisen", systemImage: "person.crop.circle.badge.plus")
+                Label(language.t("projectInfoBox.assignAria"), systemImage: "person.crop.circle.badge.plus")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 10)

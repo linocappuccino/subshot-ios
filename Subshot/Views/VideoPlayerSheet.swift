@@ -12,6 +12,7 @@ struct VideoPlayerSheet: View {
     let version: VideoVersion
     var onVersionUpdated: (VideoVersion) -> Void
 
+    @ObservedObject private var language = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
     @State private var player: AVPlayer?
     @State private var showCommentField = false
@@ -135,7 +136,7 @@ struct VideoPlayerSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 if comments.isEmpty {
-                    Text("Noch keine Kommentare.")
+                    Text(language.t("videoPlayerSheet.noComments"))
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.6))
                 } else {
@@ -186,10 +187,10 @@ struct VideoPlayerSheet: View {
 
     private var commentBar: some View {
         HStack(spacing: 8) {
-            TextField("Dein Name", text: $authorName)
+            TextField(language.t("videoPlayerSheet.yourName"), text: $authorName)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 100)
-            TextField("Kommentar…", text: $commentText)
+            TextField(language.t("videoPlayerSheet.commentPlaceholder"), text: $commentText)
                 .textFieldStyle(.roundedBorder)
                 .focused($commentFieldFocused)
                 .onSubmit { Task { await postComment() } }

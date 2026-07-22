@@ -10,6 +10,7 @@ struct NotionImportSheet: View {
     /// Reloads the caller's scene list after a successful import.
     var onImported: () async -> Void
 
+    @ObservedObject private var language = AppLanguage.shared
     @State private var token = ""
     @State private var databases: [NotionDatabase] = []
     @State private var isConnected = false
@@ -28,9 +29,13 @@ struct NotionImportSheet: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let importedCount {
                     ContentUnavailableView(
-                        "\(importedCount) Szene\(importedCount == 1 ? "" : "n") importiert",
+                        language.t("notionImportSheet.importedTitleTemplate")
+                            .replacingOccurrences(of: "{count}", with: "\(importedCount)")
+                            .replacingOccurrences(of: "{noun}", with: importedCount == 1
+                                ? language.t("notionImportSheet.sceneSingular")
+                                : language.t("notionImportSheet.scenePlural")),
                         systemImage: "checkmark.circle.fill",
-                        description: Text("Von Notion übernommen.")
+                        description: Text(language.t("notionImportSheet.importedDescription"))
                     )
                 } else if isConnected {
                     databaseList
@@ -38,15 +43,15 @@ struct NotionImportSheet: View {
                     connectForm
                 }
             }
-            .navigationTitle("Notion-Import")
+            .navigationTitle(language.t("notionImportSheet.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(importedCount != nil ? "Fertig" : "Abbrechen") { dismiss() }
+                    Button(importedCount != nil ? language.t("notionImportSheet.doneButton") : language.t("notionImportSheet.cancelButton")) { dismiss() }
                 }
                 if isConnected, importedCount == nil {
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Importieren") {
+                        Button(language.t("notionImportSheet.importButton")) {
                             Task { await importSelected() }
                         }
                         .disabled(selectedDatabaseId == nil || isImporting)
@@ -60,18 +65,18 @@ struct NotionImportSheet: View {
     private var connectForm: some View {
         Form {
             Section {
-                Text("Verbinde deinen Notion-Workspace einmalig — danach kannst du aus jedem Projekt heraus importieren.")
+                Text(language.t("notionImportSheet.connectIntro"))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-            Section("So geht's") {
-                Label("notion.so/my-integrations → \"+ New integration\" → benennen, Submit", systemImage: "1.circle")
-                Label("Das \"Internal Integration Secret\" kopieren", systemImage: "2.circle")
-                Label("In der Notion-Datenbank: „...“-Menü → Connections → Integration hinzufügen", systemImage: "3.circle")
+            Section(language.t("notionImportSheet.howToTitle")) {
+                Label(language.t("notionImportSheet.step1"), systemImage: "1.circle")
+                Label(language.t("notionImportSheet.step2"), systemImage: "2.circle")
+                Label(language.t("notionImportSheet.step3"), systemImage: "3.circle")
             }
             .font(.footnote)
-            Section("Integration Secret") {
-                SecureField("secret_... oder ntn_...", text: $token)
+            Section(language.t("notionImportSheet.integrationSecretLabel")) {
+                SecureField(language.t("notionImportSheet.secretPlaceholder"), text: $token)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
             }
@@ -87,7 +92,7 @@ struct NotionImportSheet: View {
                     if isLoading {
                         ProgressView()
                     } else {
-                        Text("Verbinden")
+                        Text(language.t("notionImportSheet.connectButton"))
                     }
                 }
                 .disabled(token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading)
@@ -99,12 +104,12 @@ struct NotionImportSheet: View {
         List {
             if databases.isEmpty {
                 Section {
-                    Text("Keine Datenbank gefunden — hast du sie in Notion über \"Connections\" mit der Integration geteilt?")
+                    Text(language.t("notionImportSheet.noDatabasesFound"))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
             }
-            Section("Datenbank auswählen") {
+            Section(language.t("notionImportSheet.chooseDatabaseLabel")) {
                 // Pulled out into its own explicitly-typed function — the
                 // previous inline ForEach{ Button{ HStack{ ... } } } closure
                 // (nested inside List/Section's own ViewBuilders) was too

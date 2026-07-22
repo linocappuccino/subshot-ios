@@ -171,10 +171,18 @@ final class ShotListViewModel: ObservableObject {
 
     // MARK: - Ideas (Planungssektor)
 
-    func createIdea(title: String = "Neue Idee", text: String = "") async -> Idea? {
+    // `title` defaults to nil (not the literal string) and is resolved
+    // inside the body via AppLanguage.shared.t(...) instead — 2026-07-22,
+    // matches the web app's own default (ideaGrid.newIdeaTitle in
+    // lib/i18n.tsx). A default *argument* expression referencing a
+    // @MainActor singleton on a @MainActor method should itself be fine in
+    // modern Swift, but resolving it in the body sidesteps needing to trust
+    // that without a compiler here to verify it.
+    func createIdea(title: String? = nil, text: String = "") async -> Idea? {
+        let resolvedTitle = title ?? AppLanguage.shared.t("shotListViewModel.newIdeaTitle")
         do {
             let sortOrder = (ideas.map(\.sortOrder).max() ?? -1) + 1
-            let idea = try await APIClient.shared.createIdea(projectId: projectId, title: title, text: text, sortOrder: sortOrder)
+            let idea = try await APIClient.shared.createIdea(projectId: projectId, title: resolvedTitle, text: text, sortOrder: sortOrder)
             ideas.append(idea)
             return idea
         } catch {
@@ -231,6 +239,22 @@ final class ShotListViewModel: ObservableObject {
     func uploadIdeaImage(_ idea: Idea, image: UIImage) async {
         do {
             _ = try await APIClient.shared.uploadIdeaImage(ideaId: idea.id, image: image)
+            await refreshIdea(idea.id)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// 2026-07-22, web parity (#297) — video counterpart to uploadIdeaImage
+    /// above, for a picked mp4/mov/webm (see IdeaMediaSourceButton's
+    /// onVideoPicked). `fileURL` is the local temp copy MovieFile made from
+    /// the PhotosPicker selection; removed once the upload attempt finishes
+    /// either way, same as PostproductionListView/VideoPanelView's own
+    /// `defer { try? FileManager.default.removeItem(at: movie.url) }`.
+    func uploadIdeaVideo(_ idea: Idea, fileURL: URL, filename: String, contentType: String) async {
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        do {
+            _ = try await APIClient.shared.uploadIdeaImage(ideaId: idea.id, fileURL: fileURL, filename: filename, contentType: contentType)
             await refreshIdea(idea.id)
         } catch {
             errorMessage = error.localizedDescription
@@ -805,7 +829,13 @@ final class ShotListViewModel: ObservableObject {
         }
         do {
             try await APIClient.shared.deleteScene(scene.id)
-            pushUndo("Szene „\(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")“ gelöscht") { [weak self] in
+            // 2026-07-22 — translated (see AppLanguageStrings+Support.swift's
+            // shotListViewModel.* entries); "{name}" is a plain-text
+            // placeholder swapped in here rather than a templating system,
+            // per this pass's interpolation convention.
+            let sceneName = scene.name?.isEmpty == false ? scene.name! : AppLanguage.shared.t("shotListViewModel.unnamedScene")
+            let undoLabel = AppLanguage.shared.t("shotListViewModel.sceneDeletedUndoLabel").replacingOccurrences(of: "{name}", with: sceneName)
+            pushUndo(undoLabel) { [weak self] in
                 guard let self else { return }
                 guard let recreated = await self.createScene(
                     name: scene.name ?? "",

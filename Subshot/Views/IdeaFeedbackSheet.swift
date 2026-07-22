@@ -14,6 +14,7 @@ import SwiftUI
 /// assignee/todo avatars elsewhere in this app).
 struct IdeaFeedbackSheet: View {
     let idea: Idea
+    @ObservedObject private var language = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var feedback: [IdeaFeedback] = []
@@ -46,7 +47,7 @@ struct IdeaFeedbackSheet: View {
                 } else if let errorMessage {
                     ContentUnavailableView(errorMessage, systemImage: "exclamationmark.triangle")
                 } else if feedback.isEmpty {
-                    ContentUnavailableView("Noch kein Feedback", systemImage: "bubble.left")
+                    ContentUnavailableView(language.t("ideaFeedbackSheet.emptyState"), systemImage: "bubble.left")
                 } else {
                     List {
                         ForEach(rounds, id: \.round) { group in
@@ -76,7 +77,7 @@ struct IdeaFeedbackSheet: View {
                                 } label: {
                                     VStack(alignment: .leading, spacing: 4) {
                                         HStack {
-                                            Text(String(format: "%02d Feedback", group.round))
+                                            Text(String(format: "%02d ", group.round) + language.t("ideaFeedbackSheet.feedbackWord"))
                                                 .font(.subheadline.weight(.semibold))
                                                 .foregroundStyle(.primary)
                                             Spacer()
@@ -88,7 +89,7 @@ struct IdeaFeedbackSheet: View {
                                                 .font(.caption)
                                                 .foregroundStyle(.secondary)
                                             if openCount > 0 {
-                                                Text("\(openCount) offen")
+                                                Text(language.t("ideaFeedbackSheet.openCount").replacingOccurrences(of: "{count}", with: "\(openCount)"))
                                                     .font(.caption.weight(.semibold))
                                                     .foregroundStyle(.orange)
                                             }
@@ -102,11 +103,11 @@ struct IdeaFeedbackSheet: View {
                     }
                 }
             }
-            .navigationTitle("Feedback zu „\(idea.title)“")
+            .navigationTitle(language.t("ideaFeedbackSheet.navTitle").replacingOccurrences(of: "{title}", with: idea.title))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Fertig") { dismiss() }
+                    Button(language.t("ideaFeedbackSheet.doneButton")) { dismiss() }
                 }
             }
         }

@@ -9,6 +9,7 @@ struct ImageSourceButton<Label: View>: View {
     var onImagePicked: (UIImage) -> Void
     @ViewBuilder var label: () -> Label
 
+    @ObservedObject private var language = AppLanguage.shared
     @State private var showingDialog = false
     @State private var showingLibrary = false
     @State private var showingCamera = false
@@ -21,21 +22,21 @@ struct ImageSourceButton<Label: View>: View {
             label()
         }
         .buttonStyle(.plain)
-        .confirmationDialog("Bild hinzufügen", isPresented: $showingDialog, titleVisibility: .hidden) {
+        .confirmationDialog(language.t("imageSourceButton.title"), isPresented: $showingDialog, titleVisibility: .hidden) {
             // The half-second delay isn't decorative — setting showingLibrary/
             // showingCamera in the same runloop tick as the confirmationDialog
             // dismissing itself is a known SwiftUI race (the new presentation
             // request gets silently dropped while the dialog is still
             // mid-dismissal). This was "Bild hinzufügen tut nichts" in practice.
             if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                Button("Foto aufnehmen") {
+                Button(language.t("imageSourceButton.takePhoto")) {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showingCamera = true }
                 }
             }
-            Button("Aus Mediathek wählen") {
+            Button(language.t("imageSourceButton.chooseFromLibrary")) {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showingLibrary = true }
             }
-            Button("Abbrechen", role: .cancel) {}
+            Button(language.t("imageSourceButton.cancel"), role: .cancel) {}
         }
         // .photosPicker(isPresented:) is the programmatic-trigger form —
         // PhotosPicker itself only works as a self-presenting control, which
@@ -61,7 +62,11 @@ struct ImageSourceButton<Label: View>: View {
 
 /// Thin UIImagePickerController wrapper — SwiftUI has no native camera-capture
 /// view; this is still Apple's own recommended way to get one.
-private struct CameraCapture: UIViewControllerRepresentable {
+/// Not `private` (2026-07-22, #297) — IdeaMediaSourceButton (idea images/
+/// videos) reuses this exact same photo-capture step for its own "Foto
+/// aufnehmen" option, same reasoning as MovieFile in VideoPanelView.swift
+/// being made internal for reuse rather than duplicated.
+struct CameraCapture: UIViewControllerRepresentable {
     var onCapture: (UIImage?) -> Void
 
     func makeUIViewController(context: Context) -> UIImagePickerController {

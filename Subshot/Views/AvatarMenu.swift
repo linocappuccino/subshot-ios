@@ -45,6 +45,14 @@ struct AvatarMenu: View {
                 Label(language.t("avatar.language"), systemImage: "globe")
             }
 
+            // 2026-07-22 — mirrors the web app's avatar-menu UserButton.Link
+            // to the same URL (see AppShell.tsx); these pages live on the
+            // backend (subshot.ch), no reason to duplicate their content
+            // natively here.
+            Link(destination: URL(string: "https://subshot.ch/impressum")!) {
+                Label(language.t("avatar.legal"), systemImage: "doc.text")
+            }
+
             Button(role: .destructive) {
                 Task { await signOut() }
             } label: {

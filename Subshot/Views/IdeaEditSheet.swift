@@ -10,6 +10,7 @@ import SwiftUI
 struct IdeaEditSheet: View {
     let idea: Idea
     @ObservedObject var viewModel: ShotListViewModel
+    @ObservedObject private var language = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var title: String
@@ -68,7 +69,7 @@ struct IdeaEditSheet: View {
             try? await Task.sleep(nanoseconds: 600_000_000)
             guard !Task.isCancelled else { return }
             let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-            await viewModel.patchIdea(idea, title: cleanTitle.isEmpty ? "Neue Idee" : cleanTitle, text: slashController.text)
+            await viewModel.patchIdea(idea, title: cleanTitle.isEmpty ? language.t("ideaGrid.newIdeaTitle") : cleanTitle, text: slashController.text)
         }
     }
 
@@ -77,6 +78,18 @@ struct IdeaEditSheet: View {
         uploading = true
         Task {
             await viewModel.uploadIdeaImage(idea, image: image)
+            uploading = false
+        }
+    }
+
+    /// 2026-07-22, web parity (#297) — video counterpart to
+    /// handleImagePicked above, wired to IdeaMediaSourceButton's
+    /// onVideoPicked below.
+    private func handleVideoPicked(_ fileURL: URL, _ contentType: String) {
+        guard liveIdea.images.count < 10 else { return }
+        uploading = true
+        Task {
+            await viewModel.uploadIdeaVideo(idea, fileURL: fileURL, filename: fileURL.lastPathComponent, contentType: contentType)
             uploading = false
         }
     }
@@ -120,7 +133,7 @@ struct IdeaEditSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Bilder (\(liveIdea.images.count)/10)") {
+                Section(language.t("ideaEditSheet.imagesSectionTitle").replacingOccurrences(of: "{count}", with: "\(liveIdea.images.count)")) {
                     if !liveIdea.images.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
@@ -132,26 +145,26 @@ struct IdeaEditSheet: View {
                         }
                     }
                     if !approved {
-                        ImageSourceButton(onImagePicked: handleImagePicked) {
-                            Label(uploading ? "Lädt hoch…" : "Bild hinzufügen", systemImage: "photo.badge.plus")
+                        IdeaMediaSourceButton(onImagePicked: handleImagePicked, onVideoPicked: handleVideoPicked) {
+                            Label(uploading ? language.t("ideaEditSheet.uploadingImage") : language.t("ideaEditSheet.addImageButton"), systemImage: "photo.badge.plus")
                         }
                         .disabled(uploading || liveIdea.images.count >= 10)
                         Button {
                             showGeneratePopup = true
                         } label: {
-                            Label("AI Bild generieren", systemImage: "sparkles")
+                            Label(language.t("ideaEditSheet.generatePopupTitle"), systemImage: "sparkles")
                         }
                         .disabled(liveIdea.images.count >= 10)
                     }
                 }
 
-                Section("Titel") {
-                    TextField("Titel", text: $title)
+                Section(language.t("ideaEditSheet.titleSectionLabel")) {
+                    TextField(language.t("ideaEditSheet.titleSectionLabel"), text: $title)
                         .disabled(approved)
                         .onChange(of: title) { _, _ in scheduleAutosave() }
                 }
 
-                Section("Beschreibung") {
+                Section(language.t("ideaEditSheet.descriptionSectionLabel")) {
                     // 2026-07-21, #277 — was a plain multi-line TextField;
                     // now a custom UITextView wrapper with the same
                     // slash-command state machine as web's RichTextEditor
@@ -159,30 +172,34 @@ struct IdeaEditSheet: View {
                     // wired via slashController.onTextChanged below.
                     IdeaSlashTextEditor(controller: slashController, isEditable: !approved)
                         .frame(minHeight: 180, maxHeight: 320)
-                    Text("Tippe „/“ für Szene/Zwischenschritt (oder für Titel/Dialog innerhalb einer Szene). Zweimal Enter schliesst den Block ab.")
+                    Text(language.t("ideaEditSheet.slashHint"))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
 
-                Section("Feedback") {
+                Section(language.t("ideaEditSheet.feedbackSectionLabel")) {
                     Button {
                         showFeedback = true
                     } label: {
                         HStack {
-                            Text(liveIdea.feedbackCount == 0 ? "Noch kein Feedback" : "\(liveIdea.feedbackCount) Feedback")
+                            Text(liveIdea.feedbackCount == 0
+                                ? language.t("ideaEditSheet.noFeedbackYet")
+                                : language.t("ideaEditSheet.feedbackCountLabel")
+                                    .replacingOccurrences(of: "{count}", with: "\(liveIdea.feedbackCount)")
+                                    .replacingOccurrences(of: "{suffix}", with: liveIdea.feedbackCount == 1 ? "" : "s"))
                                 .foregroundStyle(.primary)
                             Spacer()
                             Image(systemName: "chevron.right").foregroundStyle(.secondary)
                         }
                     }
                     if approved {
-                        Label("Angenommen", systemImage: "checkmark.circle.fill")
+                        Label(language.t("ideaEditSheet.approvedBadge"), systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
                         // 2026-07-17, Lino: "es braucht ein Datum und
                         // Uhrzeit WANN das Video abgenommen wurde".
                         if let approvedAt = liveIdea.approvedAt {
                             HStack {
-                                Text("Angenommen am")
+                                Text(language.t("ideaEditSheet.approvedOnLabel"))
                                     .foregroundStyle(.secondary)
                                 Spacer()
                                 Text(Self.dateFormatter.string(from: approvedAt))
@@ -205,7 +222,7 @@ struct IdeaEditSheet: View {
                                     Image(systemName: "checkmark")
                                         .transition(.scale.combined(with: .opacity))
                                 }
-                                Text(approving ? "Wird angenommen…" : "Abgenommen")
+                                Text(approving ? language.t("ideaEditSheet.approving") : language.t("ideaEditSheet.approveButton"))
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 6)
@@ -224,17 +241,17 @@ struct IdeaEditSheet: View {
                         Button(role: .destructive) {
                             Task { await performDelete() }
                         } label: {
-                            Label("Idee löschen", systemImage: "trash")
+                            Label(language.t("ideaEditSheet.deleteIdeaButton"), systemImage: "trash")
                         }
                         .disabled(deleting)
                     }
                 }
             }
-            .navigationTitle(title.isEmpty ? "Idee" : title)
+            .navigationTitle(title.isEmpty ? language.t("ideaEditSheet.navTitleFallback") : title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Fertig") { dismiss() }
+                    Button(language.t("ideaEditSheet.doneButton")) { dismiss() }
                 }
             }
             .sheet(isPresented: $showFeedback) {
@@ -251,8 +268,14 @@ struct IdeaEditSheet: View {
             // slashController.cancelSlash() via the isPresented setter,
             // same as tapping "Abbrechen" — matches web's Escape behavior
             // of just closing the menu, the already-typed "/" stays put.
+            // 2026-07-22 — option.label/option.icon are the marker text
+            // itself (IdeaSlashOption.markerLine embeds them verbatim, must
+            // match the backend's regex constants exactly, see
+            // IdeaSlashTextEditor.swift's top-of-file doc comment) —
+            // deliberately left untranslated, same reasoning as web's
+            // RichTextEditor slash-menu marker labels.
             .confirmationDialog(
-                "Einfügen",
+                language.t("ideaEditSheet.insertDialogTitle"),
                 isPresented: Binding(
                     get: { slashController.pendingSlashOptions != nil },
                     set: { if !$0 { slashController.cancelSlash() } }
@@ -264,7 +287,7 @@ struct IdeaEditSheet: View {
                         slashController.confirm(option)
                     }
                 }
-                Button("Abbrechen", role: .cancel) { slashController.cancelSlash() }
+                Button(language.t("ideaEditSheet.cancelButton"), role: .cancel) { slashController.cancelSlash() }
             }
         }
         .fullScreenCover(item: $enlargedImage) { image in
@@ -274,15 +297,15 @@ struct IdeaEditSheet: View {
             slashController.onTextChanged = { scheduleAutosave() }
         }
         .preferredColorScheme(.dark)
-        .alert("Keine Credits mehr", isPresented: $showInsufficientCreditsAlert) {
-            Button("Später", role: .cancel) {}
-            Button("Credits kaufen") {
+        .alert(language.t("ideaEditSheet.noCreditsTitle"), isPresented: $showInsufficientCreditsAlert) {
+            Button(language.t("ideaEditSheet.later"), role: .cancel) {}
+            Button(language.t("ideaEditSheet.buyCredits")) {
                 if let url = URL(string: "https://app.subshot.ch/credits") {
                     UIApplication.shared.open(url)
                 }
             }
         } message: {
-            Text("Du hast keine AI Credits mehr übrig, um ein Bild zu generieren. Lade Credits über die Web-Seite nach.")
+            Text(language.t("ideaEditSheet.noCreditsMessage"))
         }
     }
 
@@ -295,13 +318,25 @@ struct IdeaEditSheet: View {
                     .background(Color(.systemGray5))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
             } else if let url = image.imageUrl {
-                AsyncShotThumbnail(path: url, size: 80)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    // 2026-07-21, #278 — tap to enlarge; the delete "x"
-                    // button below sits in its own small corner Button, so
-                    // it keeps intercepting taps in ITS bounds first, this
-                    // gesture only ever fires for taps on the photo itself.
-                    .onTapGesture { enlargedImage = image }
+                // 2026-07-22, web parity (#297) — video/GIF branch mirrors
+                // IdeaImageReorderGrid.tsx's ReorderTile (this horizontal
+                // strip is iOS's closest equivalent render site: there's no
+                // separate drag-to-reorder grid ported yet, see this
+                // sheet's own top-of-file doc comment).
+                if isVideoUrl(url) {
+                    AsyncIdeaVideoThumbnail(path: url)
+                        .frame(width: 80, height: 80)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .onTapGesture { enlargedImage = image }
+                } else {
+                    AsyncShotThumbnail(path: url, size: 80)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        // 2026-07-21, #278 — tap to enlarge; the delete "x"
+                        // button below sits in its own small corner Button, so
+                        // it keeps intercepting taps in ITS bounds first, this
+                        // gesture only ever fires for taps on the photo itself.
+                        .onTapGesture { enlargedImage = image }
+                }
             }
             if !approved && image.status != .generating {
                 Button {
@@ -320,22 +355,22 @@ struct IdeaEditSheet: View {
     private var ideaGeneratePopup: some View {
         NavigationStack {
             Form {
-                Section("Bildprompt") {
-                    TextField("Beschreibe das Bild...", text: $prompt, axis: .vertical)
+                Section(language.t("ideaEditSheet.imagePromptSectionLabel")) {
+                    TextField(language.t("ideaEditSheet.imagePromptPlaceholder"), text: $prompt, axis: .vertical)
                         .lineLimit(3...8)
-                    Text("Leer lassen, um die Beschreibung der Idee selbst zu verwenden.")
+                    Text(language.t("ideaEditSheet.imagePromptHint"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Section {
-                    Picker("Format", selection: $aspectRatio) {
+                    Picker(language.t("ideaEditSheet.formatLabel"), selection: $aspectRatio) {
                         Text("16:9").tag("16:9")
                         Text("9:16").tag("9:16")
                     }
                     .pickerStyle(.segmented)
-                    Picker("Stil", selection: $style) {
-                        Text("Realistisch").tag("realistic")
-                        Text("Sketch").tag("sketch")
+                    Picker(language.t("ideaEditSheet.styleLabel"), selection: $style) {
+                        Text(language.t("ideaEditSheet.styleRealistic")).tag("realistic")
+                        Text(language.t("ideaEditSheet.styleSketch")).tag("sketch")
                     }
                     .pickerStyle(.segmented)
                 }
@@ -343,18 +378,18 @@ struct IdeaEditSheet: View {
                     Task { await generate() }
                 } label: {
                     if generating {
-                        HStack { ProgressView(); Text("Erstellt…") }
+                        HStack { ProgressView(); Text(language.t("ideaEditSheet.generatingLabel")) }
                     } else {
-                        Label("Bild generieren", systemImage: "sparkles")
+                        Label(language.t("ideaEditSheet.generateImageButton"), systemImage: "sparkles")
                     }
                 }
                 .disabled(generating)
             }
-            .navigationTitle("AI Bild generieren")
+            .navigationTitle(language.t("ideaEditSheet.generatePopupTitle"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Abbrechen") { showGeneratePopup = false }
+                    Button(language.t("ideaEditSheet.cancelButton")) { showGeneratePopup = false }
                 }
             }
         }
@@ -374,9 +409,20 @@ private struct IdeaImageFullscreenView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let url = image.imageUrl {
-                AsyncShotThumbnail(path: url, size: nil)
-                    .aspectRatio(contentMode: .fit)
-                    .padding()
+                // 2026-07-22, web parity (#297) — video/GIF branch mirrors
+                // IdeaFloatingCard.tsx's main image-area isVideoUrl check
+                // (this fullscreen viewer is iOS's closest equivalent render
+                // site: there's no inline big-slideshow card ported, this
+                // sheet only ever shows one image large at a time, on tap).
+                if isVideoUrl(url) {
+                    AsyncIdeaVideoThumbnail(path: url)
+                        .aspectRatio(contentMode: .fit)
+                        .padding()
+                } else {
+                    AsyncShotThumbnail(path: url, size: nil)
+                        .aspectRatio(contentMode: .fit)
+                        .padding()
+                }
             }
         }
         .contentShape(Rectangle())

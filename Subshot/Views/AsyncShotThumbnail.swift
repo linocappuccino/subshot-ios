@@ -1,12 +1,13 @@
 import SwiftUI
 
-/// Shot images require the same Bearer-token auth as every other API call
-/// (see GET /shots/:id/image/:filename on the backend — any project member
-/// can view, but it's not a public URL) — SwiftUI's built-in `AsyncImage(url:)`
-/// can't attach custom headers, so this fetches the bytes manually via
-/// APIClient's authorized-request machinery and decodes them into a UIImage.
+/// 2026-07-22 (#248): `path` is now a presigned R2 URL (see APIClient.
+/// fetchImage's doc comment) fetched directly, no auth header needed. Still
+/// goes through APIClient rather than a plain `AsyncImage(url:)` for the
+/// shared NSCache below (see its own doc comment) and the retry-on-failure
+/// behavior — not for auth anymore, that part of the original reasoning is
+/// now historical.
 struct AsyncShotThumbnail: View {
-    let path: String  // e.g. "/shots/{id}/image/{filename}" (already relative to baseURL)
+    let path: String  // presigned R2 URL (Scene/Shot/Folder/IdeaImage.imageUrl)
 
     /// Square frame side length. Pass `nil` for the big storyboard-card look,
     /// where the caller applies its own (non-square) `.frame(...)` instead.

@@ -88,6 +88,7 @@ struct ProjectListView: View {
     let folderName: String?
 
     @StateObject private var viewModel: ProjectListViewModel
+    @ObservedObject private var language = AppLanguage.shared
     @Environment(Clerk.self) private var clerk
     @State private var creatingProject = false
     @State private var creatingFolder = false
@@ -186,9 +187,9 @@ struct ProjectListView: View {
                 ProgressView()
             } else if viewModel.projects.isEmpty && viewModel.folders.isEmpty {
                 ContentUnavailableView(
-                    "Noch keine Projekte",
+                    language.t("projectListView.emptyTitle"),
                     systemImage: "film.stack",
-                    description: Text("Tippe auf + um dein erstes Projekt anzulegen.")
+                    description: Text(language.t("projectListView.emptyDescription"))
                 )
             }
         }
@@ -211,12 +212,12 @@ struct ProjectListView: View {
                 Button {
                     creatingProject = true
                 } label: {
-                    Label("Neues Projekt", systemImage: "film.stack")
+                    Label(language.t("projectListView.newProject"), systemImage: "film.stack")
                 }
                 Button {
                     creatingFolder = true
                 } label: {
-                    Label("Neuer Ordner", systemImage: "folder.badge.plus")
+                    Label(language.t("projectListView.newFolder"), systemImage: "folder.badge.plus")
                 }
             } label: {
                 fabIcon
@@ -324,7 +325,7 @@ struct ProjectListView: View {
         NavigationLink(value: project) {
             tileBody(
                 title: project.name,
-                subtitle: "Wird gelöscht in \(project.daysUntilDeletion) Tagen",
+                subtitle: language.t("common.deletingInDays").replacingOccurrences(of: "{days}", with: "\(project.daysUntilDeletion)"),
                 color: project.color,
                 thumbnailPath: project.thumbnailUrl,
                 fallbackIcon: "film.stack",
@@ -350,12 +351,12 @@ struct ProjectListView: View {
         // full-tile auto-snapshot.
         .contextMenu {
             Button { editingProject = project } label: {
-                Label("Bearbeiten", systemImage: "pencil")
+                Label(language.t("common.edit"), systemImage: "pencil")
             }
             Button(role: .destructive) {
                 Task { await viewModel.delete(project) }
             } label: {
-                Label("Löschen", systemImage: "trash")
+                Label(language.t("common.delete"), systemImage: "trash")
             }
         } preview: {
             // 2026-07-21, #274 (Lino: long-press correctly opens the menu,
@@ -382,7 +383,7 @@ struct ProjectListView: View {
             // the preview's size match the source view's real size.
             tileBody(
                 title: project.name,
-                subtitle: "Wird gelöscht in \(project.daysUntilDeletion) Tagen",
+                subtitle: language.t("common.deletingInDays").replacingOccurrences(of: "{days}", with: "\(project.daysUntilDeletion)"),
                 color: project.color,
                 thumbnailPath: project.thumbnailUrl,
                 fallbackIcon: "film.stack",
@@ -452,12 +453,12 @@ struct ProjectListView: View {
         // above — see its doc comment.
         .contextMenu {
             Button { editingFolder = folder } label: {
-                Label("Bearbeiten", systemImage: "pencil")
+                Label(language.t("common.edit"), systemImage: "pencil")
             }
             Button(role: .destructive) {
                 Task { await viewModel.deleteFolder(folder) }
             } label: {
-                Label("Löschen", systemImage: "trash")
+                Label(language.t("common.delete"), systemImage: "trash")
             }
         } preview: {
             // 2026-07-21, #274 — same fix as projectTile's preview above,

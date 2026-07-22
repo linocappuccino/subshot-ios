@@ -41,26 +41,67 @@ final class AppLanguage: ObservableObject {
         current = language
     }
 
-    private var strings: [String: [String: String]] {
+    /// 2026-07-22 — the actual key/value pairs live in separate
+    /// `AppLanguageStrings+*.swift` extension files (one per feature area:
+    /// Core, ProjectCore, Ideas, Postproduction, Support, ...), each just a
+    /// single `static let xStrings: [String: [String: String]]` constant.
+    /// Listed explicitly here (NOT auto-registered via some global-
+    /// initializer side-effect trick — too fragile to trust without a
+    /// compiler to verify timing/dead-code-elimination behavior) so adding
+    /// a new domain file means adding ONE line here, deliberately the only
+    /// shared edit point, done once after every domain file already exists
+    /// rather than something concurrent translation work has to coordinate
+    /// on. Split out specifically so a big translation pass touching many
+    /// features at once (mirroring the web app's ~330-key dictionary in
+    /// lib/i18n.tsx) can be done as several independent files instead of
+    /// everyone editing one giant literal — concurrent edits to a single
+    /// huge dictionary caused real, repeated merge conflicts on the web
+    /// side of this exact effort earlier the same day (see
+    /// project_subshot_i18n_language_switcher memory).
+    private static var allTables: [[String: [String: String]]] {
         [
-            "de": [
-                "avatar.language": "Sprache",
-                "avatar.signOut": "Abmelden",
-                "language.dialogTitle": "Sprache ändern",
-                "language.german": "Deutsch",
-                "language.english": "English",
-            ],
-            "en": [
-                "avatar.language": "Language",
-                "avatar.signOut": "Sign out",
-                "language.dialogTitle": "Change language",
-                "language.german": "Deutsch",
-                "language.english": "English",
-            ],
+            coreStrings,
+            projectCoreStrings,
+            ideasStrings,
+            supportStrings,
         ]
+    }
+
+    private var strings: [String: [String: String]] {
+        var merged: [String: [String: String]] = ["de": [:], "en": [:]]
+        for table in Self.allTables {
+            for (lang, dict) in table {
+                merged[lang, default: [:]].merge(dict) { _, new in new }
+            }
+        }
+        return merged
     }
 
     func t(_ key: String) -> String {
         strings[current]?[key] ?? strings["de"]?[key] ?? key
     }
+}
+
+extension AppLanguage {
+    /// Base keys (avatar menu, language dialog itself) — kept here rather
+    /// than in its own extension file since this is the smallest, most
+    /// foundational set and predates the AppLanguageStrings+*.swift split.
+    static let coreStrings: [String: [String: String]] = [
+        "de": [
+            "avatar.language": "Sprache",
+            "avatar.legal": "Impressum & Datenschutz",
+            "avatar.signOut": "Abmelden",
+            "language.dialogTitle": "Sprache ändern",
+            "language.german": "Deutsch",
+            "language.english": "English",
+        ],
+        "en": [
+            "avatar.language": "Language",
+            "avatar.legal": "Legal & Privacy",
+            "avatar.signOut": "Sign out",
+            "language.dialogTitle": "Change language",
+            "language.german": "Deutsch",
+            "language.english": "English",
+        ],
+    ]
 }

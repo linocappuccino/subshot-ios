@@ -7,6 +7,7 @@ import SwiftUI
 struct NotificationsSheet: View {
     @ObservedObject var viewModel: ProjectListViewModel
     var onSelectProject: (Project) -> Void
+    @ObservedObject private var language = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -14,7 +15,7 @@ struct NotificationsSheet: View {
             List {
                 if viewModel.notifications.isEmpty {
                     ContentUnavailableView(
-                        "Keine neuen Benachrichtigungen",
+                        language.t("notificationsSheet.empty"),
                         systemImage: "bell.slash"
                     )
                     .listRowSeparator(.hidden)
@@ -40,15 +41,15 @@ struct NotificationsSheet: View {
                     }
                 }
             }
-            .navigationTitle("Benachrichtigungen")
+            .navigationTitle(language.t("notificationsSheet.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Fertig") { dismiss() }
+                    Button(language.t("notificationsSheet.doneButton")) { dismiss() }
                 }
                 if !viewModel.notifications.isEmpty {
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Alle gelesen") {
+                        Button(language.t("notificationsSheet.markAllRead")) {
                             Task { await viewModel.markAllNotificationsRead() }
                         }
                     }

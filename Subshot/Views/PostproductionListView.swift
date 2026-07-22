@@ -21,6 +21,7 @@ import AVFoundation
 /// field (PATCH /videos/{id}).
 struct PostproductionListView: View {
     @ObservedObject var viewModel: ShotListViewModel
+    @ObservedObject private var language = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
     /// See ShotListView.body's `switch activeWorkflowSection` (#283) —
     /// true when this is the inline third workflow page rather than the
@@ -72,6 +73,22 @@ struct PostproductionListView: View {
     /// than assuming title is as broadly editable as status.
     private var canEditTitleAndDeadline: Bool { myRole == "projektleiter" || myRole == "owner" }
 
+    /// Local translation of PostproductionStatus.label — deliberately NOT
+    /// changing Models.swift's own `.label` computed property (shared with
+    /// other, un-migrated call sites like ShotListView's own status text;
+    /// see AppLanguageStrings+Ideas.swift's top-of-file doc comment). Key
+    /// names match web's own shared `postproductionStatus.*` keys exactly
+    /// (see lib/i18n.tsx) — reused verbatim per this ticket's instructions.
+    static func statusLabel(_ status: PostproductionStatus, language: AppLanguage) -> String {
+        switch status {
+        case .wartend: return language.t("postproductionStatus.wartend")
+        case .inBearbeitung: return language.t("postproductionStatus.inBearbeitung")
+        case .wartetAufFeedback: return language.t("postproductionStatus.wartetAufFeedback")
+        case .abgeschlossen: return language.t("postproductionStatus.abgeschlossen")
+        case .abgelehnt: return language.t("postproductionStatus.abgelehnt")
+        }
+    }
+
     private struct Tile: Identifiable {
         let id: String
         let section: SceneSection
@@ -94,9 +111,9 @@ struct PostproductionListView: View {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if sections.isEmpty {
             ContentUnavailableView(
-                "Noch keine Abschnitte",
+                language.t("postproductionListView.emptyTitle"),
                 systemImage: "checklist",
-                description: Text("Auf der Szenenübersicht: Abschnitt gedrückt halten → „Ab in die Postproduction“, sobald alle Szenen im Kasten sind — oder unten rechts direkt ein unabhängiges Video hochladen.")
+                description: Text(language.t("postproductionListView.emptyDescription"))
             )
         } else {
             ScrollView {
@@ -145,11 +162,11 @@ struct PostproductionListView: View {
             } else {
                 NavigationStack {
                     gridContent
-                        .navigationTitle("Postproduction")
+                        .navigationTitle(language.t("postproductionListView.navTitle"))
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) {
-                                Button("Fertig") { dismiss() }
+                                Button(language.t("postproductionListView.doneButton")) { dismiss() }
                             }
                             if canEditStatus {
                                 ToolbarItem(placement: .confirmationAction) {
@@ -192,13 +209,13 @@ struct PostproductionListView: View {
             pickerItem = nil
             Task { await uploadPickedVideo(newItem, target: target) }
         }
-        .alert("Titel", isPresented: Binding(
+        .alert(language.t("postproductionListView.titleAlertTitle"), isPresented: Binding(
             get: { editingTitleVideo != nil },
             set: { if !$0 { editingTitleVideo = nil } }
         )) {
-            TextField("Titel", text: $editingTitleText)
-            Button("Abbrechen", role: .cancel) {}
-            Button("Speichern") {
+            TextField(language.t("postproductionListView.titleAlertTitle"), text: $editingTitleText)
+            Button(language.t("postproductionListView.cancelButton"), role: .cancel) {}
+            Button(language.t("postproductionListView.saveButton")) {
                 if let video = editingTitleVideo {
                     Task { await renameVideo(video, title: editingTitleText) }
                 }
@@ -223,7 +240,7 @@ struct PostproductionListView: View {
                 updateVersion(updated, videoId: item.video.id)
             }
         }
-        .alert("Fehler", isPresented: Binding(
+        .alert(language.t("postproductionListView.errorAlertTitle"), isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) {
@@ -301,7 +318,7 @@ struct PostproductionListView: View {
                 sectionVideos[target.sectionId, default: []].append(video)
             }
             guard let movie = try await item.loadTransferable(type: MovieFile.self) else {
-                errorMessage = "Video konnte nicht geladen werden."
+                errorMessage = language.t("postproductionListView.videoLoadFailed")
                 return
             }
             defer { try? FileManager.default.removeItem(at: movie.url) }
@@ -309,7 +326,7 @@ struct PostproductionListView: View {
             let contentType = movie.url.pathExtension.lowercased() == "mov" ? "video/quicktime" : "video/mp4"
             let versionDraft = try await APIClient.shared.createVideoVersion(videoId: video.id, filename: filename, contentType: contentType)
             guard let uploadURLString = versionDraft.playbackUrl, let uploadURL = URL(string: uploadURLString) else {
-                errorMessage = "Keine Upload-URL erhalten."
+                errorMessage = language.t("postproductionListView.noUploadUrl")
                 return
             }
             try await APIClient.shared.uploadVideoFile(to: uploadURL, fileURL: movie.url, contentType: contentType)
@@ -359,6 +376,7 @@ private struct PlayingPostproductionVideo: Identifiable {
 /// tile under it, see this file's own top-of-file doc comment) — only
 /// the title belongs to this specific Video.
 private struct PostproductionVideoTile: View {
+    @ObservedObject private var language = AppLanguage.shared
     let section: SceneSection
     let video: Video?
     let canEditStatus: Bool
@@ -409,29 +427,29 @@ private struct PostproductionVideoTile: View {
                     }
                 }
                 if canEditStatus {
-                    Picker("Status", selection: Binding(
+                    Picker(language.t("postproductionListView.statusLabel"), selection: Binding(
                         get: { section.postproductionStatus ?? .wartend },
                         set: { onStatusChange($0) }
                     )) {
                         ForEach(PostproductionStatus.allCases, id: \.self) { status in
-                            Text(status.label).tag(status)
+                            Text(PostproductionListView.statusLabel(status, language: language)).tag(status)
                         }
                     }
                     .pickerStyle(.menu)
                     .font(.caption)
                 } else {
-                    Text((section.postproductionStatus ?? .wartend).label)
+                    Text(PostproductionListView.statusLabel(section.postproductionStatus ?? .wartend, language: language))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 if canEditTitleAndDeadline {
-                    Toggle("Deadline", isOn: Binding(
+                    Toggle(language.t("postproductionListView.deadlineLabel"), isOn: Binding(
                         get: { section.postproductionDeadline != nil },
                         set: { onDeadlineChange($0 ? deadline : nil) }
                     ))
                     .font(.caption)
                     if section.postproductionDeadline != nil {
-                        DatePicker("Datum", selection: Binding(
+                        DatePicker(language.t("postproductionListView.dateLabel"), selection: Binding(
                             get: { deadline },
                             set: { deadline = $0; onDeadlineChange($0) }
                         ), displayedComponents: .date)
@@ -439,7 +457,7 @@ private struct PostproductionVideoTile: View {
                         .font(.caption)
                     }
                 } else if let deadline = section.postproductionDeadline {
-                    Text("Deadline: \(deadline.formatted(date: .abbreviated, time: .omitted))")
+                    Text(language.t("postproductionListView.deadlineWithValue").replacingOccurrences(of: "{date}", with: deadline.formatted(date: .abbreviated, time: .omitted)))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -447,7 +465,7 @@ private struct PostproductionVideoTile: View {
                 Text(section.name)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
-                Text("Noch kein Video")
+                Text(language.t("postproductionListView.noVideoYet"))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -479,7 +497,7 @@ private struct PostproductionVideoTile: View {
                 VStack(spacing: 4) {
                     Image(systemName: video == nil ? "plus.circle" : "arrow.up.circle")
                         .font(.system(size: 28))
-                    Text(video == nil ? "Video hochladen" : "Wird verarbeitet…")
+                    Text(video == nil ? language.t("postproductionListView.uploadVideo") : language.t("postproductionListView.processing"))
                         .font(.caption2)
                 }
                 .foregroundStyle(.secondary)

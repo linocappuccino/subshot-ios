@@ -6,6 +6,7 @@ import SwiftUI
 struct SectionEditSheet: View {
     let existing: SceneSection?
     var onSave: (String) async -> Void
+    @ObservedObject private var language = AppLanguage.shared
 
     @State private var name: String
     @Environment(\.dismiss) private var dismiss
@@ -20,19 +21,19 @@ struct SectionEditSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Name") {
-                    TextField("z.B. Tag 1, Interieur, Nachtdreh", text: $name)
+                Section(language.t("sectionEditSheet.nameSection")) {
+                    TextField(language.t("sectionEditSheet.namePlaceholder"), text: $name)
                         .focused($focused)
                 }
             }
-            .navigationTitle(existing == nil ? "Neuer Abschnitt" : "Abschnitt umbenennen")
+            .navigationTitle(existing == nil ? language.t("sectionEditSheet.newTitle") : language.t("sectionEditSheet.renameTitle"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Abbrechen") { dismiss() }
+                    Button(language.t("common.cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Fertig") {
+                    Button(language.t("common.done")) {
                         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !trimmed.isEmpty else { return }
                         Task {

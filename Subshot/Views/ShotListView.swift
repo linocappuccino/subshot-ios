@@ -108,6 +108,7 @@ private struct ExpandableToolbar<Content: View>: View {
 
 struct ShotListView: View {
     @StateObject private var viewModel: ShotListViewModel
+    @ObservedObject private var language = AppLanguage.shared
     let projectName: String
     /// .regular (iPad, full-width Split View) gets the adjustable-column
     /// grid (see ipadColumnCount + columnCountPopover); .compact iPad
@@ -545,8 +546,8 @@ struct ShotListView: View {
                         // Tabellenansicht exportiert werden soll" — was a
                         // single tap straight to the (card-only) export before.
                         Menu {
-                            Button("Kachelansicht") { Task { await exportPdf(view: "cards") } }
-                            Button("Tabellenansicht") { Task { await exportPdf(view: "table") } }
+                            Button(language.t("shotListView.pdfCardView")) { Task { await exportPdf(view: "cards") } }
+                            Button(language.t("shotListView.pdfTableView")) { Task { await exportPdf(view: "table") } }
                         } label: {
                             Image(systemName: "square.and.arrow.up")
                         }
@@ -642,36 +643,36 @@ struct ShotListView: View {
         // those failures were completely silent — "the image just doesn't
         // show up" with no error at all. This is the single alert for all of
         // them.
-        .alert("Fehler", isPresented: Binding(
+        .alert(language.t("common.error"), isPresented: Binding(
             get: { viewModel.errorMessage != nil },
             set: { if !$0 { viewModel.errorMessage = nil } }
         )) {
-            Button("OK", role: .cancel) {}
+            Button(language.t("common.ok"), role: .cancel) {}
         } message: {
             Text(viewModel.errorMessage ?? "")
         }
-        .alert("Good Take", isPresented: Binding(
+        .alert(language.t("shotListView.goodTakeAlertTitle"), isPresented: Binding(
             get: { editingGoodTakeScene != nil },
             set: { if !$0 { editingGoodTakeScene = nil } }
         )) {
-            TextField("Dateiname, z.B. A003_C012", text: $goodTakeText)
-            Button("Abbrechen", role: .cancel) {}
-            Button("Speichern") {
+            TextField(language.t("shotListView.goodTakePlaceholder"), text: $goodTakeText)
+            Button(language.t("common.cancel"), role: .cancel) {}
+            Button(language.t("common.save")) {
                 if let scene = editingGoodTakeScene {
                     let trimmed = goodTakeText.trimmingCharacters(in: .whitespacesAndNewlines)
                     Task { await viewModel.setSceneGoodTake(scene, filename: trimmed.isEmpty ? nil : trimmed) }
                 }
             }
         } message: {
-            Text("Dateiname der guten Aufnahme für diese Szene.")
+            Text(language.t("shotListView.goodTakeAlertMessage"))
         }
-        .alert("Dialogzeile bearbeiten", isPresented: Binding(
+        .alert(language.t("shotListView.editDialogueLineTitle"), isPresented: Binding(
             get: { editingDialogue != nil },
             set: { if !$0 { editingDialogue = nil } }
         )) {
-            TextField("Dialogtext", text: $editingDialogueText)
-            Button("Abbrechen", role: .cancel) {}
-            Button("Speichern") {
+            TextField(language.t("shotListView.dialogueTextPlaceholder"), text: $editingDialogueText)
+            Button(language.t("common.cancel"), role: .cancel) {}
+            Button(language.t("common.save")) {
                 if let (dialogue, scene) = editingDialogue {
                     Task { await viewModel.updateDialogue(dialogue, in: scene, text: editingDialogueText) }
                 }
@@ -684,17 +685,17 @@ struct ShotListView: View {
         // spec (2026-07-13): "Möchtest du die nachfolgenden Szenen
         // zeitlich angleichen? Bestätigen / nicht angleichen."
         .confirmationDialog(
-            "Möchtest du die nachfolgenden Szenen zeitlich angleichen?",
+            language.t("shotListView.timeCascadeTitle"),
             isPresented: Binding(
                 get: { viewModel.pendingTimeCascade != nil },
                 set: { if !$0 { viewModel.pendingTimeCascade = nil } }
             ),
             titleVisibility: .visible
         ) {
-            Button("Bestätigen") {
+            Button(language.t("common.confirm")) {
                 Task { await viewModel.applyTimeCascade() }
             }
-            Button("Nicht angleichen", role: .cancel) {
+            Button(language.t("shotListView.timeCascadeDecline"), role: .cancel) {
                 viewModel.pendingTimeCascade = nil
             }
         }
@@ -704,13 +705,13 @@ struct ShotListView: View {
         // navigates straight to the Postproduction page (same
         // goToWorkflowSection this screen's edge-swipe already uses, see
         // its own doc comment).
-        .alert("Alles im Kasten?", isPresented: $viewModel.showAllTimedScenesDoneConfirmation) {
-            Button("Abbrechen", role: .cancel) {}
-            Button("Alles im Kasten") {
+        .alert(language.t("shotListView.allDoneTitle"), isPresented: $viewModel.showAllTimedScenesDoneConfirmation) {
+            Button(language.t("common.cancel"), role: .cancel) {}
+            Button(language.t("shotListView.allDoneConfirm")) {
                 goToWorkflowSection(.postproduction)
             }
         } message: {
-            Text("Alle Shots wirklich im Kasten, hast du auch wirklich keine Aussage oder Szene vergessen?")
+            Text(language.t("shotListView.allDoneMessage"))
         }
         // All 5 of these (Abschnitt/Szene-löschen alerts, Szene/Abschnitt/
         // Delete-confirmation alerts for Abschnitt/Szene — used to be inline
@@ -737,7 +738,7 @@ struct ShotListView: View {
                         return existing
                     } else {
                         return await viewModel.createScene(
-                            name: name.isEmpty ? "Unbenannte Szene" : name, color: color,
+                            name: name.isEmpty ? language.t("scene.unnamed") : name, color: color,
                             description: description.isEmpty ? nil : description,
                             dialogue: dialogue.isEmpty ? nil : dialogue,
                             scheduledAt: scheduledAt,
@@ -848,7 +849,7 @@ struct ShotListView: View {
     /// grid is fixed-width.
     private var columnCountPopover: some View {
         VStack(spacing: 12) {
-            Text("\(ipadColumnCount) Spalten")
+            Text(language.t("shotListView.columnsCount").replacingOccurrences(of: "{count}", with: "\(ipadColumnCount)"))
                 .font(.headline)
             Slider(value: $ipadColumnCountRaw, in: 1...4, step: 1)
                 .frame(width: 220)
@@ -863,18 +864,18 @@ struct ShotListView: View {
                 creatingIntermediateStep = false
                 editingScene = .some(nil)
             } label: {
-                Label("Neue Szene", systemImage: "film")
+                Label(language.t("shotListView.newScene"), systemImage: "film")
             }
             Button {
                 creatingIntermediateStep = true
                 editingScene = .some(nil)
             } label: {
-                Label("Zwischenschritt", systemImage: "arrow.triangle.branch")
+                Label(language.t("shotListView.newIntermediateStep"), systemImage: "arrow.triangle.branch")
             }
             Button {
                 editingSection = .some(nil)
             } label: {
-                Label("Neuer Abschnitt", systemImage: "folder.badge.plus")
+                Label(language.t("shotListView.newSection"), systemImage: "folder.badge.plus")
             }
             Button {
                 // NEVER auto-creates a Section (2026-07-11 fix — used to
@@ -887,7 +888,7 @@ struct ShotListView: View {
                 // is open, same as Neue Szene/Zwischenschritt below.
                 Task { await viewModel.createProjectInfoScene(sectionId: targetSectionIdForNewScene) }
             } label: {
-                Label("Info", systemImage: "info.circle")
+                Label(language.t("shotListView.newInfo"), systemImage: "info.circle")
             }
         } label: {
             Image(systemName: "plus")
@@ -1171,19 +1172,19 @@ struct ShotListView: View {
                     Button {
                         editingSection = .some(section)
                     } label: {
-                        Label("Umbenennen", systemImage: "pencil")
+                        Label(language.t("shotListView.rename"), systemImage: "pencil")
                     }
                     if viewModel.modulePostproduction && !section.inPostproduction {
                         Button {
                             sectionToSendToPostproduction = section
                         } label: {
-                            Label("Ab in die Postproduction", systemImage: "arrow.forward.circle")
+                            Label(language.t("shotListView.sendToPostproduction"), systemImage: "arrow.forward.circle")
                         }
                     }
                     Button(role: .destructive) {
                         sectionToDelete = section
                     } label: {
-                        Label("Löschen", systemImage: "trash")
+                        Label(language.t("common.delete"), systemImage: "trash")
                     }
                     Divider()
                     sortMenuItems(sectionId: section.id)
@@ -1250,22 +1251,22 @@ struct ShotListView: View {
         Button {
             Task { await viewModel.sortScenes(sectionId: sectionId, by: .number) }
         } label: {
-            Label("Nach Identifikationsnummer sortieren", systemImage: "number")
+            Label(language.t("shotListView.sortByNumber"), systemImage: "number")
         }
         Button {
             Task { await viewModel.sortScenes(sectionId: sectionId, by: .time) }
         } label: {
-            Label("Nach Zeit sortieren", systemImage: "clock")
+            Label(language.t("shotListView.sortByTime"), systemImage: "clock")
         }
         Button {
             Task { await viewModel.sortScenes(sectionId: sectionId, by: .location) }
         } label: {
-            Label("Nach Ort sortieren", systemImage: "mappin.and.ellipse")
+            Label(language.t("shotListView.sortByLocation"), systemImage: "mappin.and.ellipse")
         }
         Button {
             Task { await viewModel.sortScenes(sectionId: sectionId, by: .priority) }
         } label: {
-            Label("Nach Priorität sortieren", systemImage: "exclamationmark.circle")
+            Label(language.t("shotListView.sortByPriority"), systemImage: "exclamationmark.circle")
         }
     }
 
@@ -1319,7 +1320,7 @@ struct ShotListView: View {
                 .foregroundStyle(.secondary)
                 .rotationEffect(.degrees(isSectionCollapsed(section) ? 0 : 90))
                 .frame(width: 30, height: 30)
-            Text(section?.name ?? "Ohne Abschnitt")
+            Text(section?.name ?? language.t("shotListView.noSection"))
                 .font(.headline.weight(.semibold))
                 .foregroundStyle(.secondary)
             if let section {
@@ -1538,10 +1539,10 @@ struct ShotListView: View {
             Button(role: .destructive) {
                 sceneToDelete = scene
             } label: {
-                Label("Löschen", systemImage: "trash")
+                Label(language.t("common.delete"), systemImage: "trash")
             }
         } preview: {
-            Label("Info", systemImage: "info.circle.fill")
+            Label(language.t("shotListView.newInfo"), systemImage: "info.circle.fill")
                 .font(.subheadline.weight(.semibold))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
@@ -1549,7 +1550,7 @@ struct ShotListView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .draggable("scene:\(scene.id)") {
-            Label("Info", systemImage: "info.circle.fill")
+            Label(language.t("shotListView.newInfo"), systemImage: "info.circle.fill")
                 .font(.subheadline.weight(.semibold))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
@@ -1605,7 +1606,7 @@ struct ShotListView: View {
                                 }
                             } label: {
                                 HStack {
-                                    Text("Einstellungen")
+                                    Text(language.t("shotListView.shotsHeader"))
                                         .font(.subheadline.weight(.semibold))
                                         .foregroundStyle(.secondary)
                                     Text("\(shots.count)")
@@ -1692,7 +1693,7 @@ struct ShotListView: View {
                     .padding(.vertical, 5)
                     .background(sceneAccentColor(scene.priority))
                     .clipShape(Capsule())
-                Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
+                Text(scene.name?.isEmpty == false ? scene.name! : language.t("scene.unnamed"))
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                 Spacer(minLength: 8)
@@ -1707,7 +1708,7 @@ struct ShotListView: View {
                 }
             }
             if let scheduledAt = scene.scheduledAt {
-                Text("Start: \(scheduledAt.formatted(date: .abbreviated, time: .shortened))")
+                Text(language.t("shotListView.startAt").replacingOccurrences(of: "{date}", with: scheduledAt.formatted(date: .abbreviated, time: .shortened)))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -1720,22 +1721,22 @@ struct ShotListView: View {
             Button {
                 editingScene = .some(scene)
             } label: {
-                Label("Bearbeiten", systemImage: "pencil")
+                Label(language.t("common.edit"), systemImage: "pencil")
             }
             Button {
                 Task { await viewModel.setSceneCompleted(scene, completed: false) }
             } label: {
-                Label("Nicht mehr im Kasten", systemImage: "arrow.uturn.backward")
+                Label(language.t("shotListView.markNotDone"), systemImage: "arrow.uturn.backward")
             }
             Button {
                 Task { await viewModel.duplicateScene(scene) }
             } label: {
-                Label("Duplizieren", systemImage: "plus.square.on.square")
+                Label(language.t("common.duplicate"), systemImage: "plus.square.on.square")
             }
             Button(role: .destructive) {
                 sceneToDelete = scene
             } label: {
-                Label("Löschen", systemImage: "trash")
+                Label(language.t("common.delete"), systemImage: "trash")
             }
         }
     }
@@ -1804,7 +1805,7 @@ struct ShotListView: View {
                         }
                     } label: {
                         HStack {
-                            Label("Beschreibung", systemImage: "text.alignleft")
+                            Label(language.t("shotListView.descriptionHeader"), systemImage: "text.alignleft")
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.secondary)
                             Spacer()
@@ -1855,7 +1856,7 @@ struct ShotListView: View {
                         }
                     } label: {
                         HStack {
-                            Label("Dialog", systemImage: "quote.bubble")
+                            Label(language.t("shotListView.dialogHeader"), systemImage: "quote.bubble")
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.secondary)
                             Text("\(scene.dialogues.count)")
@@ -1875,7 +1876,7 @@ struct ShotListView: View {
                             dialogueRow(dialogue: dialogue, scene: scene, colorIndex: index)
                         }
                         if columnLayout && scene.dialogues.count > 2 {
-                            Text("+\(scene.dialogues.count - 2) weitere")
+                            Text(language.t("shotListView.moreCount").replacingOccurrences(of: "{count}", with: "\(scene.dialogues.count - 2)"))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -1945,24 +1946,24 @@ struct ShotListView: View {
             Button {
                 editingScene = .some(scene)
             } label: {
-                Label("Bearbeiten", systemImage: "pencil")
+                Label(language.t("common.edit"), systemImage: "pencil")
             }
             if scene.completed {
                 Button {
                     Task { await viewModel.setSceneCompleted(scene, completed: false) }
                 } label: {
-                    Label("Nicht mehr im Kasten", systemImage: "arrow.uturn.backward")
+                    Label(language.t("shotListView.markNotDone"), systemImage: "arrow.uturn.backward")
                 }
             }
             Button {
                 Task { await viewModel.duplicateScene(scene) }
             } label: {
-                Label("Duplizieren", systemImage: "plus.square.on.square")
+                Label(language.t("common.duplicate"), systemImage: "plus.square.on.square")
             }
             Button(role: .destructive) {
                 sceneToDelete = scene
             } label: {
-                Label("Löschen", systemImage: "trash")
+                Label(language.t("common.delete"), systemImage: "trash")
             }
         }, preview: {
             sceneContextMenuPreview(scene: scene)
@@ -2045,7 +2046,7 @@ struct ShotListView: View {
                             .foregroundStyle(sceneAccentColor(scene.priority))
                     }
                 }
-                Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
+                Text(scene.name?.isEmpty == false ? scene.name! : language.t("scene.unnamed"))
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(2)
                 SceneTimerInfo(scene: scene, stacked: true)
@@ -2086,17 +2087,17 @@ struct ShotListView: View {
                 Button {
                     editingScene = .some(scene)
                 } label: {
-                    Label("Bearbeiten", systemImage: "pencil")
+                    Label(language.t("common.edit"), systemImage: "pencil")
                 }
                 Button {
                     Task { await viewModel.duplicateScene(scene) }
                 } label: {
-                    Label("Duplizieren", systemImage: "plus.square.on.square")
+                    Label(language.t("common.duplicate"), systemImage: "plus.square.on.square")
                 }
                 Button(role: .destructive) {
                     sceneToDelete = scene
                 } label: {
-                    Label("Löschen", systemImage: "trash")
+                    Label(language.t("common.delete"), systemImage: "trash")
                 }
             } preview: {
                 sceneContextMenuPreview(scene: scene)
@@ -2153,7 +2154,7 @@ struct ShotListView: View {
                 .padding(.vertical, 3)
                 .background(sceneAccentColor(scene.priority))
                 .clipShape(Capsule())
-            Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
+            Text(scene.name?.isEmpty == false ? scene.name! : language.t("scene.unnamed"))
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
         }
@@ -2179,7 +2180,7 @@ struct ShotListView: View {
                 .padding(.vertical, 5)
                 .background(sceneAccentColor(scene.priority))
                 .clipShape(Capsule())
-            Text(scene.name?.isEmpty == false ? scene.name! : "Unbenannte Szene")
+            Text(scene.name?.isEmpty == false ? scene.name! : language.t("scene.unnamed"))
                 .font(.title3.weight(.semibold))
                 .lineLimit(2)
             Spacer(minLength: 8)
@@ -2249,7 +2250,7 @@ struct ShotListView: View {
         Button {
             Task { await viewModel.setSceneCompleted(scene, completed: !scene.completed) }
         } label: {
-            Label("Im Kasten", systemImage: scene.completed ? "checkmark.seal.fill" : "checkmark.seal")
+            Label(language.t("shotListView.inTheCan"), systemImage: scene.completed ? "checkmark.seal.fill" : "checkmark.seal")
                 .font(.subheadline.weight(.semibold))
                 .labelStyle(.titleAndIcon)
                 .padding(.horizontal, 14)
@@ -2274,7 +2275,7 @@ struct ShotListView: View {
             goodTakeText = scene.goodTakeFilename ?? ""
             editingGoodTakeScene = scene
         } label: {
-            Label(hasGoodTake ? scene.goodTakeFilename! : "Good Take", systemImage: "sdcard.fill")
+            Label(hasGoodTake ? scene.goodTakeFilename! : language.t("scene.goodTake"), systemImage: "sdcard.fill")
                 .font(.subheadline.weight(.semibold))
                 .labelStyle(.titleAndIcon)
                 .lineLimit(1)
@@ -2298,12 +2299,12 @@ struct ShotListView: View {
                 Button {
                     Task { await viewModel.toggleDone(shot) }
                 } label: {
-                    Label(shot.status == .done ? "Als offen markieren" : "Erledigt", systemImage: "checkmark.circle")
+                    Label(shot.status == .done ? language.t("shotListView.markAsOpen") : language.t("shotListView.markAsDone"), systemImage: "checkmark.circle")
                 }
                 Button(role: .destructive) {
                     viewModel.deleteWithUndo(shot)
                 } label: {
-                    Label("Löschen", systemImage: "trash")
+                    Label(language.t("common.delete"), systemImage: "trash")
                 }
             }
             .draggable(shot.id)
@@ -2356,23 +2357,23 @@ struct ShotListView: View {
                 editingDialogueText = dialogue.text
                 editingDialogue = (dialogue, scene)
             } label: {
-                Label("Bearbeiten", systemImage: "pencil")
+                Label(language.t("common.edit"), systemImage: "pencil")
             }
             Button(role: .destructive) {
                 Task { await viewModel.deleteDialogue(dialogue, in: scene) }
             } label: {
-                Label("Löschen", systemImage: "trash")
+                Label(language.t("common.delete"), systemImage: "trash")
             }
         }
     }
 
     private func undoToast(for shot: Shot) -> some View {
         HStack {
-            Text("„\(shot.description ?? "Einstellung")" + "“ gelöscht")
+            Text(language.t("shotListView.deletedToast").replacingOccurrences(of: "{name}", with: shot.description ?? language.t("shotListView.shotFallbackName")))
                 .font(.footnote)
                 .lineLimit(1)
             Spacer()
-            Button("Rückgängig") { viewModel.undoDelete() }
+            Button(language.t("common.undo")) { viewModel.undoDelete() }
                 .font(.footnote.bold())
         }
         .padding(.horizontal, 16)
@@ -2418,6 +2419,7 @@ struct ShotListView: View {
 /// "really delete?" confirmation lives here.
 private struct TileActionDialogs: ViewModifier {
     @ObservedObject var viewModel: ShotListViewModel
+    @ObservedObject private var language = AppLanguage.shared
     @Binding var sectionToDelete: SceneSection?
     @Binding var sceneToDelete: Scene?
     /// #11 Schritt 5 — "Alle Szenen im Kasten? Ab in die Postproduction?"
@@ -2425,12 +2427,12 @@ private struct TileActionDialogs: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .alert("Abschnitt löschen?", isPresented: Binding(
+            .alert(language.t("shotListView.deleteSectionTitle"), isPresented: Binding(
                 get: { sectionToDelete != nil },
                 set: { if !$0 { sectionToDelete = nil } }
             )) {
-                Button("Abbrechen", role: .cancel) {}
-                Button("Löschen", role: .destructive) {
+                Button(language.t("common.cancel"), role: .cancel) {}
+                Button(language.t("common.delete"), role: .destructive) {
                     if let section = sectionToDelete {
                         Task { await viewModel.deleteSection(section) }
                     }
@@ -2438,12 +2440,12 @@ private struct TileActionDialogs: ViewModifier {
             } message: {
                 Text(sectionDeleteMessage)
             }
-            .alert("Szene löschen?", isPresented: Binding(
+            .alert(language.t("shotListView.deleteSceneTitle"), isPresented: Binding(
                 get: { sceneToDelete != nil },
                 set: { if !$0 { sceneToDelete = nil } }
             )) {
-                Button("Abbrechen", role: .cancel) {}
-                Button("Löschen", role: .destructive) {
+                Button(language.t("common.cancel"), role: .cancel) {}
+                Button(language.t("common.delete"), role: .destructive) {
                     if let scene = sceneToDelete {
                         Task { await viewModel.deleteScene(scene) }
                     }
@@ -2451,18 +2453,18 @@ private struct TileActionDialogs: ViewModifier {
             } message: {
                 Text(sceneDeleteMessage)
             }
-            .alert("Alle Szenen im Kasten?", isPresented: Binding(
+            .alert(language.t("shotListView.allSceneDoneTitle"), isPresented: Binding(
                 get: { sectionToSendToPostproduction != nil },
                 set: { if !$0 { sectionToSendToPostproduction = nil } }
             )) {
-                Button("Abbrechen", role: .cancel) {}
-                Button("Ab in die Postproduction") {
+                Button(language.t("common.cancel"), role: .cancel) {}
+                Button(language.t("shotListView.sendToPostproduction")) {
                     if let section = sectionToSendToPostproduction {
                         Task { await viewModel.sendSectionToPostproduction(section) }
                     }
                 }
             } message: {
-                Text("\"\(sectionToSendToPostproduction?.name ?? "")\" wandert in die Postproduction-Tracking-Liste.")
+                Text(language.t("shotListView.sendToPostproductionMessage").replacingOccurrences(of: "{name}", with: sectionToSendToPostproduction?.name ?? ""))
             }
     }
 
@@ -2474,12 +2476,12 @@ private struct TileActionDialogs: ViewModifier {
     // ON DELETE CASCADE).
     private var sectionDeleteMessage: String {
         guard let section = sectionToDelete else { return "" }
-        return "\"\(section.name)\" wird gelöscht. Jegliche Szenen oder Kacheln im Abschnitt werden auch gelöscht."
+        return language.t("shotListView.deleteSectionMessage").replacingOccurrences(of: "{name}", with: section.name)
     }
 
     private var sceneDeleteMessage: String {
-        let name = sceneToDelete?.name?.isEmpty == false ? sceneToDelete!.name! : "Unbenannte Szene"
-        return "\"\(name)\" wird endgültig gelöscht, inklusive aller Einstellungen darin."
+        let name = sceneToDelete?.name?.isEmpty == false ? sceneToDelete!.name! : language.t("scene.unnamed")
+        return language.t("shotListView.deleteSceneMessage").replacingOccurrences(of: "{name}", with: name)
     }
 }
 
@@ -2506,6 +2508,7 @@ struct ActivityView: UIViewControllerRepresentable {
 /// set (glance at the frame, not the text).
 private struct ShotCard: View {
     let shot: Shot
+    @ObservedObject private var language = AppLanguage.shared
     /// Lets the checkmark itself toggle done/open directly — previously the
     /// only way to do that was the long-press context menu ("Erledigt"),
     /// with this same checkmark shown purely as a static status icon right
@@ -2554,7 +2557,7 @@ private struct ShotCard: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(shot.description?.isEmpty == false ? shot.description! : "Ohne Beschreibung")
+                Text(shot.description?.isEmpty == false ? shot.description! : language.t("shot.noDescription"))
                     .font(.subheadline.weight(.medium))
                     .strikethrough(shot.status == .done)
                     .foregroundStyle(shot.status == .done ? .secondary : .primary)
@@ -2572,7 +2575,7 @@ private struct ShotCard: View {
                 .foregroundStyle(.secondary)
 
                 if let goodTake = shot.goodTakeFilename, !goodTake.isEmpty {
-                    Label("Good Take: \(goodTake)", systemImage: "sdcard.fill")
+                    Label(language.t("shotListView.goodTakeWithFilename").replacingOccurrences(of: "{filename}", with: goodTake), systemImage: "sdcard.fill")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.green)
                         .lineLimit(1)
@@ -2604,6 +2607,7 @@ private struct ShotCard: View {
 ///   not here.
 private struct SceneTimerInfo: View {
     let scene: Scene
+    @ObservedObject private var language = AppLanguage.shared
     /// True only in the 2-column compact tile overview (see
     /// sceneCompactTile) — date and planned/remaining time side-by-side in
     /// an HStack was reported as wrong specifically there ("NICHTS ist IN
@@ -2620,7 +2624,7 @@ private struct SceneTimerInfo: View {
                 let end = scene.durationMinutes.map { scheduledAt.addingTimeInterval(TimeInterval($0) * 60) }
                 let isRunning = end.map { now >= scheduledAt && now < $0 } ?? false
 
-                let startLabel = Label("Start: \(scheduledAt.formatted(date: .abbreviated, time: .shortened))", systemImage: "calendar")
+                let startLabel = Label(language.t("shotListView.startAt").replacingOccurrences(of: "{date}", with: scheduledAt.formatted(date: .abbreviated, time: .shortened)), systemImage: "calendar")
                     .font(.caption)
                     .foregroundStyle(isRunning ? Color.yellow : Color(.secondaryLabel))
                     .animation(.easeInOut(duration: 0.4), value: isRunning)
@@ -2628,8 +2632,11 @@ private struct SceneTimerInfo: View {
                 let durationView: AnyView = {
                     guard let end else { return AnyView(EmptyView()) }
                     if now < scheduledAt {
+                        let durationText = scene.durationMinutes.map {
+                            language.t("shotListView.minutesShort").replacingOccurrences(of: "{count}", with: "\($0)")
+                        } ?? ""
                         return AnyView(
-                            Label("Geplante Zeit: \(scene.durationMinutes.map { "\($0) Min." } ?? "")", systemImage: "timer")
+                            Label(language.t("shotListView.plannedTime").replacingOccurrences(of: "{duration}", with: durationText), systemImage: "timer")
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(.secondary)
                         )
@@ -2637,7 +2644,7 @@ private struct SceneTimerInfo: View {
                         return AnyView(LiveSceneBadge(remaining: end.timeIntervalSince(now)))
                     } else {
                         return AnyView(
-                            Label("Drehzeit abgelaufen", systemImage: "timer")
+                            Label(language.t("shotListView.shootTimeElapsed"), systemImage: "timer")
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(.secondary)
                         )
@@ -2671,6 +2678,7 @@ private struct SceneTimerInfo: View {
 /// ScenePulseOnElapse).
 private struct LiveSceneBadge: View {
     let remaining: TimeInterval
+    @ObservedObject private var language = AppLanguage.shared
     @State private var pulse = false
 
     private var isUrgent: Bool { remaining > 0 && remaining <= 300 }
@@ -2682,7 +2690,7 @@ private struct LiveSceneBadge: View {
                 .frame(width: 6, height: 6)
                 .scaleEffect(pulse ? 1.5 : 0.85)
                 .opacity(pulse ? 0.35 : 1.0)
-            Text("Verbleibend: \(Self.format(remaining))")
+            Text(language.t("shotListView.remainingTime").replacingOccurrences(of: "{time}", with: Self.format(remaining)))
                 .font(.caption2.weight(.bold))
         }
         .foregroundStyle(.white)
@@ -2824,6 +2832,7 @@ private struct SceneTimerRunningGlow: ViewModifier {
 struct SceneAssigneeSheet: View {
     let scene: Scene
     @ObservedObject var viewModel: ShotListViewModel
+    @ObservedObject private var language = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
 
     /// Looks the scene up fresh from viewModel.scenes on every render
@@ -2857,11 +2866,11 @@ struct SceneAssigneeSheet: View {
                     }
                 }
             }
-            .navigationTitle("Zuständig")
+            .navigationTitle(language.t("common.assignee"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Fertig") { dismiss() }
+                    Button(language.t("common.done")) { dismiss() }
                 }
             }
         }

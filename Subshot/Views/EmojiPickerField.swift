@@ -38,9 +38,17 @@ private struct RawEmojiEntry: Decodable {
     let group: Int
 }
 
-private let groupLabels: [Int: String] = [
-    0: "Smileys & Emotionen", 1: "Menschen", 3: "Natur", 4: "Essen & Trinken",
-    5: "Reisen", 6: "Aktivität", 7: "Objekte", 8: "Symbole", 9: "Flaggen",
+// 2026-07-22 — values are now translation KEYS, not the German text itself
+// (see AppLanguageStrings+Support.swift's emojiPickerField.group* entries);
+// resolved via language.t(...) at render time in emojiCategories's `name`
+// lookup below, so switching language updates these headers live. Only the
+// picker's own chrome is translated this way — the emoji NAME/SEARCH data
+// underneath (allEmoji/rawEmoji, loaded from emojiData.json) stays the
+// German emojibase-data locale untouched, per this pass's instructions.
+private let groupLabelKeys: [Int: String] = [
+    0: "emojiPickerField.groupSmileys", 1: "emojiPickerField.groupPeople", 3: "emojiPickerField.groupNature",
+    4: "emojiPickerField.groupFood", 5: "emojiPickerField.groupTravel", 6: "emojiPickerField.groupActivity",
+    7: "emojiPickerField.groupObjects", 8: "emojiPickerField.groupSymbols", 9: "emojiPickerField.groupFlags",
 ]
 private let groupOrder = [0, 1, 3, 4, 5, 6, 7, 8, 9]
 
@@ -64,13 +72,16 @@ private let rawEmoji: [RawEmojiEntry] = {
 private let allEmoji: [EmojiEntry] = rawEmoji.map { EmojiEntry(emoji: $0.emoji, name: $0.name, tags: $0.tags) }
 private let byChar: [String: EmojiEntry] = Dictionary(uniqueKeysWithValues: allEmoji.map { ($0.emoji, $0) })
 
-private let emojiCategories: [(name: String, emojis: [EmojiEntry])] = {
-    var categories: [(name: String, emojis: [EmojiEntry])] = [
-        ("Film & Projekt", filmProjektEmojis.map { byChar[$0] ?? EmojiEntry(emoji: $0, name: $0, tags: []) }),
+// `nameKey` instead of a pre-resolved `name` string — same reasoning as
+// groupLabelKeys above, resolved via language.t(...) where this is
+// displayed rather than baked in at this array's one-time construction.
+private let emojiCategories: [(nameKey: String, emojis: [EmojiEntry])] = {
+    var categories: [(nameKey: String, emojis: [EmojiEntry])] = [
+        ("emojiPickerField.filmProject", filmProjektEmojis.map { byChar[$0] ?? EmojiEntry(emoji: $0, name: $0, tags: []) }),
     ]
     for group in groupOrder {
         let emojis = rawEmoji.filter { $0.group == group }.map { EmojiEntry(emoji: $0.emoji, name: $0.name, tags: $0.tags) }
-        categories.append((groupLabels[group] ?? "", emojis))
+        categories.append((groupLabelKeys[group] ?? "", emojis))
     }
     return categories
 }()
@@ -79,6 +90,7 @@ private let emojiCategories: [(name: String, emojis: [EmojiEntry])] = {
 /// "x" badge to clear it again — mirrors the web app's EmojiField.tsx.
 struct EmojiPickerField: View {
     @Binding var emoji: String
+    @ObservedObject private var language = AppLanguage.shared
     @State private var showingPicker = false
     @State private var query = ""
     private let size: CGFloat = 48
@@ -143,14 +155,14 @@ struct EmojiPickerField: View {
     /// height-starved the same way since it scrolls vertically instead.
     private var emojiPopover: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField("Suchen…", text: $query)
+            TextField(language.t("emojiPickerField.searchPlaceholder"), text: $query)
                 .textFieldStyle(.roundedBorder)
                 .autocorrectionDisabled()
 
             ScrollView(.vertical, showsIndicators: true) {
                 if let results = searchResults {
                     if results.isEmpty {
-                        Text("Keine Treffer")
+                        Text(language.t("emojiPickerField.noResults"))
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                             .frame(maxWidth: .infinity)
@@ -160,9 +172,9 @@ struct EmojiPickerField: View {
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 12) {
-                        ForEach(emojiCategories, id: \.name) { category in
+                        ForEach(emojiCategories, id: \.nameKey) { category in
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(category.name.uppercased())
+                                Text(language.t(category.nameKey).uppercased())
                                     .font(.caption2.weight(.semibold))
                                     .foregroundStyle(.tertiary)
                                 emojiGrid(category.emojis)

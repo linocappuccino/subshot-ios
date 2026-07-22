@@ -3,6 +3,7 @@ import SwiftUI
 struct ShotDetailSheet: View {
     @State var shot: Shot
     @ObservedObject var viewModel: ShotListViewModel
+    @ObservedObject private var language = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var description: String
@@ -91,7 +92,7 @@ struct ShotDetailSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Bild") {
+                Section(language.t("shotDetailSheet.imageSection")) {
                     ImageSourceButton(onImagePicked: { image in
                         Task { await handlePhotoPicked(image) }
                     }) {
@@ -110,7 +111,7 @@ struct ShotDetailSheet: View {
                                     .background(Color(.systemGray5))
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
                             }
-                            Text(shot.imageUrl == nil ? "Foto hinzufügen" : "Foto ändern")
+                            Text(shot.imageUrl == nil ? language.t("shotDetailSheet.addPhoto") : language.t("shotDetailSheet.changePhoto"))
                                 .foregroundStyle(.primary)
                         }
                     }
@@ -120,18 +121,18 @@ struct ShotDetailSheet: View {
                         Button(role: .destructive) {
                             Task { await removePhoto() }
                         } label: {
-                            Label("Foto entfernen", systemImage: "trash")
+                            Label(language.t("shotDetailSheet.removePhoto"), systemImage: "trash")
                         }
                     }
                 }
 
-                Section("Beschreibung") {
-                    TextField("z.B. Weitwinkel Establishing Shot", text: $description, axis: .vertical)
+                Section(language.t("shotDetailSheet.descriptionSection")) {
+                    TextField(language.t("shotDetailSheet.descriptionPlaceholder"), text: $description, axis: .vertical)
                         .lineLimit(3...6)
                         .onChange(of: description) { _, _ in scheduleAutosave() }
                 }
 
-                Section("Priorität") {
+                Section(language.t("shotDetailSheet.prioritySection")) {
                     // 2026-07-17 — same colored picker as SceneEditSheet
                     // (PrioritySegmentedControl, defined there), matching the
                     // web app's per-priority-color switch on both tiles.
@@ -142,61 +143,61 @@ struct ShotDetailSheet: View {
                 // For noting the keeper take's filename on set, once picture
                 // has called it — a plain free-text field, not tied to any
                 // file-naming convention.
-                Section("Good Take:") {
-                    TextField("Dateiname, z.B. A003_C012", text: $goodTake)
+                Section(language.t("shotDetailSheet.goodTakeSection")) {
+                    TextField(language.t("shotDetailSheet.goodTakePlaceholder"), text: $goodTake)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                         .onChange(of: goodTake) { _, _ in scheduleAutosave() }
                 }
 
-                Section("Kamera") {
+                Section(language.t("shotDetailSheet.cameraSection")) {
                     // Autocorrect/autocapitalization off on every technical
                     // field here (2026-07-14, Lino: "die typischen apple
                     // eingabe optionen") — same reasoning as Good Take above:
                     // values like "T2.8", "ProRes422", "50mm" are codes, not
                     // sentences, and iOS's default text behavior kept
                     // capitalizing/correcting them into nonsense.
-                    TextField("Kamera-ID (A, B, C…)", text: $cameraId)
+                    TextField(language.t("shotDetailSheet.cameraIdPlaceholder"), text: $cameraId)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                         .onChange(of: cameraId) { _, _ in scheduleAutosave() }
                     // Objektiv/F-Stop/ISO: picker over the real-world range
                     // instead of free text (2026-07-14) — Winkel removed
                     // entirely per the same request.
-                    Picker("Objektiv", selection: lensMMBinding) {
+                    Picker(language.t("shotDetailSheet.lensPicker"), selection: lensMMBinding) {
                         ForEach(Self.lensRange, id: \.self) { mm in
                             Text("\(mm)mm").tag(mm)
                         }
                     }
                     .onChange(of: lens) { _, _ in scheduleAutosave() }
-                    Picker("F-Stop", selection: fStopBinding) {
+                    Picker(language.t("shotDetailSheet.fstopPicker"), selection: fStopBinding) {
                         ForEach(Self.fStopRange, id: \.self) { value in
                             Text(String(format: "f/%.1f", value)).tag(value)
                         }
                     }
                     .onChange(of: fStop) { _, _ in scheduleAutosave() }
-                    Picker("Framerate", selection: $frameRate) {
-                        Text("Keine").tag("")
+                    Picker(language.t("shotDetailSheet.frameratePicker"), selection: $frameRate) {
+                        Text(language.t("common.none")).tag("")
                         ForEach(Self.frameRateOptions, id: \.self) { rate in
                             Text("\(rate) fps").tag(rate)
                         }
                     }
                     .onChange(of: frameRate) { _, _ in scheduleAutosave() }
-                    TextField("Shutterangle", text: $shutterAngle)
+                    TextField(language.t("shotDetailSheet.shutterAnglePlaceholder"), text: $shutterAngle)
                         .keyboardType(.decimalPad)
                         .onChange(of: shutterAngle) { _, _ in scheduleAutosave() }
-                    Picker("ISO", selection: isoBinding) {
+                    Picker(language.t("shotDetailSheet.isoPicker"), selection: isoBinding) {
                         ForEach(Self.isoRange, id: \.self) { value in
                             Text("\(value)").tag(value)
                         }
                     }
                     .onChange(of: iso) { _, _ in scheduleAutosave() }
-                    TextField("Codec", text: $codec)
+                    TextField(language.t("shotDetailSheet.codecPlaceholder"), text: $codec)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                         .onChange(of: codec) { _, _ in scheduleAutosave() }
-                    Picker("Aufnahme-Art", selection: $cameraSupport) {
-                        Text("Keine").tag(CameraSupport?.none)
+                    Picker(language.t("shotDetailSheet.cameraSupportPicker"), selection: $cameraSupport) {
+                        Text(language.t("common.none")).tag(CameraSupport?.none)
                         ForEach(CameraSupport.allCases) { support in
                             Text(support.label).tag(CameraSupport?.some(support))
                         }
@@ -204,14 +205,14 @@ struct ShotDetailSheet: View {
                     .onChange(of: cameraSupport) { _, _ in scheduleAutosave() }
                 }
             }
-            .navigationTitle("Einstellung bearbeiten")
+            .navigationTitle(language.t("shotDetailSheet.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Abbrechen") { dismiss() }
+                    Button(language.t("common.cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Fertig") { Task { await save() } }
+                    Button(language.t("common.done")) { Task { await save() } }
                         .disabled(isSaving)
                 }
             }

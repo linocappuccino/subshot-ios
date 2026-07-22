@@ -8,6 +8,7 @@ import SwiftUI
 /// shared ShotListViewModel like every other piece of this screen.
 struct IdeaGridView: View {
     @ObservedObject var viewModel: ShotListViewModel
+    @ObservedObject private var language = AppLanguage.shared
     @State private var editingIdea: Idea?
 
     /// 2026-07-21, #280 (Lino: "ganz falsch!") — this view is now the
@@ -29,6 +30,19 @@ struct IdeaGridView: View {
         }
     }
 
+    /// Local translation of IdeaStatusGroup.label — deliberately NOT
+    /// changing Models.swift's own `.label` computed property (shared with
+    /// other, un-migrated call sites like ShotListView's own status text;
+    /// see AppLanguageStrings+Ideas.swift's top-of-file doc comment).
+    private func groupLabel(_ group: IdeaStatusGroup) -> String {
+        switch group {
+        case .idea: return language.t("ideaGrid.groupIdea")
+        case .firstFeedback: return language.t("ideaGrid.groupFeedback1")
+        case .secondFeedback: return language.t("ideaGrid.groupFeedback2")
+        case .approved: return language.t("ideaGrid.groupApproved")
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             // 2026-07-21, #276 — the top-right "+ Idee" button that used to
@@ -38,17 +52,17 @@ struct IdeaGridView: View {
             // create-then-open round trip this button used to do (same
             // direct-create-and-open behavior, just triggered from a
             // single button instead of two).
-            Text("💡 Ideen" + (openIdeas.isEmpty ? "" : " (\(openIdeas.count))"))
+            Text(language.t("ideaGrid.heading") + (openIdeas.isEmpty ? "" : " (\(openIdeas.count))"))
                 .font(.headline)
 
             if openIdeas.isEmpty {
-                Text("Noch keine Ideen — leg die erste Idee für dieses Projekt an, bevor es ins Scripting geht.")
+                Text(language.t("ideaGrid.emptyState"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(groupedIdeas, id: \.group) { entry in
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(entry.group.label.uppercased() + " (\(entry.ideas.count))")
+                        Text(groupLabel(entry.group).uppercased() + " (\(entry.ideas.count))")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
@@ -73,6 +87,7 @@ struct IdeaGridView: View {
 /// IdeaTile.tsx.
 private struct IdeaTileView: View {
     let idea: Idea
+    @ObservedObject private var language = AppLanguage.shared
 
     private var cover: IdeaImage? {
         idea.readyImages.first
@@ -85,9 +100,19 @@ private struct IdeaTileView: View {
             ZStack {
                 Color(.systemGray6)
                 if let cover, let url = cover.imageUrl {
-                    AsyncShotThumbnail(path: url, size: nil, lockAspectRatio: false)
-                        .aspectRatio(16.0 / 9.0, contentMode: .fill)
-                        .clipped()
+                    // 2026-07-22, web parity (#297) — video/GIF branch
+                    // mirrors IdeaTile.tsx's cover-thumbnail isVideoUrl
+                    // check (the overview-grid tile, third of the three
+                    // render sites this feature needed on web).
+                    if isVideoUrl(url) {
+                        AsyncIdeaVideoThumbnail(path: url)
+                            .aspectRatio(16.0 / 9.0, contentMode: .fill)
+                            .clipped()
+                    } else {
+                        AsyncShotThumbnail(path: url, size: nil, lockAspectRatio: false)
+                            .aspectRatio(16.0 / 9.0, contentMode: .fill)
+                            .clipped()
+                    }
                 } else {
                     Image(systemName: "lightbulb")
                         .font(.system(size: 28))
@@ -112,7 +137,7 @@ private struct IdeaTileView: View {
                 // das Video abgenommen wurde" — auf der kleinen Kachel
                 // statt der Text-Vorschau, sobald angenommen.
                 if approved, let approvedAt = idea.approvedAt {
-                    Text("Angenommen am \(Self.dateFormatter.string(from: approvedAt))")
+                    Text(language.t("ideaTile.approvedOn").replacingOccurrences(of: "{date}", with: Self.dateFormatter.string(from: approvedAt)))
                         .font(.caption)
                         .foregroundStyle(.green.opacity(0.8))
                 } else if !idea.plainText.isEmpty {

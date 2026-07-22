@@ -20,6 +20,11 @@ import ClerkKitUI
 /// started ~0.9s after the entrance spring so the two don't visually
 /// fight each other right at launch (see idlePulse's own doc comment).
 struct LoginView: View {
+    // 2026-07-22 — this screen was still 100% hardcoded German (predates
+    // AvatarMenu's language.t() wiring); "Subshot" itself stays untranslated
+    // (brand wordmark), same as the web app's own logo not running through
+    // t() either.
+    @ObservedObject private var language = AppLanguage.shared
     @State private var authIsPresented = false
     /// Entrance — false at launch, springs true once in onAppear; every
     /// element's own .opacity/.offset/.scale keys off this.
@@ -55,7 +60,7 @@ struct LoginView: View {
                         .font(.custom("Anton-Regular", size: 46))
                         .textCase(.uppercase)
                         .shadow(color: Color.accentColor.opacity(idlePulse ? 0.55 : 0.25), radius: idlePulse ? 24 : 10)
-                    Text("Shots planen. Am Set abhaken.")
+                    Text(language.t("loginView.tagline"))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -67,7 +72,7 @@ struct LoginView: View {
                 Button {
                     authIsPresented = true
                 } label: {
-                    Text("Anmelden")
+                    Text(language.t("loginView.signInButton"))
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)

@@ -20,6 +20,7 @@ struct SceneEditSheet: View {
     static let hourSteps = Array(0...8)
 
     let existing: Scene?
+    @ObservedObject private var language = AppLanguage.shared
     /// "Zwischenschritt" — a lighter-weight scene variant for connective
     /// beats that don't need the full treatment: same core fields (name,
     /// color, description, date/duration, location) but no cover image,
@@ -288,7 +289,7 @@ struct SceneEditSheet: View {
                 // (see the toolbar button below), since uploading needs a
                 // scene id a new scene doesn't have yet.
                 if !isIntermediateStep {
-                    Section("Bild") {
+                    Section(language.t("sceneEditSheet.imageSection")) {
                         ImageSourceButton(onImagePicked: { uploadedImage = $0 }) {
                             HStack {
                                 if let uploadedImage {
@@ -305,7 +306,7 @@ struct SceneEditSheet: View {
                                         .background(Color(.systemGray5))
                                         .clipShape(RoundedRectangle(cornerRadius: 8))
                                 }
-                                Text((uploadedImage == nil && displayedImageUrl == nil) ? "Bild hinzufügen" : "Bild ändern")
+                                Text((uploadedImage == nil && displayedImageUrl == nil) ? language.t("common.addImage") : language.t("common.changeImage"))
                                     .foregroundStyle(.primary)
                             }
                         }
@@ -313,25 +314,25 @@ struct SceneEditSheet: View {
                             Button(role: .destructive) {
                                 Task { await removeImage() }
                             } label: {
-                                Label("Bild entfernen", systemImage: "trash")
+                                Label(language.t("common.removeImage"), systemImage: "trash")
                             }
                         }
                         // AI-Bild (2026-07-15) — nur für bereits gespeicherte
                         // Szenen mit einer Beschreibung, siehe
                         // generateAIImage's Doc-Kommentar.
                         if existing != nil {
-                            Text("KI-Bild aus Beschreibung erstellen")
+                            Text(language.t("sceneEditSheet.aiImageFromDescription"))
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
                                 .padding(.top, 4)
-                            Picker("Format", selection: $aspectRatio) {
+                            Picker(language.t("sceneEditSheet.formatPicker"), selection: $aspectRatio) {
                                 Text("16:9").tag("16:9")
                                 Text("9:16").tag("9:16")
                             }
                             .pickerStyle(.segmented)
-                            Picker("Stil", selection: $style) {
-                                Text("Realistisch").tag("realistic")
-                                Text("Sketch").tag("sketch")
+                            Picker(language.t("sceneEditSheet.stylePicker"), selection: $style) {
+                                Text(language.t("sceneEditSheet.styleRealistic")).tag("realistic")
+                                Text(language.t("sceneEditSheet.styleSketch")).tag("sketch")
                             }
                             .pickerStyle(.segmented)
                             Button {
@@ -340,10 +341,10 @@ struct SceneEditSheet: View {
                                 if generatingStyle != nil {
                                     HStack {
                                         ProgressView()
-                                        Text("Erstellt…")
+                                        Text(language.t("sceneEditSheet.generating"))
                                     }
                                 } else {
-                                    Label("Bild generieren", systemImage: "sparkles")
+                                    Label(language.t("sceneEditSheet.generateImage"), systemImage: "sparkles")
                                 }
                             }
                             .disabled(description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || generatingStyle != nil || liveImageGenerating)
@@ -387,7 +388,7 @@ struct SceneEditSheet: View {
                                 }
                             }
                             if description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                Text("Erst eine Beschreibung eintragen")
+                                Text(language.t("sceneEditSheet.needsDescriptionFirst"))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -395,12 +396,12 @@ struct SceneEditSheet: View {
                     }
                 }
 
-                Section("Name") {
-                    TextField("z.B. Küche, Aussen Tag 1", text: $name)
+                Section(language.t("sceneEditSheet.nameSection")) {
+                    TextField(language.t("sceneEditSheet.namePlaceholder"), text: $name)
                         .onChange(of: name) { _, _ in scheduleAutosave() }
                 }
                 if !isIntermediateStep {
-                    Section("Priorität") {
+                    Section(language.t("sceneEditSheet.prioritySection")) {
                         // 2026-07-17, Lino: the web app's priority switch
                         // already shows each option in its OWN color the
                         // instant you switch to it (see SegmentedControl.tsx
@@ -414,8 +415,8 @@ struct SceneEditSheet: View {
                             .onChange(of: priority) { _, _ in scheduleAutosave() }
                     }
                 }
-                Section("Beschreibung") {
-                    TextField("z.B. Handlung, Notizen", text: $description, axis: .vertical)
+                Section(language.t("sceneEditSheet.descriptionSection")) {
+                    TextField(language.t("sceneEditSheet.descriptionPlaceholder"), text: $description, axis: .vertical)
                         .lineLimit(3...6)
                         .onChange(of: description) { _, _ in scheduleAutosave() }
                 }
@@ -442,7 +443,7 @@ struct SceneEditSheet: View {
                             // multi-line field's onSubmit doesn't reliably
                             // fire on Return the way a single-line field's did.
                             HStack(alignment: .bottom, spacing: 8) {
-                                TextField("Neuer Dialog", text: $newDialogueText, axis: .vertical)
+                                TextField(language.t("sceneEditSheet.newDialoguePlaceholder"), text: $newDialogueText, axis: .vertical)
                                     .focused($newDialogueFocused)
                                     .lineLimit(1...6)
                                     // 2026-07-21, #281 — matches the web app's
@@ -472,7 +473,7 @@ struct SceneEditSheet: View {
                                 }
                                 .disabled(newDialogueText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             }
-                            Text("Zweimal Enter schliesst den Dialog ab.")
+                            Text(language.t("sceneEditSheet.doubleEnterHint"))
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         } else {
@@ -486,21 +487,21 @@ struct SceneEditSheet: View {
                                 // Just "Dialog", not "+ Dialog" - the SF
                                 // Symbol plus icon already is the "+", a
                                 // literal "+" in the text too doubled it up.
-                                Label("Dialog", systemImage: "plus")
+                                Label(language.t("sceneEditSheet.dialogueButtonLabel"), systemImage: "plus")
                             }
                         }
                     } header: {
-                        Label("Dialog", systemImage: "quote.bubble")
+                        Label(language.t("sceneEditSheet.dialogHeader"), systemImage: "quote.bubble")
                     }
                 }
 
-                Section("Datum & Uhrzeit") {
-                    Toggle("Drehtermin festlegen", isOn: $hasDate.animation(.spring(response: 0.35, dampingFraction: 0.86)))
+                Section(language.t("sceneEditSheet.dateSection")) {
+                    Toggle(language.t("sceneEditSheet.setShootDate"), isOn: $hasDate.animation(.spring(response: 0.35, dampingFraction: 0.86)))
                         .onChange(of: hasDate) { _, _ in scheduleAutosave() }
                     if hasDate {
                         // Default (.compact) style in a Form — tap the value to get the
                         // standard system calendar+wheel popover, same as Reminders/Calendar.
-                        DatePicker("Start", selection: $scheduledDate, displayedComponents: [.date, .hourAndMinute])
+                        DatePicker(language.t("sceneEditSheet.startLabel"), selection: $scheduledDate, displayedComponents: [.date, .hourAndMinute])
                             .onChange(of: scheduledDate) { _, _ in scheduleAutosave() }
                     }
                 }
@@ -508,17 +509,17 @@ struct SceneEditSheet: View {
                 if hasDate {
                     // Only meaningful once a start time exists — the live/countdown
                     // badge on the scene card is scheduledAt + durationMinutes.
-                    Section("Geschätzte Länge") {
+                    Section(language.t("sceneEditSheet.estimatedDurationSection")) {
                         HStack {
-                            Picker("Stunden", selection: $durationHours) {
+                            Picker(language.t("sceneEditSheet.hoursPicker"), selection: $durationHours) {
                                 ForEach(Self.hourSteps, id: \.self) { h in
-                                    Text("\(h) Std.").tag(h)
+                                    Text(language.t("sceneEditSheet.hoursShort").replacingOccurrences(of: "{count}", with: "\(h)")).tag(h)
                                 }
                             }
                             .pickerStyle(.wheel)
-                            Picker("Minuten", selection: $durationMins) {
+                            Picker(language.t("sceneEditSheet.minutesPicker"), selection: $durationMins) {
                                 ForEach(Self.minuteSteps, id: \.self) { m in
-                                    Text("\(m) Min.").tag(m)
+                                    Text(language.t("sceneEditSheet.minutesShort").replacingOccurrences(of: "{count}", with: "\(m)")).tag(m)
                                 }
                             }
                             .pickerStyle(.wheel)
@@ -532,7 +533,7 @@ struct SceneEditSheet: View {
                 // straight onto the scene via its own dedicated endpoint call,
                 // which needs an id a not-yet-created scene doesn't have.
                 if let existing {
-                    Section("Location") {
+                    Section(language.t("common.location")) {
                         SceneLocationSection(scene: existing, viewModel: viewModel)
                     }
                 }
@@ -550,12 +551,12 @@ struct SceneEditSheet: View {
                 // `liveScene` below, or the picker would silently snap back
                 // to the pre-selection value until the sheet is reopened.
                 if let existing {
-                    Section("Zuständig") {
-                        Picker("Zuständig", selection: Binding(
+                    Section(language.t("common.assignee")) {
+                        Picker(language.t("common.assignee"), selection: Binding(
                             get: { liveExisting(existing).assigneeId },
                             set: { newValue in Task { await viewModel.assignScene(existing, to: newValue) } }
                         )) {
-                            Text("Niemand").tag(String?.none)
+                            Text(language.t("sceneEditSheet.nobodyOption")).tag(String?.none)
                             ForEach(viewModel.members) { member in
                                 Text(member.name ?? member.email).tag(String?.some(member.userId))
                             }
@@ -568,18 +569,18 @@ struct SceneEditSheet: View {
                 // attach a shot to. Not offered for Zwischenschritt scenes at
                 // all (they're connective beats, not shot lists).
                 if let existing, !isIntermediateStep {
-                    Section("Einstellungen") {
+                    Section(language.t("sceneEditSheet.shotsSection")) {
                         ForEach(viewModel.shots(in: existing)) { shot in
                             Button {
                                 editingShot = shot
                             } label: {
-                                Text(shot.description?.isEmpty == false ? shot.description! : "Ohne Beschreibung")
+                                Text(shot.description?.isEmpty == false ? shot.description! : language.t("shot.noDescription"))
                                     .strikethrough(shot.status == .done)
                                     .foregroundStyle(shot.status == .done ? .secondary : .primary)
                             }
                         }
                         if isAddingShot {
-                            TextField("Neue Einstellung", text: $newShotText)
+                            TextField(language.t("sceneEditSheet.newShotPlaceholder"), text: $newShotText)
                                 .focused($newShotFocused)
                                 .submitLabel(.done)
                                 .onSubmit { Task { await addShot(to: existing) } }
@@ -591,21 +592,21 @@ struct SceneEditSheet: View {
                                     newShotFocused = true
                                 }
                             } label: {
-                                Label("Einstellung hinzufügen", systemImage: "plus")
+                                Label(language.t("sceneEditSheet.addShotButton"), systemImage: "plus")
                             }
                         }
                     }
                 }
 
             }
-            .navigationTitle(existing != nil ? "Szene bearbeiten" : (isIntermediateStep ? "Neuer Zwischenschritt" : "Neue Szene"))
+            .navigationTitle(existing != nil ? language.t("sceneEditSheet.editTitle") : (isIntermediateStep ? language.t("sceneEditSheet.newIntermediateTitle") : language.t("sceneEditSheet.newTitle")))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Abbrechen") { dismiss() }
+                    Button(language.t("common.cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Fertig") {
+                    Button(language.t("common.done")) {
                         Task {
                             // No more free-text "Dialog" field in this sheet
                             // (see the Dialog section below - only the
@@ -642,15 +643,15 @@ struct SceneEditSheet: View {
         .sheet(item: $editingShot) { shot in
             ShotDetailSheet(shot: shot, viewModel: viewModel)
         }
-        .alert("Keine Credits mehr", isPresented: $showInsufficientCreditsAlert) {
-            Button("Später", role: .cancel) {}
-            Button("Credits kaufen") {
+        .alert(language.t("insufficientCredits.title"), isPresented: $showInsufficientCreditsAlert) {
+            Button(language.t("insufficientCredits.later"), role: .cancel) {}
+            Button(language.t("insufficientCredits.buyCredits")) {
                 if let url = URL(string: "https://app.subshot.ch/credits") {
                     UIApplication.shared.open(url)
                 }
             }
         } message: {
-            Text("Du hast keine AI Credits mehr übrig, um ein Bild zu generieren. Lade Credits über die Web-Seite nach.")
+            Text(language.t("sceneEditSheet.insufficientCreditsMessage"))
         }
     }
 
@@ -708,7 +709,7 @@ struct SceneEditSheet: View {
                 guard let existing else { return }
                 Task { await viewModel.deleteDialogue(line, in: existing) }
             } label: {
-                Label("Löschen", systemImage: "trash")
+                Label(language.t("common.delete"), systemImage: "trash")
             }
         }
     }
@@ -725,7 +726,7 @@ struct SceneEditSheet: View {
             Button(role: .destructive) {
                 draftDialogues.remove(at: index)
             } label: {
-                Label("Löschen", systemImage: "trash")
+                Label(language.t("common.delete"), systemImage: "trash")
             }
         }
     }
@@ -739,6 +740,7 @@ struct SceneEditSheet: View {
 private struct SceneLocationSection: View {
     let scene: Scene
     @ObservedObject var viewModel: ShotListViewModel
+    @ObservedObject private var language = AppLanguage.shared
     @StateObject private var completer = LocationSearchCompleter()
     @State private var query = ""
     @State private var isEditing = false
@@ -770,20 +772,20 @@ private struct SceneLocationSection: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 HStack {
-                    Button("Ändern") {
+                    Button(language.t("common.change")) {
                         query = address
                         isEditing = true
                     }
                     .font(.caption)
                     Spacer()
-                    Button("Entfernen", role: .destructive) {
+                    Button(language.t("common.remove"), role: .destructive) {
                         Task { await viewModel.clearSceneLocation(scene) }
                     }
                     .font(.caption)
                 }
             }
         } else {
-            TextField("Adresse eingeben", text: $query)
+            TextField(language.t("common.addressPlaceholder"), text: $query)
                 .onChange(of: query) { _, newValue in
                     completer.update(query: newValue)
                 }
@@ -823,6 +825,7 @@ private struct SceneLocationSection: View {
 /// SceneEditSheet (scene-level priority) and ShotDetailSheet (shot-level).
 struct PrioritySegmentedControl: View {
     @Binding var priority: ShotPriority?
+    @ObservedObject private var language = AppLanguage.shared
 
     private static let options: [ShotPriority?] = [nil, .must, .should, .optional]
 
@@ -835,7 +838,7 @@ struct PrioritySegmentedControl: View {
                         priority = option
                     }
                 } label: {
-                    Text(option?.label ?? "Keine")
+                    Text(option?.label ?? language.t("common.none"))
                         .font(.footnote.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 7)

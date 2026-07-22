@@ -1,5 +1,6 @@
 import SwiftUI
 import ClerkKit
+import Sentry
 import UserNotifications
 
 /// Registers for remote notifications so a scene-timer push (see
@@ -56,6 +57,30 @@ struct SubshotApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
+        // 2026-07-22 — crash/error monitoring (backend+web already have
+        // this, see project_subshot_public_launch_prep_2026-07-22 memory —
+        // iOS had NONE at all before this, a crash was only ever found out
+        // about if Lino noticed himself or a user reported it). Real DSN
+        // (Sentry org "subli", project "apple-ios") — set up on Lino's own
+        // Mac via `sentry-wizard -i ios --saas --org subli --project
+        // apple-ios`, which also handles the Swift Package addition and
+        // dSYM-upload build phase this repo's missing .xcodeproj can't do
+        // from here. IF THE WIZARD ALSO INSERTED ITS OWN SentrySDK.start(...)
+        // call somewhere (it usually does, right here in SubshotApp.swift's
+        // init), remove one of the two before building — don't call
+        // SentrySDK.start twice.
+        //
+        // includeLocalVariables is NOT a Cocoa SDK option (that's a
+        // Python/Node-specific default this session had to explicitly turn
+        // off on backend+web, see the same memory) — sentry-cocoa doesn't
+        // snapshot local variables into stack traces by default, so no
+        // equivalent fix is needed here.
+        SentrySDK.start { options in
+            options.dsn = "https://5dbc688a3296bc2b728aa8863111145d@o4511594358112256.ingest.de.sentry.io/4511779207512144"
+            options.sendDefaultPii = false
+            options.tracesSampleRate = 0.1
+        }
+
         // Publishable key from the Subshot Clerk application (dashboard.clerk.com) —
         // same value used server-side as CLERK_PUBLISHABLE_KEY in /opt/subshot/.env.
         // SDK v1: Clerk.configure(...) alone is enough — no separate .load() call

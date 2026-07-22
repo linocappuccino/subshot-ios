@@ -10,6 +10,7 @@ import SwiftUI
 struct ProjectEditSheet: View {
     let project: Project?
     var onSave: (String, String, String?, Bool, Bool, Bool) async -> Void
+    @ObservedObject private var language = AppLanguage.shared
 
     @State private var name: String
     @State private var color: String
@@ -36,16 +37,16 @@ struct ProjectEditSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Name") {
-                    TextField("Projektname", text: $name)
+                Section(language.t("projectEditSheet.nameSection")) {
+                    TextField(language.t("projectEditSheet.namePlaceholder"), text: $name)
                 }
-                Section("Emoji") {
+                Section(language.t("projectEditSheet.emojiSection")) {
                     EmojiPickerField(emoji: $emoji)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.vertical, 8)
                         .listRowBackground(Color.clear)
                 }
-                Section("Farbe") {
+                Section(language.t("projectEditSheet.colorSection")) {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 14) {
                         ForEach(Color.subshotPalette, id: \.self) { hex in
                             Circle()
@@ -71,20 +72,20 @@ struct ProjectEditSheet: View {
                 // informativ fuer jetzt, kein Freischalt-Gate. 2026-07-19:
                 // "Video Feedback" Toggle entfernt, mit Postproduction
                 // Tracking zusammengefuehrt (Lino: "sind das gleiche").
-                Section("Pipeline-Module") {
-                    Toggle("Konzept", isOn: $moduleConcept)
-                    Toggle("Script/Shotlist", isOn: $moduleScripting)
-                    Toggle("Postproduction Tracking", isOn: $modulePostproduction)
+                Section(language.t("projectEditSheet.pipelineModulesSection")) {
+                    Toggle(language.t("projectEditSheet.moduleConcept"), isOn: $moduleConcept)
+                    Toggle(language.t("projectEditSheet.moduleScripting"), isOn: $moduleScripting)
+                    Toggle(language.t("projectEditSheet.modulePostproduction"), isOn: $modulePostproduction)
                 }
             }
-            .navigationTitle(project == nil ? "Neues Projekt" : "Projekt bearbeiten")
+            .navigationTitle(project == nil ? language.t("projectEditSheet.newTitle") : language.t("projectEditSheet.editTitle"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Abbrechen") { dismiss() }
+                    Button(language.t("common.cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Fertig") {
+                    Button(language.t("common.done")) {
                         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
                         let trimmedEmoji = emoji.trimmingCharacters(in: .whitespacesAndNewlines)
                         // A brand-new project needs a real name (there's no

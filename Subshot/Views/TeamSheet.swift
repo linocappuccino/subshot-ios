@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TeamSheet: View {
     let projectId: String
+    @ObservedObject private var language = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var members: [Member] = []
@@ -23,7 +24,7 @@ struct TeamSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Mitglieder") {
+                Section(language.t("teamSheet.membersSection")) {
                     if isLoading && members.isEmpty {
                         ProgressView()
                     }
@@ -44,7 +45,7 @@ struct TeamSheet: View {
                     }
                 }
 
-                Section("Person einladen") {
+                Section(language.t("teamSheet.invitePersonSection")) {
                     if !collaboratorSuggestions.isEmpty {
                         Menu {
                             ForEach(collaboratorSuggestions) { person in
@@ -59,26 +60,26 @@ struct TeamSheet: View {
                                 }
                             }
                         } label: {
-                            Label("Person auswählen", systemImage: "person.crop.circle.badge.checkmark")
+                            Label(language.t("teamSheet.selectPerson"), systemImage: "person.crop.circle.badge.checkmark")
                         }
                     }
-                    TextField("E-Mail-Adresse", text: $newEmail)
+                    TextField(language.t("teamSheet.emailPlaceholder"), text: $newEmail)
                         .keyboardType(.emailAddress)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    Picker("Rolle", selection: $newRole) {
-                        Text("Projektleiter").tag("projektleiter")
-                        Text("Editor").tag("editor")
+                    Picker(language.t("teamSheet.roleLabel"), selection: $newRole) {
+                        Text(language.t("roles.projectLead")).tag("projektleiter")
+                        Text(language.t("roles.editor")).tag("editor")
                     }
                     .pickerStyle(.segmented)
-                    Button("Einladen") { Task { await sendInvite() } }
+                    Button(language.t("teamSheet.inviteButton")) { Task { await sendInvite() } }
                         .disabled(newEmail.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
 
                 // The invited person also gets a real email now (Resend) — this
                 // link is just a manual-share fallback (e.g. sharing over Slack).
                 if let lastInviteLink {
-                    Section("Einladungslink (manuell teilen)") {
+                    Section(language.t("teamSheet.inviteLinkSection")) {
                         Text(lastInviteLink)
                             .font(.caption)
                             .textSelection(.enabled)
@@ -90,11 +91,11 @@ struct TeamSheet: View {
                     Text(errorMessage).foregroundStyle(.red).font(.caption)
                 }
             }
-            .navigationTitle("Team")
+            .navigationTitle(language.t("nav.team"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Fertig") { dismiss() }
+                    Button(language.t("common.done")) { dismiss() }
                 }
             }
             .task { await load() }
@@ -103,9 +104,9 @@ struct TeamSheet: View {
 
     private func roleLabel(_ role: String) -> String {
         switch role {
-        case "owner": return "Besitzer"
-        case "projektleiter": return "Projektleiter"
-        case "editor": return "Editor"
+        case "owner": return language.t("roles.owner")
+        case "projektleiter": return language.t("roles.projectLead")
+        case "editor": return language.t("roles.editor")
         default: return role
         }
     }

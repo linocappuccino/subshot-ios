@@ -25,6 +25,7 @@ import UniformTypeIdentifiers
 /// reuses it directly (now internal, not private, for exactly that
 /// reason).
 struct VideoPanelView: View {
+    @ObservedObject private var language = AppLanguage.shared
     let sectionId: String
     let canEdit: Bool
 
@@ -57,11 +58,11 @@ struct VideoPanelView: View {
                     Button {
                         Task { await addVideo() }
                     } label: {
-                        Label(videos.isEmpty ? "Video" : "weiteres Video", systemImage: "plus")
+                        Label(videos.isEmpty ? language.t("videoPanelView.video") : language.t("videoPanelView.anotherVideo"), systemImage: "plus")
                             .font(.subheadline)
                     }
                 } else if videos.isEmpty {
-                    Text("Noch keine Videos.")
+                    Text(language.t("videoPanelView.noVideosYet"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -110,7 +111,7 @@ struct VideoPanelView: View {
 
     private func addVideo() async {
         do {
-            let created = try await APIClient.shared.createVideo(sectionId: sectionId, title: "Video \(videos.count + 1)", sortOrder: videos.count)
+            let created = try await APIClient.shared.createVideo(sectionId: sectionId, title: "\(language.t("videoPanelView.video")) \(videos.count + 1)", sortOrder: videos.count)
             videos.append(created)
         } catch {
             errorMessage = error.localizedDescription
@@ -131,7 +132,7 @@ struct VideoPanelView: View {
         defer { uploadingVideoId = nil }
         do {
             guard let movie = try await item.loadTransferable(type: MovieFile.self) else {
-                errorMessage = "Video konnte nicht geladen werden."
+                errorMessage = language.t("videoPanelView.videoLoadFailed")
                 return
             }
             defer { try? FileManager.default.removeItem(at: movie.url) }
@@ -139,7 +140,7 @@ struct VideoPanelView: View {
             let contentType = movie.url.pathExtension.lowercased() == "mov" ? "video/quicktime" : "video/mp4"
             let version = try await APIClient.shared.createVideoVersion(videoId: videoId, filename: filename, contentType: contentType)
             guard let uploadURLString = version.playbackUrl, let uploadURL = URL(string: uploadURLString) else {
-                errorMessage = "Keine Upload-URL erhalten."
+                errorMessage = language.t("videoPanelView.noUploadUrl")
                 return
             }
             try await APIClient.shared.uploadVideoFile(to: uploadURL, fileURL: movie.url, contentType: contentType)
@@ -185,6 +186,7 @@ struct MovieFile: Transferable {
 }
 
 private struct VideoRow: View {
+    @ObservedObject private var language = AppLanguage.shared
     let video: Video
     let canEdit: Bool
     let uploading: Bool
@@ -199,11 +201,13 @@ private struct VideoRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(video.title).font(.subheadline.weight(.semibold))
                 if let readyVersion {
-                    Text("Version \(readyVersion.versionNumber) · \(readyVersion.comments.count) Kommentare")
+                    Text(language.t("videoPanelView.versionCommentsLabel")
+                        .replacingOccurrences(of: "{number}", with: "\(readyVersion.versionNumber)")
+                        .replacingOccurrences(of: "{count}", with: "\(readyVersion.comments.count)"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("Noch kein Video hochgeladen").font(.caption).foregroundStyle(.secondary)
+                    Text(language.t("videoPanelView.noVideoUploaded")).font(.caption).foregroundStyle(.secondary)
                 }
             }
             Spacer()
@@ -211,16 +215,16 @@ private struct VideoRow: View {
                 ProgressView()
             } else {
                 if readyVersion != nil {
-                    Button("Abspielen", action: onPlay).buttonStyle(.bordered).controlSize(.small)
+                    Button(language.t("videoPanelView.play"), action: onPlay).buttonStyle(.bordered).controlSize(.small)
                 }
                 if canEdit {
-                    Button(readyVersion == nil ? "Hochladen" : "Neue Version", action: onUploadTap)
+                    Button(readyVersion == nil ? language.t("videoPanelView.upload") : language.t("videoPanelView.newVersion"), action: onUploadTap)
                         .buttonStyle(.bordered).controlSize(.small)
                 }
             }
             if canEdit {
                 Menu {
-                    Button("Video löschen", role: .destructive, action: onDelete)
+                    Button(language.t("videoPanelView.deleteVideo"), role: .destructive, action: onDelete)
                 } label: {
                     Image(systemName: "ellipsis.circle").foregroundStyle(.secondary)
                 }

@@ -6,6 +6,7 @@ import SwiftUI
 struct FolderEditSheet: View {
     let existing: ProjectFolder?
     var onSave: (String, String, String?, UIImage?, Bool) async -> Void
+    @ObservedObject private var language = AppLanguage.shared
 
     @State private var name: String
     @State private var emoji: String
@@ -29,7 +30,7 @@ struct FolderEditSheet: View {
                 // Same stage-locally-then-upload-on-save pattern as
                 // SceneEditSheet's cover photo - uploading a brand-new
                 // folder's image needs its id, which doesn't exist yet.
-                Section("Hintergrundbild") {
+                Section(language.t("folderEditSheet.backgroundImageSection")) {
                     ImageSourceButton(onImagePicked: {
                         uploadedImage = $0
                         clearBackgroundImage = false
@@ -49,28 +50,28 @@ struct FolderEditSheet: View {
                                     .background(Color(.systemGray5))
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
                             }
-                            Text((uploadedImage == nil && (existing?.backgroundImageURL == nil || clearBackgroundImage)) ? "Bild hinzufügen" : "Bild ändern")
+                            Text((uploadedImage == nil && (existing?.backgroundImageURL == nil || clearBackgroundImage)) ? language.t("common.addImage") : language.t("common.changeImage"))
                                 .foregroundStyle(.primary)
                         }
                     }
                     if uploadedImage != nil || (existing?.backgroundImageURL != nil && !clearBackgroundImage) {
-                        Button("Bild entfernen", role: .destructive) {
+                        Button(language.t("common.removeImage"), role: .destructive) {
                             uploadedImage = nil
                             clearBackgroundImage = true
                         }
                     }
                 }
 
-                Section("Name") {
-                    TextField("z.B. Kunde XY", text: $name)
+                Section(language.t("folderEditSheet.nameSection")) {
+                    TextField(language.t("folderEditSheet.namePlaceholder"), text: $name)
                         .focused($nameFocused)
                 }
-                Section("Emoji") {
+                Section(language.t("folderEditSheet.emojiSection")) {
                     EmojiPickerField(emoji: $emoji)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .listRowBackground(Color.clear)
                 }
-                Section("Farbe") {
+                Section(language.t("folderEditSheet.colorSection")) {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 14) {
                         ForEach(Color.subshotPalette, id: \.self) { hex in
                             Circle()
@@ -89,14 +90,14 @@ struct FolderEditSheet: View {
                     .padding(.vertical, 4)
                 }
             }
-            .navigationTitle(existing == nil ? "Neuer Ordner" : "Ordner bearbeiten")
+            .navigationTitle(existing == nil ? language.t("folderEditSheet.newTitle") : language.t("folderEditSheet.editTitle"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Abbrechen") { dismiss() }
+                    Button(language.t("common.cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Fertig") {
+                    Button(language.t("common.done")) {
                         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !trimmedName.isEmpty else { return }
                         let trimmedEmoji = emoji.trimmingCharacters(in: .whitespacesAndNewlines)
