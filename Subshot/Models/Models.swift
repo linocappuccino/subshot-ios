@@ -712,6 +712,20 @@ enum PostproductionStatus: String, Codable, CaseIterable {
         case .abgelehnt: return "Abgelehnt"
         }
     }
+
+    /// 2026-07-23 (#321) — exact same hex values as web's VideoTile.tsx
+    /// STATUS_GLOW_COLOR, so a video's status reads identically on both
+    /// platforms (was iOS-only default/secondary colors before, no relation
+    /// to web's per-status glow at all).
+    var glowColor: Color {
+        switch self {
+        case .wartend: return Color(hex: "9ca3af")
+        case .inBearbeitung: return Color(hex: "3b82f6")
+        case .wartetAufFeedback: return Color(hex: "f59e0b")
+        case .abgeschlossen: return Color(hex: "10b981")
+        case .abgelehnt: return Color(hex: "ef4444")
+        }
+    }
 }
 
 /// Video-Feedback-Tool (2026-07-17, #11 Schritt 7) — haengt an einer
@@ -749,6 +763,11 @@ struct VideoVersion: Codable, Identifiable, Hashable {
     /// create_video_version's Doc-Kommentar, dasselbe Feld fuer beide
     /// Richtungen.
     var playbackUrl: String?
+    /// 2026-07-23 (#321) — server-generated poster frame (video_processing.py's
+    /// ffmpeg background task, ~40s after upload, same as web's VideoTile.tsx
+    /// thumbnail_url). Presigned like playbackUrl; nil while still processing
+    /// or for an 'uploading' version, same "still processing" gap web has.
+    var thumbnailUrl: String?
     var comments: [VideoComment] = []
 
     enum CodingKeys: String, CodingKey {
@@ -761,6 +780,7 @@ struct VideoVersion: Codable, Identifiable, Hashable {
         case durationSeconds = "duration_seconds"
         case createdAt = "created_at"
         case playbackUrl = "playback_url"
+        case thumbnailUrl = "thumbnail_url"
     }
 }
 

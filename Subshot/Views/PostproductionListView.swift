@@ -420,6 +420,10 @@ private struct PostproductionVideoTile: View {
 
     private var readyVersion: VideoVersion? { video?.versions.last(where: { $0.status == "ready" }) }
 
+    /// 2026-07-23 (#321) — same STATUS_GLOW_COLOR values web's VideoTile.tsx
+    /// uses, see PostproductionStatus.glowColor's own doc comment.
+    private var statusColor: Color { (section.postproductionStatus ?? .wartend).glowColor }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             thumbnail
@@ -436,21 +440,26 @@ private struct PostproductionVideoTile: View {
                         }
                     }
                 }
-                if canEditStatus {
-                    Picker(language.t("postproductionListView.statusLabel"), selection: Binding(
-                        get: { section.postproductionStatus ?? .wartend },
-                        set: { onStatusChange($0) }
-                    )) {
-                        ForEach(PostproductionStatus.allCases, id: \.self) { status in
-                            Text(PostproductionListView.statusLabel(status, language: language)).tag(status)
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 7, height: 7)
+                    if canEditStatus {
+                        Picker(language.t("postproductionListView.statusLabel"), selection: Binding(
+                            get: { section.postproductionStatus ?? .wartend },
+                            set: { onStatusChange($0) }
+                        )) {
+                            ForEach(PostproductionStatus.allCases, id: \.self) { status in
+                                Text(PostproductionListView.statusLabel(status, language: language)).tag(status)
+                            }
                         }
-                    }
-                    .pickerStyle(.menu)
-                    .font(.caption)
-                } else {
-                    Text(PostproductionListView.statusLabel(section.postproductionStatus ?? .wartend, language: language))
+                        .pickerStyle(.menu)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                    } else {
+                        Text(PostproductionListView.statusLabel(section.postproductionStatus ?? .wartend, language: language))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 if canEditTitleAndDeadline {
                     Toggle(language.t("postproductionListView.deadlineLabel"), isOn: Binding(
@@ -482,6 +491,11 @@ private struct PostproductionVideoTile: View {
         }
         .padding(8)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        // 2026-07-23 (#321) — soft per-status glow, cheap iOS equivalent of
+        // web's VideoTile.tsx glow border (a CSS box-shadow using the same
+        // STATUS_GLOW_COLOR). Only once a real video exists — an empty
+        // upload-slot tile has no status to glow yet.
+        .shadow(color: video != nil ? statusColor.opacity(0.35) : .clear, radius: 8)
     }
 
     @ViewBuilder
@@ -489,10 +503,22 @@ private struct PostproductionVideoTile: View {
         ZStack {
             RoundedRectangle(cornerRadius: 10)
                 .fill(Color(.tertiarySystemFill))
+            // 2026-07-23 (#321, Lino: "hier müssen die Thumbnails dargestellt
+            // werden") — real poster frame instead of a bare gray box; stays
+            // nil (falls through to the plain fill above) until
+            // video_processing.py's ffmpeg pass finishes, same gap web has.
+            if let thumbnailUrl = readyVersion?.thumbnailUrl {
+                AsyncShotThumbnail(path: thumbnailUrl, size: nil, lockAspectRatio: false)
+                    .aspectRatio(16.0 / 9.0, contentMode: .fill)
+                    .clipped()
+            }
             if uploading {
                 ProgressView()
             } else if let video, let readyVersion {
                 // Filled slot — tap opens the fullscreen player (#284).
+                // Translucent scrim so the play icon stays legible over a
+                // bright thumbnail photo, not just over the plain gray fill.
+                Color.black.opacity(readyVersion.thumbnailUrl != nil ? 0.15 : 0)
                 Image(systemName: "play.circle.fill")
                     .font(.system(size: 32))
                     .foregroundStyle(.white, Color.accentColor)
