@@ -304,15 +304,38 @@ struct ShotListView: View {
         static func < (lhs: WorkflowSection, rhs: WorkflowSection) -> Bool { lhs.rawValue < rhs.rawValue }
     }
     @State private var activeWorkflowSection: WorkflowSection = .ideas
-    /// nil at either end of the pipeline (no section before Ideen, none
-    /// after Postproduction) — the corresponding edge-swipe zone below is
-    /// simply omitted in that case, same as iOS's own back-swipe being a
-    /// no-op on a stack's root screen.
+    /// 2026-07-23 (#323, Lino: swiping to another section still worked even
+    /// when a project only has Postproduction active) — module_concept/
+    /// module_scripting/module_postproduction (see ShotListViewModel.load)
+    /// gate which sections actually exist for THIS project; swiping must
+    /// skip any disabled one rather than just walking rawValue ±1 blindly.
+    private func isWorkflowSectionEnabled(_ section: WorkflowSection) -> Bool {
+        switch section {
+        case .ideas: return viewModel.moduleConcept
+        case .scripting: return viewModel.moduleScripting
+        case .postproduction: return viewModel.modulePostproduction
+        }
+    }
+    /// nil once there's no ENABLED section left before/after the active one
+    /// (no section before Ideen, none after Postproduction, or every
+    /// section in that direction is disabled for this project) — the
+    /// corresponding edge-swipe zone below is simply omitted in that case,
+    /// same as iOS's own back-swipe being a no-op on a stack's root screen.
     private var previousWorkflowSection: WorkflowSection? {
-        WorkflowSection(rawValue: activeWorkflowSection.rawValue - 1)
+        var candidate = activeWorkflowSection.rawValue - 1
+        while let section = WorkflowSection(rawValue: candidate) {
+            if isWorkflowSectionEnabled(section) { return section }
+            candidate -= 1
+        }
+        return nil
     }
     private var nextWorkflowSection: WorkflowSection? {
-        WorkflowSection(rawValue: activeWorkflowSection.rawValue + 1)
+        var candidate = activeWorkflowSection.rawValue + 1
+        while let section = WorkflowSection(rawValue: candidate) {
+            if isWorkflowSectionEnabled(section) { return section }
+            candidate += 1
+        }
+        return nil
     }
     private var shareKindForActiveWorkflowSection: String {
         switch activeWorkflowSection {
@@ -575,7 +598,18 @@ struct ShotListView: View {
                 }
             }
         }
-        .task { await viewModel.load() }
+        .task {
+            await viewModel.load()
+            // Correct the hardcoded .ideas default once module flags are
+            // known — a project with Ideas disabled (e.g. Postproduction-
+            // only) must land straight on its first actually-enabled
+            // section, not silently sit on a section it can never swipe
+            // away from being blank/disabled either.
+            if !isWorkflowSectionEnabled(activeWorkflowSection),
+               let firstEnabled = WorkflowSection.allCases.first(where: { isWorkflowSectionEnabled($0) }) {
+                activeWorkflowSection = firstEnabled
+            }
+        }
         .refreshable { await viewModel.load() }
         // Lightweight "live updates" (2026-07-10): polls every 12s while
         // this screen is open so a teammate's edits show up without anyone

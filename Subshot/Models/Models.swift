@@ -178,9 +178,16 @@ struct ProjectDetail: Codable {
     var shots: [Shot]
     var todoLists: [TodoList]
     var sections: [SceneSection]
-    /// Pipeline-Module-Checkboxen (#96) — hier nur modulePostproduction
-    /// gebraucht, um den Postproduction-Tab (#11 Schritt 5+6) ein-/
-    /// auszublenden.
+    /// Pipeline-Module-Checkboxen (#96) — ursprünglich wurde hier nur
+    /// modulePostproduction gebraucht, um den Postproduction-Tab (#11
+    /// Schritt 5+6) ein-/auszublenden. moduleConcept/moduleScripting kamen
+    /// 2026-07-23 (#323) dazu, weil die Edge-Swipe-Navigation zwischen
+    /// Ideen/Scripting/Postproduction sonst keine Möglichkeit hatte zu
+    /// wissen, ob Ideen oder Scripting für dieses Projekt überhaupt aktiv
+    /// sind — man konnte z.B. bei nur-Postproduction-Projekten trotzdem zu
+    /// den (eigentlich deaktivierten) anderen Bereichen swipen.
+    var moduleConcept: Bool = true
+    var moduleScripting: Bool = true
     var modulePostproduction: Bool = true
 
     enum CodingKeys: String, CodingKey {
@@ -195,6 +202,8 @@ struct ProjectDetail: Codable {
         case createdAt = "created_at"
         case todoLists = "todo_lists"
         case sections
+        case moduleConcept = "module_concept"
+        case moduleScripting = "module_scripting"
         case modulePostproduction = "module_postproduction"
     }
 }

@@ -55,8 +55,14 @@ final class ShotListViewModel: ObservableObject {
     @Published var members: [Member] = []
     @Published var todoLists: [TodoList] = []
     @Published var sections: [SceneSection] = []
-    /// #96 Pipeline-Module-Checkbox — gates the Postproduction-Tab (#11
-    /// Schritt 5+6) on/off per Projekt.
+    /// #96 Pipeline-Module-Checkboxen — gate which workflow sections exist
+    /// for this project. modulePostproduction alone used to be enough
+    /// (only gated the Postproduction tab's visibility); moduleConcept/
+    /// moduleScripting were added 2026-07-23 (#323) so the edge-swipe
+    /// navigation in ShotListView can skip disabled sections instead of
+    /// letting you swipe into a section the project never enabled.
+    @Published var moduleConcept: Bool = true
+    @Published var moduleScripting: Bool = true
     @Published var modulePostproduction: Bool = true
     /// Planungssektor (2026-07-17 iOS port — see web app's IdeaGrid.tsx) —
     /// not part of ProjectDetail server-side, always its own round trip
@@ -144,6 +150,8 @@ final class ShotListViewModel: ObservableObject {
             clientName = detail.clientName
             todoLists = detail.todoLists.sorted { $0.sortOrder < $1.sortOrder }
             sections = detail.sections.sorted { $0.sortOrder < $1.sortOrder }
+            moduleConcept = detail.moduleConcept
+            moduleScripting = detail.moduleScripting
             modulePostproduction = detail.modulePostproduction
         } catch {
             // A cancelled request (pull-to-refresh released mid-flight, or
