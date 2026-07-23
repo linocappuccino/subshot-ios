@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Combine
 
 /// 2026-07-21, #277 — iOS port of the web app's RichTextEditor.tsx
 /// slash-command state machine (see IdeaEditSheet's "Beschreibung"
