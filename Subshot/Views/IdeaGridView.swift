@@ -13,17 +13,25 @@ struct IdeaGridView: View {
 
     /// 2026-07-21, #280 (Lino: "ganz falsch!") — this view is now the
     /// Ideas page's ENTIRE content, no Scene/Section content sits below it
-    /// anymore (see ShotListView.body's `switch activeWorkflowSection`).
-    /// Filtering to `.open` here is what keeps an approved idea (and the
-    /// real Scene it turned into) from ever showing up here — that Scene
-    /// lives exclusively on the Scripting panel now, in its own Section,
-    /// same as the web app's separate Ideas/Scenes routes.
-    private var openIdeas: [Idea] {
-        viewModel.ideas.filter { $0.status == .open }
+    /// anymore (see ShotListView.body's `switch activeWorkflowSection`); an
+    /// approved idea's real Scene still lives exclusively on the Scripting
+    /// panel, in its own Section, same as the web app's separate Ideas/
+    /// Scenes routes. That's a completely separate concern from THIS list,
+    /// though: filtering to `.open` here also hid the approved idea's own
+    /// card, even though IdeaStatusGroup was already fully built for a 4th
+    /// "Abgenommen" group (groupLabel below has had an .approved case,
+    /// wired to a real translation key, since #280 — it was simply
+    /// unreachable dead code with every idea pre-filtered to .open).
+    /// 2026-07-23 (#326, Lino: "hier sieht man die abgenommenen Projekte
+    /// nicht?!") — show every idea regardless of status; IdeaStatus only
+    /// ever has .open/.approved (no soft-delete state), so this is simply
+    /// viewModel.ideas now.
+    private var visibleIdeas: [Idea] {
+        viewModel.ideas
     }
 
     private var groupedIdeas: [(group: IdeaStatusGroup, ideas: [Idea])] {
-        let grouped = Dictionary(grouping: openIdeas, by: IdeaStatusGroup.of)
+        let grouped = Dictionary(grouping: visibleIdeas, by: IdeaStatusGroup.of)
         return IdeaStatusGroup.allCases.compactMap { group in
             guard let ideas = grouped[group], !ideas.isEmpty else { return nil }
             return (group, ideas.sorted { $0.sortOrder < $1.sortOrder })
@@ -52,10 +60,10 @@ struct IdeaGridView: View {
             // create-then-open round trip this button used to do (same
             // direct-create-and-open behavior, just triggered from a
             // single button instead of two).
-            Text(language.t("ideaGrid.heading") + (openIdeas.isEmpty ? "" : " (\(openIdeas.count))"))
+            Text(language.t("ideaGrid.heading") + (visibleIdeas.isEmpty ? "" : " (\(visibleIdeas.count))"))
                 .font(.headline)
 
-            if openIdeas.isEmpty {
+            if visibleIdeas.isEmpty {
                 Text(language.t("ideaGrid.emptyState"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
