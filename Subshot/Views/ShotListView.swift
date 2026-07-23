@@ -484,6 +484,14 @@ struct ShotListView: View {
             .animation(.easeInOut(duration: 0.25), value: activeWorkflowSection)
         }
         .scrollTargetBehaviorIf(wantsScrollSnap && activeWorkflowSection == .scripting)
+        // 2026-07-23 (#320) — the Postproduction branch above already had
+        // its own .transition(.opacity), but this branch (Ideas/Scripting)
+        // never did, so swiping into/out of Postproduction faded one side
+        // while this side just popped in/out instantly. Matching
+        // transitions on both sides of the outer if/else is what makes
+        // goToWorkflowSection's withAnimation actually cross-fade instead
+        // of only animating half the swap.
+        .transition(.opacity)
         }
       }
         .background(Color(.systemGroupedBackground))
