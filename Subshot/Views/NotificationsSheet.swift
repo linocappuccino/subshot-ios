@@ -3,10 +3,12 @@ import SwiftUI
 /// Shows batched notifications (currently just "todo item assigned to you" —
 /// collapsed server-side into one row per unread batch, see the backend
 /// Notification model docstring). Tapping one marks it read and jumps
-/// straight to the project it's about.
+/// straight to the project it's about — and, 2026-07-23 (#324), to the
+/// exact idea/scene/video tile the notification is actually about, via
+/// entityKind/entityId, same as web's NotificationBell.tsx click-through.
 struct NotificationsSheet: View {
     @ObservedObject var viewModel: ProjectListViewModel
-    var onSelectProject: (Project) -> Void
+    var onSelectProject: (Project, String?, String?) -> Void
     @ObservedObject private var language = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
 
@@ -66,7 +68,7 @@ struct NotificationsSheet: View {
         await viewModel.markNotificationRead(notification)
         if let project = viewModel.projects.first(where: { $0.id == notification.projectId }) {
             dismiss()
-            onSelectProject(project)
+            onSelectProject(project, notification.entityKind, notification.entityId)
         }
     }
 }

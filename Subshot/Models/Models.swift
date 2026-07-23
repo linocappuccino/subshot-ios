@@ -799,6 +799,16 @@ struct AppNotification: Codable, Identifiable, Hashable {
     let createdAt: Date
     let updatedAt: Date
     let readAt: Date?
+    /// "idea" | "scene" | "video" | "postproduction" | nil — which tile this
+    /// notification is actually about, points at the most recent triggering
+    /// entity for a batched row (see backend Notification model's own doc
+    /// comment). 2026-07-23 (#324, Lino: "klickt man auf eine Notification
+    /// soll die einen direkt zur richtigen Seite oder Kachel bringen") —
+    /// already decoded server-side (NotificationOut), just never read here
+    /// before; mirrors web's NotificationBell.tsx openIdea/openScene/
+    /// openVideo click-through.
+    let entityKind: String?
+    let entityId: String?
 
     enum CodingKeys: String, CodingKey {
         case id, kind, count, title, body
@@ -806,6 +816,8 @@ struct AppNotification: Codable, Identifiable, Hashable {
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case readAt = "read_at"
+        case entityKind = "entity_kind"
+        case entityId = "entity_id"
     }
 }
 

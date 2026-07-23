@@ -286,6 +286,15 @@ struct ShotListView: View {
     @State private var editingDialogue: (dialogue: SceneDialogue, scene: Scene)?
     @State private var editingDialogueText = ""
     private let projectId: String
+    /// 2026-07-23 (#324) — set only when this screen was pushed from a
+    /// notification tap (see ProjectListView's NotificationDeepLink), nil
+    /// for every ordinary "tap a project tile" navigation. Consumed exactly
+    /// once in the initial .task below (mirrors web's autoOpenIdeaId/
+    /// autoOpenSceneId/autoOpenVideoId in projects/[id]/page.tsx +
+    /// postproduction/page.tsx — same three entity kinds, same "look it up
+    /// once loaded, then open the matching sheet" shape).
+    private let pendingDeepLinkKind: String?
+    private let pendingDeepLinkId: String?
     /// 2026-07-17, Lino: "lösche den Tinderswipe und setze das Swipen zum
     /// nächsten oder vorherigen Workflow-Bereich um" — replaces the removed
     /// scene-card swipe-to-delete/complete gesture entirely; this is a
@@ -345,10 +354,12 @@ struct ShotListView: View {
         }
     }
 
-    init(projectId: String, projectName: String) {
+    init(projectId: String, projectName: String, pendingDeepLinkKind: String? = nil, pendingDeepLinkId: String? = nil) {
         self.projectId = projectId
         _viewModel = StateObject(wrappedValue: ShotListViewModel(projectId: projectId))
         self.projectName = projectName
+        self.pendingDeepLinkKind = pendingDeepLinkKind
+        self.pendingDeepLinkId = pendingDeepLinkId
     }
 
     var body: some View {
@@ -361,7 +372,10 @@ struct ShotListView: View {
         // page.tsx, which has no ProjectInfoBox at all, unlike the Ideas/
         // Scripting panels below.
         if activeWorkflowSection == .postproduction {
-            PostproductionListView(viewModel: viewModel, embedded: true)
+            PostproductionListView(
+                viewModel: viewModel, embedded: true,
+                initialVideoId: pendingDeepLinkKind == "video" ? pendingDeepLinkId : nil
+            )
                 .transition(.opacity)
         } else {
         ScrollView {
@@ -429,11 +443,13 @@ struct ShotListView: View {
                 // entirely.
                 if activeWorkflowSection == .ideas {
                     // Planungssektor (2026-07-17 iOS port of the web app's
-                    // IdeaGrid.tsx) — filtered to OPEN ideas only; an
-                    // approved idea's resulting Scene lives exclusively on
-                    // the Scripting panel below (see IdeaGridView's own
-                    // filtering).
-                    IdeaGridView(viewModel: viewModel)
+                    // IdeaGrid.tsx) — shows every idea including approved
+                    // ones (#326); an approved idea's resulting Scene still
+                    // lives exclusively on the Scripting panel below.
+                    IdeaGridView(
+                        viewModel: viewModel,
+                        initialSelectedIdeaId: pendingDeepLinkKind == "idea" ? pendingDeepLinkId : nil
+                    )
                         .transition(.opacity)
                 } else {
                     LazyVStack(alignment: .leading, spacing: 16) {
@@ -616,6 +632,26 @@ struct ShotListView: View {
             if !isWorkflowSectionEnabled(activeWorkflowSection),
                let firstEnabled = WorkflowSection.allCases.first(where: { isWorkflowSectionEnabled($0) }) {
                 activeWorkflowSection = firstEnabled
+            }
+            // #324 deep-link: jump to the right tab. "idea" additionally
+            // needs IdeaGridView to open the sheet itself (its own private
+            // editingIdea, see initialSelectedIdeaId passed below); "scene"
+            // is handled entirely here since editingScene already lives on
+            // this view; "video"/"postproduction" jump to the tab, and
+            // PostproductionListView opens the exact video itself (see
+            // initialVideoId passed below) when the kind is "video".
+            switch pendingDeepLinkKind {
+            case "idea":
+                if isWorkflowSectionEnabled(.ideas) { activeWorkflowSection = .ideas }
+            case "scene":
+                if isWorkflowSectionEnabled(.scripting) { activeWorkflowSection = .scripting }
+                if let pendingDeepLinkId, let scene = viewModel.scenes.first(where: { $0.id == pendingDeepLinkId }) {
+                    editingScene = .some(scene)
+                }
+            case "video", "postproduction":
+                if isWorkflowSectionEnabled(.postproduction) { activeWorkflowSection = .postproduction }
+            default:
+                break
             }
         }
         .refreshable { await viewModel.load() }

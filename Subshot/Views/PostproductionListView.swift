@@ -27,6 +27,11 @@ struct PostproductionListView: View {
     /// true when this is the inline third workflow page rather than the
     /// toolbar's own "checklist.checked" sheet shortcut.
     var embedded: Bool = false
+    /// 2026-07-23 (#324) — set only when this screen was reached via a
+    /// "video"-kind notification deep link (see ShotListView's
+    /// pendingDeepLinkKind); consumed exactly once in the .task below,
+    /// mirrors web's autoOpenVideoId in postproduction/page.tsx.
+    var initialVideoId: String? = nil
 
     @State private var myRole: String?
     @State private var showingShareLinkSheet = false
@@ -198,6 +203,11 @@ struct PostproductionListView: View {
                 myRole = viewModel.members.first(where: { $0.userId == me.id })?.role
             }
             await loadAllVideos()
+            if let initialVideoId,
+               let video = sectionVideos.values.flatMap({ $0 }).first(where: { $0.id == initialVideoId }),
+               let version = video.versions.last(where: { $0.status == "ready" }) {
+                playing = (video, version)
+            }
         }
         .photosPicker(
             isPresented: Binding(get: { pickerTarget != nil }, set: { if !$0 { pickerTarget = nil } }),

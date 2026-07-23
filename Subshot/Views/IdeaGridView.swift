@@ -10,6 +10,11 @@ struct IdeaGridView: View {
     @ObservedObject var viewModel: ShotListViewModel
     @ObservedObject private var language = AppLanguage.shared
     @State private var editingIdea: Idea?
+    /// 2026-07-23 (#324) — set only when this view was reached via a
+    /// notification's deep link (see ShotListView's pendingDeepLinkKind);
+    /// consumed exactly once by .task below, mirrors web's autoOpenIdeaId
+    /// in projects/[id]/page.tsx.
+    var initialSelectedIdeaId: String? = nil
 
     /// 2026-07-21, #280 (Lino: "ganz falsch!") — this view is now the
     /// Ideas page's ENTIRE content, no Scene/Section content sits below it
@@ -85,6 +90,11 @@ struct IdeaGridView: View {
         }
         .sheet(item: $editingIdea) { idea in
             IdeaEditSheet(idea: idea, viewModel: viewModel)
+        }
+        .task {
+            if let initialSelectedIdeaId, let idea = viewModel.ideas.first(where: { $0.id == initialSelectedIdeaId }) {
+                editingIdea = idea
+            }
         }
     }
 }

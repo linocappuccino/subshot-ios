@@ -139,6 +139,12 @@ struct ProjectListView: View {
                     .navigationDestination(for: ProjectFolder.self) { folder in
                         ProjectListView(folderId: folder.id, folderName: folder.name)
                     }
+                    .navigationDestination(for: NotificationDeepLink.self) { link in
+                        ShotListView(
+                            projectId: link.project.id, projectName: link.project.name,
+                            pendingDeepLinkKind: link.entityKind, pendingDeepLinkId: link.entityId
+                        )
+                    }
             }
         } else {
             gridScreen
@@ -707,11 +713,27 @@ private struct GridSheets: ViewModifier {
                 }
             }
             .sheet(isPresented: $showingNotifications) {
-                NotificationsSheet(viewModel: viewModel) { project in
-                    path.append(project)
+                NotificationsSheet(viewModel: viewModel) { project, entityKind, entityId in
+                    if let entityKind, let entityId {
+                        path.append(NotificationDeepLink(project: project, entityKind: entityKind, entityId: entityId))
+                    } else {
+                        path.append(project)
+                    }
                 }
             }
     }
+}
+
+/// 2026-07-23 (#324) — a second, richer thing NavigationPath can carry to
+/// ShotListView besides a plain Project (see the extra .navigationDestination
+/// for this type, right next to Project.self's own). Only notification taps
+/// that have a real entityKind/entityId push this instead of the plain
+/// Project — every other "open a project" path (tapping a tile, creating
+/// one) is untouched, still just path.append(project).
+private struct NotificationDeepLink: Hashable {
+    let project: Project
+    let entityKind: String
+    let entityId: String
 }
 
 /// Raw UIKit badge (see toolbarContent's own comment on why) — after the
