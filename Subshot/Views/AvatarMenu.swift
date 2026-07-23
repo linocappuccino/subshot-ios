@@ -81,13 +81,11 @@ struct AvatarMenu: View {
 
     private func signOut() async {
         signingOut = true
-        // NOTE: exact Clerk iOS SDK method unverified against real source
-        // (no local copy of the ClerkKit package on this machine) — matches
-        // the documented `Clerk.shared.signOut()` convention shared across
-        // Clerk's web/iOS/React SDKs, mirrors this file's existing
-        // `Clerk.shared.session?.getToken()` usage. If the real method name
-        // differs, this is the one line to fix.
-        try? await Clerk.shared.signOut()
+        // Verified against the real ClerkKit source (clerk/clerk-ios,
+        // Sources/ClerkKit/Core/Auth.swift) — sign-out lives on the `auth`
+        // facade, not directly on `Clerk`: `public func signOut(sessionId:
+        // String? = nil) async throws` on `Clerk.shared.auth`.
+        try? await Clerk.shared.auth.signOut()
         auth.clear()
         signingOut = false
     }
