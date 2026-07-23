@@ -103,6 +103,17 @@ struct VideoPlayerSheet: View {
             player = p
             p.play()
         }
+        .task {
+            // 2026-07-23 (#322) — authorName started every long-press comment
+            // completely empty, forcing a name re-typed by hand each time
+            // before the (otherwise-ready) send button would even enable —
+            // real friction on the "long-press, type, done" flow this sheet
+            // was actually built for. Same name ?? email fallback SceneEditSheet
+            // already uses for a known collaborator.
+            if let me = try? await APIClient.shared.me() {
+                authorName = me.name ?? me.email
+            }
+        }
         .onDisappear { player?.pause() }
         .preferredColorScheme(.dark)
     }
