@@ -625,6 +625,18 @@ struct ProjectListView: View {
                         // (bottom-trailing). Server-computed, see
                         // ProjectPipelineStage's own doc comment.
                         if let pipelineStage {
+                            // 2026-07-23 (#319, Lino: badge "abgeschnitten"/
+                            // "zu weit links" on some tiles) — turned out to
+                            // be a contrast problem, not a position bug: a
+                            // 20%-opacity tint background over a BRIGHT part
+                            // of a photo (e.g. a lamp sitting right behind
+                            // this top-leading corner) washed the amber text
+                            // out badly enough to read as missing/cut-off
+                            // letters. A solid dark base underneath the tint
+                            // — same idea as the emoji-over-photo badge's own
+                            // .black.opacity(0.35) circle just below — keeps
+                            // this legible over any photo, not just plain
+                            // color fills.
                             VStack {
                                 HStack {
                                     Text(pipelineStage.label)
@@ -632,7 +644,11 @@ struct ProjectListView: View {
                                         .foregroundStyle(pipelineStage.tintColor)
                                         .padding(.horizontal, 8)
                                         .padding(.vertical, 3)
-                                        .background(pipelineStage.tintColor.opacity(0.2), in: Capsule())
+                                        .background(
+                                            Capsule()
+                                                .fill(.black.opacity(0.55))
+                                                .overlay(Capsule().fill(pipelineStage.tintColor.opacity(0.35)))
+                                        )
                                         .padding(6)
                                     Spacer()
                                 }
