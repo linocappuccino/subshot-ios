@@ -505,7 +505,7 @@ enum IdeaStatusGroup: Int, CaseIterable, Hashable {
         }
     }
 
-    static func of(_ idea: Idea) -> IdeaStatusGroup {
+    nonisolated static func of(_ idea: Idea) -> IdeaStatusGroup {
         if idea.status == .approved { return .approved }
         if idea.feedbackCount >= 2 { return .secondFeedback }
         if idea.feedbackCount == 1 { return .firstFeedback }
