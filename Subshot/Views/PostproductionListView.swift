@@ -53,6 +53,18 @@ struct PostproductionListView: View {
     /// version to (nil videoId = truly empty slot, create one first).
     private struct PickerTarget { let sectionId: String; let videoId: String? }
     @State private var pickerTarget: PickerTarget?
+    /// 2026-07-26 (#334) — SAME target as `pickerTarget` above, captured a
+    /// second time into an INDEPENDENT @State var. Root cause of "picking a
+    /// video from the library did nothing, no upload indicator at all":
+    /// `pickerTarget` also drives `.photosPicker`'s own `isPresented`
+    /// binding below (`pickerTarget != nil`), whose dismissal setter nils
+    /// `pickerTarget` out the instant an item is picked (the sheet auto-
+    /// dismisses on selection) — racing with, and in practice beating,
+    /// `.onChange(of: pickerItem)` below, whose `guard let target =
+    /// pickerTarget` then saw nil and silently returned before ever
+    /// calling uploadPickedVideo. This copy is never touched by that
+    /// dismissal path, so it's still there when onChange reads it.
+    @State private var pendingUploadTarget: PickerTarget?
     @State private var pickerItem: PhotosPickerItem?
     @State private var uploadingSectionId: String?
     @State private var creatingUnplanned = false
@@ -122,7 +134,10 @@ struct PostproductionListView: View {
             )
         } else {
             ScrollView {
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                // 2026-07-26 (#331) — 12pt was cramped ("Kacheln zu eng
+                // aneinander"); 16pt matches ProjectListView's own grid
+                // spacing convention (its `columns`/LazyVGrid both use 16).
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
                     ForEach(tiles) { tile in
                         PostproductionVideoTile(
                             section: tile.section,
@@ -131,7 +146,9 @@ struct PostproductionListView: View {
                             canEditTitleAndDeadline: canEditTitleAndDeadline,
                             uploading: uploadingSectionId == tile.section.id,
                             onTapUpload: {
-                                pickerTarget = PickerTarget(sectionId: tile.section.id, videoId: tile.video?.id)
+                                let target = PickerTarget(sectionId: tile.section.id, videoId: tile.video?.id)
+                                pickerTarget = target
+                                pendingUploadTarget = target
                             },
                             onPlay: { video, version in playing = (video, version) },
                             onEditTitle: {
@@ -214,8 +231,10 @@ struct PostproductionListView: View {
             selection: $pickerItem, matching: .videos
         )
         .onChange(of: pickerItem) { _, newItem in
-            guard let newItem, let target = pickerTarget else { return }
-            pickerTarget = nil
+            // 2026-07-26 (#334) — reads `pendingUploadTarget`, NOT
+            // `pickerTarget` (see that var's own doc comment above for why).
+            guard let newItem, let target = pendingUploadTarget else { return }
+            pendingUploadTarget = nil
             pickerItem = nil
             Task { await uploadPickedVideo(newItem, target: target) }
         }
@@ -507,23 +526,58 @@ private struct PostproductionVideoTile: View {
             // werden") — real poster frame instead of a bare gray box; stays
             // nil (falls through to the plain fill above) until
             // video_processing.py's ffmpeg pass finishes, same gap web has.
+            //
+            // 2026-07-26 (#331, Lino: "der Ausschnitt von den Thumbnails ist
+            // viel zu gross ins Bild gezoomed") — was `.aspectRatio(16/9,
+            // contentMode: .fill).clipped()` applied directly on top of
+            // AsyncShotThumbnail(size: nil) with NO definite frame for that
+            // fill computation to run against, so it negotiated against
+            // AsyncShotThumbnail's own unconstrained/intrinsic (image-pixel-
+            // size-driven) ideal size instead of this tile's actual visible
+            // box — over-cropping the frame. Same root cause, same fix as
+            // #336 in IdeaGridView.swift: give it an explicit greedy
+            // `.frame(...)` and let AsyncShotThumbnail's OWN internal
+            // `.aspectRatio(contentMode: .fill)` do the (single) fill
+            // computation against that now-definite frame.
             if let thumbnailUrl = readyVersion?.thumbnailUrl {
                 AsyncShotThumbnail(path: thumbnailUrl, size: nil, lockAspectRatio: false)
-                    .aspectRatio(16.0 / 9.0, contentMode: .fill)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
             }
             if uploading {
-                ProgressView()
+                // 2026-07-26 (#334) — was a bare ProgressView() with no
+                // label and no scrim, easy to miss against the plain tile
+                // fill/an already-showing older thumbnail; now matches the
+                // legibility treatment the ready/play state below already
+                // gets (dark scrim + white foreground).
+                Color.black.opacity(0.4)
+                VStack(spacing: 6) {
+                    ProgressView().tint(.white)
+                    Text(language.t("postproductionListView.uploading"))
+                        .font(.caption2)
+                        .foregroundStyle(.white)
+                }
             } else if let video, let readyVersion {
                 // Filled slot — tap opens the fullscreen player (#284).
                 // Translucent scrim so the play icon stays legible over a
                 // bright thumbnail photo, not just over the plain gray fill.
+                //
+                // 2026-07-26 (#333, Lino: "es passiert aber nichts" beim
+                // Klick aufs Thumbnail) — the tap gesture used to sit ONLY
+                // on the small `play.circle.fill` glyph itself (its own
+                // tiny intrinsic size), so tapping anywhere else on the
+                // (much larger) thumbnail did nothing. `Color` has no
+                // intrinsic size, so as an unconstrained ZStack layer it
+                // already fills the WHOLE tile — moving the gesture there
+                // instead makes the entire thumbnail tappable. The icon on
+                // top stays purely decorative (no gesture of its own, so it
+                // doesn't shadow the Color layer's hit target underneath).
                 Color.black.opacity(readyVersion.thumbnailUrl != nil ? 0.15 : 0)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onPlay(video, readyVersion) }
                 Image(systemName: "play.circle.fill")
                     .font(.system(size: 32))
                     .foregroundStyle(.white, Color.accentColor)
-                    .contentShape(Rectangle())
-                    .onTapGesture { onPlay(video, readyVersion) }
             } else {
                 // 2026-07-21, #284 — both the true empty slot (no Video
                 // row at all) AND a Video row still waiting on its first
@@ -543,5 +597,40 @@ private struct PostproductionVideoTile: View {
         }
         .aspectRatio(16.0 / 9.0, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        // 2026-07-26 (#332) — version number + open-comment count, mirrors
+        // web's VideoTile.tsx exactly ("v{n}" + "💬 {n}" pills, top-right,
+        // comment count counting only status=="open" i.e. !resolved).
+        // Deliberately gated on `!uploading` — web's equivalent badge div
+        // sits earlier in DOM order than its stillUploading/stillProcessing
+        // overlay, so that overlay visually paints over/obscures it during
+        // an upload; hiding it here during our own `uploading` state
+        // matches that same effective behavior (and avoids showing a STALE
+        // version's badge while a newer one is mid-upload).
+        .overlay(alignment: .topTrailing) {
+            if !uploading, let readyVersion {
+                versionAndCommentBadge(readyVersion)
+            }
+        }
+    }
+
+    private func versionAndCommentBadge(_ version: VideoVersion) -> some View {
+        let openCount = version.comments.filter { !$0.resolved }.count
+        return HStack(spacing: 4) {
+            Text("v\(version.versionNumber)")
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.8))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(.black.opacity(0.5), in: Capsule())
+            if openCount > 0 {
+                Text("💬 \(openCount)")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.8))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(.black.opacity(0.5), in: Capsule())
+            }
+        }
+        .padding(6)
     }
 }

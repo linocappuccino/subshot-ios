@@ -105,6 +105,7 @@ extension AppLanguage {
             "postproductionListView.noVideoYet": "Noch kein Video",
             "postproductionListView.uploadVideo": "Video hochladen",
             "postproductionListView.processing": "In Verarbeitung…",
+            "postproductionListView.uploading": "Wird hochgeladen…",
 
             // VideoPanelView.swift (superseded by PostproductionListView's
             // grid, see that file's own top-of-file doc comment — kept
@@ -236,6 +237,7 @@ extension AppLanguage {
             "postproductionListView.noVideoYet": "No video yet",
             "postproductionListView.uploadVideo": "Upload video",
             "postproductionListView.processing": "Processing…",
+            "postproductionListView.uploading": "Uploading…",
 
             // VideoPanelView.swift (superseded by PostproductionListView's
             // grid, see that file's own top-of-file doc comment — kept
