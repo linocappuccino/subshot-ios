@@ -3,6 +3,18 @@ import ClerkKit
 import Sentry
 import UserNotifications
 
+/// Small, permanent build-freshness indicator (mirrors Subtime's own
+/// `Config.buildTag` — see that repo's Core/Config.swift and
+/// [[feedback_ios_build_tag]]), added here rather than as a new file since
+/// no .xcodeproj lives in this repo (see AppDelegate's doc comment below) —
+/// a new Swift file would need Lino to hand-wire it into the Xcode project
+/// before it could even compile. Bump this by one on every commit that
+/// touches Subshot iOS source, so a glance at the Projects screen settles
+/// whether a `git pull` + rebuild actually picked up the latest commit.
+enum Config {
+    static let buildTag = "b1"
+}
+
 /// Registers for remote notifications so a scene-timer push (see
 /// scripts/scene_timer_notifications.py) can actually reach this device.
 /// Requesting permission + calling registerForRemoteNotifications() here is

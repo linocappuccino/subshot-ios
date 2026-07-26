@@ -110,7 +110,9 @@ struct VideoPlayerSheet: View {
             // real friction on the "long-press, type, done" flow this sheet
             // was actually built for. Same name ?? email fallback SceneEditSheet
             // already uses for a known collaborator.
-            if let me = try? await APIClient.shared.me() {
+            // Guard against clobbering a name the user already started typing
+            // while this (network-dependent) fetch was still in flight.
+            if authorName.isEmpty, let me = try? await APIClient.shared.me() {
                 authorName = me.name ?? me.email
             }
         }

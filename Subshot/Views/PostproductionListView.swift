@@ -66,8 +66,22 @@ struct PostproductionListView: View {
     /// dismissal path, so it's still there when onChange reads it.
     @State private var pendingUploadTarget: PickerTarget?
     @State private var pickerItem: PhotosPickerItem?
-    @State private var uploadingSectionId: String?
+    /// 2026-07-26 correction — was a single `uploadingSectionId: String?`,
+    /// which made every tile under a multi-video Section (the "Hauptschnitt
+    /// + Trailer" case, see this struct's own doc comment) show as
+    /// "uploading" the instant ANY one of them got a new version, and made
+    /// two concurrent uploads in the same Section race on one variable
+    /// (whichever `defer` cleared it first hid the OTHER upload's still-
+    /// in-flight indicator). Keyed by tile id instead — same id shape as
+    /// `Tile.id` below (`video.id`, or `"empty-\(section.id)"` for a
+    /// still-empty slot) — and a Set so multiple tiles can be mid-upload
+    /// at once without clobbering each other.
+    @State private var uploadingTileIds: Set<String> = []
     @State private var creatingUnplanned = false
+
+    private func tileKey(for target: PickerTarget) -> String {
+        target.videoId ?? "empty-\(target.sectionId)"
+    }
 
     /// Title-edit alert (2026-07-21, #284) — admin/Projektleiter only,
     /// see canEditTitleAndDeadline.
@@ -144,7 +158,7 @@ struct PostproductionListView: View {
                             video: tile.video,
                             canEditStatus: canEditStatus,
                             canEditTitleAndDeadline: canEditTitleAndDeadline,
-                            uploading: uploadingSectionId == tile.section.id,
+                            uploading: uploadingTileIds.contains(tile.id),
                             onTapUpload: {
                                 let target = PickerTarget(sectionId: tile.section.id, videoId: tile.video?.id)
                                 pickerTarget = target
@@ -331,8 +345,9 @@ struct PostproductionListView: View {
     // MARK: - upload pipeline (same steps the old VideoPanelView.handlePicked used)
 
     private func uploadPickedVideo(_ item: PhotosPickerItem, target: PickerTarget) async {
-        uploadingSectionId = target.sectionId
-        defer { uploadingSectionId = nil }
+        let key = tileKey(for: target)
+        uploadingTileIds.insert(key)
+        defer { uploadingTileIds.remove(key) }
         do {
             let video: Video
             if let videoId = target.videoId, let existing = sectionVideos[target.sectionId]?.first(where: { $0.id == videoId }) {

@@ -304,7 +304,16 @@ struct ProjectListView: View {
             // web's AppShell header, which only ever renders once per
             // screen too, not per nested folder level).
             ToolbarItem(placement: .navigationBarTrailing) {
-                AvatarMenu()
+                HStack(spacing: 8) {
+                    // Build-freshness tag (see Config.buildTag's own doc
+                    // comment in SubshotApp.swift) — only rendered on this
+                    // root Projects screen, same one-per-screen scoping as
+                    // the bell/avatar above.
+                    Text(Config.buildTag)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    AvatarMenu()
+                }
             }
         }
     }
