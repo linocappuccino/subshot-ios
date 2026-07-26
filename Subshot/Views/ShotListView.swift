@@ -563,7 +563,14 @@ struct ShotListView: View {
                     } label: {
                         Image(systemName: isCompactTileMode ? "checklist" : "square.grid.2x2")
                     }
-                    if isPad {
+                    // #335, 2026-07-26 — this whole ToolbarItem lives on the
+                    // outer Group (see body below), which also hosts the
+                    // Ideas and Postproduction panels, so without this gate
+                    // these iPad column controls showed up there too even
+                    // though ipadColumnCount/isGridMode only ever feed
+                    // sceneGrid(_:), which is exclusively rendered by the
+                    // .scripting (Scenes) branch. Scoped to just that section.
+                    if isPad && activeWorkflowSection == .scripting {
                         if horizontalSizeClass == .regular {
                             Button {
                                 showingColumnCountPopover = true
