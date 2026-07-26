@@ -6,16 +6,32 @@ import Combine
 /// slash-command state machine (see IdeaEditSheet's "Beschreibung"
 /// section). Typing "/" at the top level offers Szene/Shot (🎬) or
 /// Zwischenschritt (🔀); typing "/" again INSIDE one of those offers
-/// Titel (📝, once per block) then Dialog (🗣️), one level deep only —
-/// neither Dialog nor Titel supports its own nested "/". Each block
-/// closes on a double-Enter (an Enter press on an already-blank line)
-/// EXCEPT Titel, which is always exactly one line and closes on any
-/// single Enter. A literal end-marker line ("-- end scene"/
-/// "--- end dialog"/"--- end title") is left behind when a block closes —
-/// this is what the small grey divider line actually IS (see
-/// IdeaSlashEditorController.styledText), matching the backend's own
-/// three regexes exactly (`_IDEA_SCENE_END_MARKER_RE` etc. in
-/// app/main.py) so approve_idea can find block boundaries.
+/// Beschreibung (📄, once per block), then Titel (📝, once per block),
+/// then Dialog (🗣️), one level deep only — none of Beschreibung/Dialog/
+/// Titel supports its own nested "/". Each block closes on a
+/// double-Enter (an Enter press on an already-blank line) EXCEPT Titel,
+/// which is always exactly one line and closes on any single Enter. A
+/// literal end-marker line ("-- end scene"/"--- end dialog"/
+/// "--- end title"/"--- end description") is left behind when a block
+/// closes — this is what the small grey divider line actually IS (see
+/// IdeaSlashEditorController.styledText), matching the backend's own four
+/// regexes exactly (`_IDEA_SCENE_END_MARKER_RE` etc. in app/main.py) so
+/// approve_idea can find block boundaries.
+///
+/// 2026-07-26, #338 — ported web's later-added /beschreibung option
+/// (2026-07-21, Todoist #266, see RichTextEditor.tsx's DESCRIPTION_OPTION
+/// and every "#266" comment there) onto this state machine. Beschreibung
+/// behaves like a mini Szene block one level down: free multi-line text,
+/// no per-line prefix (unlike Dialog), closes on the same double-Enter
+/// blank-line gesture as Szene itself — see closeDescription. Functionally
+/// it changes nothing about where the text ends up (a plain scene-body
+/// line already becomes Scene.description with or without it, per
+/// app/main.py's own _IDEA_DESCRIPTION_MARKER doc comment) — it only gives
+/// that text its own visible open/close boundary, so closing it doesn't
+/// also close the enclosing scene. Single-use per scene, same as Titel
+/// (hasUsedDescription mirrors hasUsedTitle exactly), and web's own
+/// ordering comment ("Beschreibung zuerst, dann Titel, dann Dialog") is
+/// mirrored in the options list built in shouldChange below.
 ///
 /// Deliberately simpler than the web version in a few ways:
 /// - State (which block/sub-block is open) is DERIVED FRESH from the text
@@ -37,7 +53,7 @@ import Combine
 ///   both are web-only polish on top of the core open/close/nesting
 ///   machine this ticket asks to port, not part of it.
 enum IdeaSlashOption: Identifiable, CaseIterable {
-    case scene, intermediate, dialog, title
+    case scene, intermediate, dialog, title, description
     var id: Self { self }
 
     var icon: String {
@@ -46,6 +62,7 @@ enum IdeaSlashOption: Identifiable, CaseIterable {
         case .intermediate: return "🔀"
         case .dialog: return "🗣️"
         case .title: return "📝"
+        case .description: return "📄"
         }
     }
 
@@ -55,6 +72,7 @@ enum IdeaSlashOption: Identifiable, CaseIterable {
         case .intermediate: return "Zwischenschritt"
         case .dialog: return "Dialog"
         case .title: return "Titel"
+        case .description: return "Beschreibung"
         }
     }
 
@@ -93,10 +111,12 @@ final class IdeaSlashEditorController: ObservableObject {
     static let intermediateMarkerLine = IdeaSlashOption.intermediate.markerLine
     static let dialogMarkerLine = IdeaSlashOption.dialog.markerLine
     static let titleMarkerLine = IdeaSlashOption.title.markerLine
+    static let descriptionMarkerLine = IdeaSlashOption.description.markerLine
     static let dialogIcon = IdeaSlashOption.dialog.icon
     static let sceneEndMarker = "-- end scene"
     static let dialogEndMarker = "--- end dialog"
     static let titleEndMarker = "--- end title"
+    static let descriptionEndMarker = "--- end description"
 
     private static func endRegex(_ word: String) -> NSRegularExpression {
         // swiftlint:disable:next force_try — pattern is a fixed literal, never user input.
@@ -105,6 +125,7 @@ final class IdeaSlashEditorController: ObservableObject {
     private static let sceneEndRE = endRegex("scene")
     private static let dialogEndRE = endRegex("dialog")
     private static let titleEndRE = endRegex("title")
+    private static let descriptionEndRE = endRegex("description")
 
     private static func isEndMarker(_ line: String, _ re: NSRegularExpression) -> Bool {
         re.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) != nil
@@ -140,15 +161,17 @@ final class IdeaSlashEditorController: ObservableObject {
     }
 
     /// Scans lines strictly BEFORE `idx` backward for the nearest
-    /// enclosing Szene/Zwischenschritt block and whether a Dialog
-    /// sub-block is still open within it. Mirrors the web app's
-    /// deriveOpenBlockFromContent, minus Titel — Titel is always exactly
-    /// the one line right after "📝 Titel:", so it never needs a
+    /// enclosing Szene/Zwischenschritt block and whether a Dialog or
+    /// Beschreibung sub-block is still open within it. Mirrors the web
+    /// app's deriveOpenBlockFromContent, minus Titel — Titel is always
+    /// exactly the one line right after "📝 Titel:", so it never needs a
     /// multi-line backward scan (see isTitleOpen below).
-    private func blockState(lines: [Substring], beforeIndex idx: Int) -> (sceneOpen: Bool, dialogOpen: Bool) {
+    private func blockState(lines: [Substring], beforeIndex idx: Int) -> (sceneOpen: Bool, dialogOpen: Bool, descriptionOpen: Bool) {
         var i = idx - 1
         var dialogOpen = false
         var dialogDecided = false
+        var descriptionOpen = false
+        var descriptionDecided = false
         while i >= 0 {
             let t = trimmed(lines[i])
             if !dialogDecided {
@@ -159,11 +182,19 @@ final class IdeaSlashEditorController: ObservableObject {
                     dialogDecided = true
                 }
             }
-            if Self.isEndMarker(t, Self.sceneEndRE) { return (false, false) }
-            if t == Self.sceneMarkerLine || t == Self.intermediateMarkerLine { return (true, dialogOpen) }
+            if !descriptionDecided {
+                if Self.isEndMarker(t, Self.descriptionEndRE) {
+                    descriptionDecided = true
+                } else if t == Self.descriptionMarkerLine {
+                    descriptionOpen = true
+                    descriptionDecided = true
+                }
+            }
+            if Self.isEndMarker(t, Self.sceneEndRE) { return (false, false, false) }
+            if t == Self.sceneMarkerLine || t == Self.intermediateMarkerLine { return (true, dialogOpen, descriptionOpen) }
             i -= 1
         }
-        return (false, false)
+        return (false, false, false)
     }
 
     /// Titel mode only ever lasts exactly one line — the one right after
@@ -190,6 +221,23 @@ final class IdeaSlashEditorController: ObservableObject {
         return false
     }
 
+    /// 2026-07-26, #338 — has the scene block enclosing `idx` already used
+    /// its one allowed Beschreibung? Exact mirror of hasUsedTitle above,
+    /// single-use per scene same as Titel (see this file's top-of-file doc
+    /// comment).
+    private func hasUsedDescription(lines: [Substring], beforeIndex idx: Int) -> Bool {
+        var i = idx - 1
+        while i >= 0 {
+            let t = trimmed(lines[i])
+            if t == Self.descriptionMarkerLine { return true }
+            if Self.isEndMarker(t, Self.descriptionEndRE) { return true }
+            if Self.isEndMarker(t, Self.sceneEndRE) { return false }
+            if t == Self.sceneMarkerLine || t == Self.intermediateMarkerLine { return false }
+            i -= 1
+        }
+        return false
+    }
+
     // MARK: - UITextViewDelegate entry point
 
     /// Returns true to let the native edit proceed unmodified, or false
@@ -204,7 +252,8 @@ final class IdeaSlashEditorController: ObservableObject {
 
         // "/" trigger — only at start-of-line-or-after-whitespace (not
         // mid-word, so e.g. "10/07" never triggers it), and never while
-        // inside Dialog/Titel (neither supports its own nested slash).
+        // inside Dialog/Titel/Beschreibung (none of the three supports its
+        // own nested slash).
         if insert == "/" {
             let charBefore: String? = range.location > 0
                 ? ns.substring(with: NSRange(location: range.location - 1, length: 1))
@@ -212,10 +261,22 @@ final class IdeaSlashEditorController: ObservableObject {
             let triggerOK = charBefore == nil || charBefore == "\n" || charBefore?.first?.isWhitespace == true
             guard triggerOK, !isTitleOpen(lines: currentLines, atIndex: idx) else { return true }
             let state = blockState(lines: currentLines, beforeIndex: idx)
-            guard !state.dialogOpen else { return true }
-            let options: [IdeaSlashOption] = state.sceneOpen
-                ? (hasUsedTitle(lines: currentLines, beforeIndex: idx) ? [.dialog] : [.title, .dialog])
-                : [.scene, .intermediate]
+            guard !state.dialogOpen, !state.descriptionOpen else { return true }
+            // 2026-07-26, #338 — web's own ordering comment: "Beschreibung
+            // zuerst, dann Titel, dann Dialog — beide Beschreibung/Titel
+            // sind single-use pro Szene, fallen aus dem [Menü sobald einmal
+            // benutzt]". Dialog has no single-use flag of its own — it can
+            // be reopened as many times as needed per scene.
+            let options: [IdeaSlashOption]
+            if state.sceneOpen {
+                var opts: [IdeaSlashOption] = []
+                if !hasUsedDescription(lines: currentLines, beforeIndex: idx) { opts.append(.description) }
+                if !hasUsedTitle(lines: currentLines, beforeIndex: idx) { opts.append(.title) }
+                opts.append(.dialog)
+                options = opts
+            } else {
+                options = [.scene, .intermediate]
+            }
             // Captures the "/" itself (about to be inserted, length 1) so
             // confirmSlash can delete exactly that character later —
             // mirrors web's own "delete the triggering / immediately
@@ -237,6 +298,18 @@ final class IdeaSlashEditorController: ObservableObject {
         }
 
         let state = blockState(lines: currentLines, beforeIndex: idx)
+        // 2026-07-26, #338 — Beschreibung is free multi-line text with no
+        // per-line prefix (unlike Dialog), so its close gesture mirrors
+        // Szene's own blank-line-closes shape below exactly, just nested
+        // one level in: an empty line closes JUST the description (scene
+        // stays open), a non-empty line is an ordinary new content line.
+        if state.descriptionOpen {
+            if isLineEmpty(currentLine) {
+                closeDescription(textView: textView, at: range)
+                return false
+            }
+            return true
+        }
         if state.dialogOpen {
             if isDialogLineEmpty(currentLine) {
                 closeDialog(textView: textView, at: range)
@@ -269,7 +342,10 @@ final class IdeaSlashEditorController: ObservableObject {
             let seed = "\(Self.dialogIcon) "
             let insertion = "\(option.markerLine)\n\(seed)"
             apply(insertion, in: textView, range: triggerRange, cursorOffset: (insertion as NSString).length)
-        case .title:
+        case .title, .description:
+            // Same shape as .scene/.intermediate above — just the marker
+            // plus a fresh blank line to write into, no seeded prefix
+            // (Beschreibung has no per-line icon prefix, unlike Dialog).
             let insertion = "\(option.markerLine)\n"
             apply(insertion, in: textView, range: triggerRange, cursorOffset: (insertion as NSString).length)
         }
@@ -295,6 +371,13 @@ final class IdeaSlashEditorController: ObservableObject {
 
     private func closeDialog(textView: UITextView, at range: NSRange) {
         let insertion = "\(Self.dialogEndMarker)\n\n"
+        apply(insertion, in: textView, range: range, cursorOffset: (insertion as NSString).length)
+    }
+
+    /// 2026-07-26, #338 — closes JUST the Beschreibung nesting (scene stays
+    /// open), same replace-the-blank-line shape as closeScene/closeDialog.
+    private func closeDescription(textView: UITextView, at range: NSRange) {
+        let insertion = "\(Self.descriptionEndMarker)\n\n"
         apply(insertion, in: textView, range: range, cursorOffset: (insertion as NSString).length)
     }
 
@@ -353,6 +436,7 @@ final class IdeaSlashEditorController: ObservableObject {
             let isMarker = Self.isEndMarker(t, Self.sceneEndRE)
                 || Self.isEndMarker(t, Self.dialogEndRE)
                 || Self.isEndMarker(t, Self.titleEndRE)
+                || Self.isEndMarker(t, Self.descriptionEndRE)
             result.append(NSAttributedString(string: line, attributes: isMarker ? markerAttrs : bodyAttrs))
             if i < allLines.count - 1 {
                 result.append(NSAttributedString(string: "\n", attributes: bodyAttrs))

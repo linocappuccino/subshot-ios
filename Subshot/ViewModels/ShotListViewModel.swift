@@ -199,12 +199,30 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
+    /// 2026-07-26 (#337, CRITICAL, Lino: "wirft raus mit 'Verbindungsfehler:
+    /// Cancelled'") — IdeaEditSheet.scheduleAutosave debounces every
+    /// title/text keystroke by cancelling the previous autosave Task and
+    /// starting a new one; when a keystroke lands while the PREVIOUS
+    /// autosave's network request is still in flight (slow/spotty
+    /// connection, or just fast typing outrunning the round trip), that
+    /// in-flight `URLSession` call gets cancelled and throws
+    /// `APIError.network(URLError(.cancelled))` here — a benign, EXPECTED
+    /// supersession, not a real failure (see APIError.isCancellation's own
+    /// doc comment, which already describes this exact "Fehler:
+    /// Verbindungsfehler: cancelled" symptom for a different call site).
+    /// This method was missing the guard `load()` above already applies:
+    /// every cancelled-because-superseded keystroke was surfacing as a real
+    /// error, repeatedly, while actively typing. Skipping it here also means
+    /// the shared errorMessage alert (bound at ShotListView, ABOVE the open
+    /// IdeaEditSheet sheet) no longer gets repeatedly re-triggered while the
+    /// sheet is on screen — the most likely explanation for reports of being
+    /// forced back out to the ideas grid while typing.
     func patchIdea(_ idea: Idea, title: String? = nil, text: String? = nil) async {
         do {
             let updated = try await APIClient.shared.patchIdea(idea.id, title: title, text: text)
             if let index = ideas.firstIndex(where: { $0.id == updated.id }) { ideas[index] = updated }
         } catch {
-            errorMessage = error.localizedDescription
+            if !APIError.isCancellation(error) { errorMessage = error.localizedDescription }
         }
     }
 

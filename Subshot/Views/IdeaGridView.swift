@@ -124,11 +124,24 @@ private struct IdeaTileView: View {
                     // render sites this feature needed on web).
                     if isVideoUrl(url) {
                         AsyncIdeaVideoThumbnail(path: url)
-                            .aspectRatio(16.0 / 9.0, contentMode: .fill)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .clipped()
                     } else {
+                        // 2026-07-26 (#336, Lino: "Thumbnails eingezoomt") — was
+                        // `.aspectRatio(16/9, contentMode: .fill).clipped()`
+                        // applied directly to AsyncShotThumbnail with no
+                        // definite frame to fill against, which left the fill
+                        // computation to negotiate against AsyncShotThumbnail's
+                        // own unconstrained/intrinsic (image-pixel-size-driven)
+                        // ideal size rather than the tile's actual visible box —
+                        // over-cropping the photo. Every other working cover-
+                        // photo call site in the app (ShotListView's sceneTile/
+                        // ShotCard) instead gives AsyncShotThumbnail an explicit
+                        // greedy `.frame(...)` and lets ITS OWN internal
+                        // `.aspectRatio(contentMode: .fill)` do the (single) fill
+                        // computation against that definite frame — mirrored here.
                         AsyncShotThumbnail(path: url, size: nil, lockAspectRatio: false)
-                            .aspectRatio(16.0 / 9.0, contentMode: .fill)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .clipped()
                     }
                 } else {
@@ -138,6 +151,7 @@ private struct IdeaTileView: View {
                 }
             }
             .aspectRatio(16.0 / 9.0, contentMode: .fit)
+            .frame(maxWidth: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
             VStack(alignment: .leading, spacing: 3) {
