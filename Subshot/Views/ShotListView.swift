@@ -312,7 +312,23 @@ struct ShotListView: View {
         case ideas, scripting, postproduction
         static func < (lhs: WorkflowSection, rhs: WorkflowSection) -> Bool { lhs.rawValue < rhs.rawValue }
     }
-    @State private var activeWorkflowSection: WorkflowSection = .ideas
+    // 2026-07-26, Lino: "drückt man auf ein projekt was NUR die
+    // postproductionpipeline aktiviert hat, springt er zuerst auf die
+    // ideenseite ganz kurz und dann erst auf die postproduction seite..
+    // er soll aber DIREKT... springen" — this used to always default to
+    // `.ideas` here and only get corrected inside the `.task` below, AFTER
+    // `viewModel.load()` (a real network round-trip) resolved the module
+    // flags — so the very first frame(s) always rendered the Ideas panel
+    // regardless of which modules the project actually has, however
+    // briefly. Fixed by seeding this from the module flags the caller
+    // ALREADY has in hand (the `Project` tile that was tapped to get here
+    // carries its own moduleConcept/moduleScripting/modulePostproduction —
+    // see the init below) so the correct section is known before the very
+    // first render, not corrected after. The `.task` below still re-checks
+    // once real data loads, as a fallback for a stale/wrong tile-level
+    // value (e.g. modules changed by someone else since this tile was
+    // fetched).
+    @State private var activeWorkflowSection: WorkflowSection
     /// 2026-07-23 (#323, Lino: swiping to another section still worked even
     /// when a project only has Postproduction active) — module_concept/
     /// module_scripting/module_postproduction (see ShotListViewModel.load)
@@ -354,12 +370,27 @@ struct ShotListView: View {
         }
     }
 
-    init(projectId: String, projectName: String, pendingDeepLinkKind: String? = nil, pendingDeepLinkId: String? = nil) {
+    /// 2026-07-26 — module flags default to `true` (same default the
+    /// `Project` model itself uses, see Models.swift) purely so every
+    /// OTHER existing call/preview that doesn't pass them still behaves
+    /// exactly as before (lands on .ideas, since ideas is enabled) — the
+    /// two real navigation call sites in ProjectListView.swift always pass
+    /// the tapped Project's actual values.
+    init(
+        projectId: String, projectName: String, pendingDeepLinkKind: String? = nil, pendingDeepLinkId: String? = nil,
+        moduleConcept: Bool = true, moduleScripting: Bool = true, modulePostproduction: Bool = true
+    ) {
         self.projectId = projectId
         _viewModel = StateObject(wrappedValue: ShotListViewModel(projectId: projectId))
         self.projectName = projectName
         self.pendingDeepLinkKind = pendingDeepLinkKind
         self.pendingDeepLinkId = pendingDeepLinkId
+        let initialSection = [
+            (WorkflowSection.ideas, moduleConcept),
+            (WorkflowSection.scripting, moduleScripting),
+            (WorkflowSection.postproduction, modulePostproduction),
+        ].first(where: { $0.1 })?.0 ?? .ideas
+        _activeWorkflowSection = State(initialValue: initialSection)
     }
 
     var body: some View {

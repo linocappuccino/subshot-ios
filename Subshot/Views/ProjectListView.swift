@@ -134,7 +134,11 @@ struct ProjectListView: View {
             NavigationStack(path: $path) {
                 gridScreen
                     .navigationDestination(for: Project.self) { project in
-                        ShotListView(projectId: project.id, projectName: project.name)
+                        ShotListView(
+                            projectId: project.id, projectName: project.name,
+                            moduleConcept: project.moduleConcept, moduleScripting: project.moduleScripting,
+                            modulePostproduction: project.modulePostproduction
+                        )
                     }
                     .navigationDestination(for: ProjectFolder.self) { folder in
                         ProjectListView(folderId: folder.id, folderName: folder.name)
@@ -142,7 +146,9 @@ struct ProjectListView: View {
                     .navigationDestination(for: NotificationDeepLink.self) { link in
                         ShotListView(
                             projectId: link.project.id, projectName: link.project.name,
-                            pendingDeepLinkKind: link.entityKind, pendingDeepLinkId: link.entityId
+                            pendingDeepLinkKind: link.entityKind, pendingDeepLinkId: link.entityId,
+                            moduleConcept: link.project.moduleConcept, moduleScripting: link.project.moduleScripting,
+                            modulePostproduction: link.project.modulePostproduction
                         )
                     }
             }

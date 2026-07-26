@@ -149,9 +149,15 @@ struct PostproductionListView: View {
         } else {
             ScrollView {
                 // 2026-07-26 (#331) — 12pt was cramped ("Kacheln zu eng
-                // aneinander"); 16pt matches ProjectListView's own grid
-                // spacing convention (its `columns`/LazyVGrid both use 16).
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
+                // aneinander"); bumped to 16pt (ProjectListView's own grid
+                // spacing convention). Same day, Lino re-reported "brauchen
+                // mehr abstand zueinander" after actually testing that build
+                // — 16pt still read as too tight to him in practice, bumped
+                // again to 22pt (deliberately past ProjectListView's 16 now;
+                // these tiles carry a lot more footer content — title,
+                // status picker, deadline toggle — than a plain project
+                // tile, so they benefit from more breathing room).
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 22), GridItem(.flexible(), spacing: 22)], spacing: 22) {
                     ForEach(tiles) { tile in
                         PostproductionVideoTile(
                             section: tile.section,
@@ -279,7 +285,7 @@ struct PostproductionListView: View {
             get: { playing.map { PlayingPostproductionVideo(video: $0.video, version: $0.version) } },
             set: { if $0 == nil { playing = nil } }
         )) { item in
-            VideoPlayerSheet(video: item.video, version: item.version) { updated in
+            VideoPlayerSheet(video: item.video, version: item.version, projectId: viewModel.projectId) { updated in
                 updateVersion(updated, videoId: item.video.id)
             }
         }

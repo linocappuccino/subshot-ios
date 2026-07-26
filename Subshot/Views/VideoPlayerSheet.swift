@@ -1,32 +1,70 @@
 import SwiftUI
 import AVKit
 
-/// Vollbild-Player fuers Video-Feedback-Tool (2026-07-17, Lino: "Vollbild-
-/// Video, langer/fester Druck pausiert + oeffnet Kommentarfeld, Enter
-/// speichert, Video laeuft weiter"). Langer Druck pausiert UND oeffnet die
-/// Kommentarleiste, Rueckgabetaste im Textfeld speichert den Kommentar bei
-/// der aktuellen Abspielposition und startet die Wiedergabe automatisch
-/// wieder — kein separater "Fortsetzen"-Tap noetig.
+/// Vollbild-Player fuers Video-Feedback-Tool.
+///
+/// 2026-07-26 — full control-layout rework, Lino (after actually using the
+/// #284 build): "öffnet man ein Video, kann man KEINE kommentare machen?
+/// wieso?" Root cause: the ONLY way in was a `.onLongPressGesture` layered
+/// on top of AVKit's `VideoPlayer` — that view installs its OWN UIKit
+/// gesture recognizers internally (tap-to-toggle-chrome, double-tap-seek,
+/// long-press for the system context menu), which routinely win the
+/// recognizer race against a SwiftUI `.gesture`/`.onLongPressGesture`
+/// layered on top of it, so the long-press silently did nothing most of
+/// the time — not a logic bug, a gesture-conflict bug. Fixed by dropping
+/// the long-press entirely in favor of an explicit, always-tappable button
+/// (see `commentButton` below) that pauses + opens the comment panel no
+/// matter what AVKit's own recognizers are doing.
+/// Also addresses: the old comment-count button lived in `topBar` (top
+/// trailing), the exact corner AVKit's own fullscreen chrome renders its
+/// AirPlay/PiP icons in — Lino: "der kommentar button... ist zu nahe am
+/// Volumen button, soll nach rechts unten". Moved to a bottom-trailing
+/// custom cluster instead, well clear of that native corner, next to a new
+/// custom "Teilen" button (reuses ShareLinkSheet, same as the project-level
+/// share button elsewhere in this app) — `player.allowsExternalPlayback =
+/// false` below also drops the native AirPlay icon so there's no leftover
+/// duplicate/confusing second "share to a display" affordance once ours
+/// exists.
+/// NOT changed: AVKit's native bottom-right "..." (playback speed) menu —
+/// there is no public API to selectively hide just that button while
+/// keeping the rest of the system transport bar (play/pause/scrub); doing
+/// so would mean replacing AVKit's entire control surface with a fully
+/// custom one (`showsPlaybackControls = false` + hand-built scrubber),
+/// which is too large/too risky to ship blind with no compiler here to
+/// verify it against. Flagged back to Lino rather than guessed at.
 struct VideoPlayerSheet: View {
     let video: Video
     let version: VideoVersion
+    /// 2026-07-26 — nil for VideoPanelView.swift's superseded/dead call
+    /// site (no project id in scope there, see that file's own doc
+    /// comment); the live PostproductionListView call site always passes
+    /// a real value. The share button hides itself when nil.
+    var projectId: String? = nil
     var onVersionUpdated: (VideoVersion) -> Void
 
     @ObservedObject private var language = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
     @State private var player: AVPlayer?
-    @State private var showCommentField = false
-    @State private var showCommentList = false
+    /// 2026-07-26 — was two separate bools (showCommentField/
+    /// showCommentList); Lino: "drückt man [den Kommentar-Button], sieht
+    /// man die anderen Kommentare UND kann direkt einen neuen Kommentar
+    /// einfügen" — one tap now always reveals BOTH together instead of the
+    /// add-bar only being reachable via the old long-press.
+    @State private var showCommentPanel = false
     @State private var commentText = ""
     @State private var authorName = ""
     @State private var comments: [VideoComment]
     @State private var posting = false
     @State private var errorMessage: String?
     @FocusState private var commentFieldFocused: Bool
+    @State private var showingShareLinkSheet = false
+    @State private var shareLinkURL: URL?
+    @State private var isPresentingActivityShare = false
 
-    init(video: Video, version: VideoVersion, onVersionUpdated: @escaping (VideoVersion) -> Void) {
+    init(video: Video, version: VideoVersion, projectId: String? = nil, onVersionUpdated: @escaping (VideoVersion) -> Void) {
         self.video = video
         self.version = version
+        self.projectId = projectId
         self.onVersionUpdated = onVersionUpdated
         _comments = State(initialValue: version.comments)
     }
@@ -37,25 +75,17 @@ struct VideoPlayerSheet: View {
             if let player {
                 VideoPlayer(player: player)
                     .ignoresSafeArea()
-                    // 2026-07-21, #284 — "long-press while PLAYING OR
-                    // PAUSED" — this fires regardless of the player's
-                    // current play/pause state either way (it's a plain
-                    // gesture on the view, not conditioned on isPlaying),
-                    // pause() on an already-paused player is just a no-op.
-                    .onLongPressGesture(minimumDuration: 0.4) {
-                        player.pause()
-                        showCommentField = true
-                        commentFieldFocused = true
-                    }
                     // 2026-07-21, #284 — swipe down closes the player
                     // (back to the Postproduction grid), swipe up reveals
-                    // the comment list; a plain vertical-translation
+                    // the comment panel; a plain vertical-translation
                     // DragGesture rather than anything library-specific
                     // (web's VideoReviewModal has no swipe gestures at
                     // all to port from — this is a mobile-native addition
                     // the ticket asks for directly). Horizontal drags are
                     // ignored (scrubbing stays the system VideoPlayer's
-                    // own built-in seek bar).
+                    // own built-in seek bar). The long-press-to-comment
+                    // gesture that used to live here is gone — see this
+                    // struct's own top-of-file doc comment for why.
                     .gesture(
                         DragGesture(minimumDistance: 30)
                             .onEnded { value in
@@ -65,7 +95,7 @@ struct VideoPlayerSheet: View {
                                 if v > 80 {
                                     dismiss()
                                 } else if v < -80 {
-                                    withAnimation { showCommentList = true }
+                                    withAnimation { showCommentPanel = true }
                                 }
                             }
                     )
@@ -89,10 +119,20 @@ struct VideoPlayerSheet: View {
                         .background(.red.opacity(0.8))
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
-                if showCommentList {
-                    commentListOverlay
+                if !showCommentPanel {
+                    // 2026-07-26 — bottom-trailing custom cluster, well
+                    // clear of AVKit's own top-trailing AirPlay/PiP corner
+                    // (see doc comment above). Hidden while the panel is
+                    // open — the panel's own send button takes over.
+                    HStack {
+                        Spacer()
+                        controlCluster
+                    }
+                    .padding(.trailing, 16)
+                    .padding(.bottom, 8)
                 }
-                if showCommentField {
+                if showCommentPanel {
+                    commentListOverlay
                     commentBar
                 }
             }
@@ -100,8 +140,26 @@ struct VideoPlayerSheet: View {
         .onAppear {
             guard let urlString = version.playbackUrl, let url = URL(string: urlString) else { return }
             let p = AVPlayer(url: url)
+            // 2026-07-26 — drops the native AirPlay ("Bildschirm
+            // freigeben") icon from AVKit's own top-trailing chrome now
+            // that a custom "Teilen" button exists (see controlCluster);
+            // avoids two overlapping "share to somewhere" affordances.
+            p.allowsExternalPlayback = false
             player = p
             p.play()
+        }
+        .sheet(isPresented: $showingShareLinkSheet) {
+            if let projectId {
+                ShareLinkSheet(projectId: projectId, kind: "video") { url in
+                    shareLinkURL = url
+                    isPresentingActivityShare = true
+                }
+            }
+        }
+        .sheet(isPresented: $isPresentingActivityShare) {
+            if let shareLinkURL {
+                ActivityView(activityItems: [shareLinkURL])
+            }
         }
         .task {
             // 2026-07-23 (#322) — authorName started every long-press comment
@@ -130,24 +188,78 @@ struct VideoPlayerSheet: View {
                     .foregroundStyle(.white, .black.opacity(0.4))
             }
             Spacer()
-            Button {
-                withAnimation { showCommentList.toggle() }
-            } label: {
-                Label("\(comments.count)", systemImage: "bubble.left.fill")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.black.opacity(0.4))
-                    .clipShape(Capsule())
-            }
         }
         .padding()
+    }
+
+    /// 2026-07-26 — bottom-trailing custom row: "Teilen" (share) button on
+    /// the left, comment button on the right/outer corner ("Display share
+    /// button soll links neben den Volumen button... Kommentar soll nach
+    /// rechts unten"), a little spacing between them.
+    private var controlCluster: some View {
+        HStack(spacing: 14) {
+            if projectId != nil {
+                shareButton
+            }
+            commentButton
+        }
+    }
+
+    private var shareButton: some View {
+        Button {
+            showingShareLinkSheet = true
+        } label: {
+            Image(systemName: "square.and.arrow.up")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .background(.black.opacity(0.45))
+                .clipShape(Circle())
+        }
+        .accessibilityLabel(language.t("videoPlayerSheet.share"))
+    }
+
+    /// 2026-07-26 — replaces the old broken long-press: an always-tappable
+    /// button that pauses playback (so the timestamp a new comment lands
+    /// on doesn't keep drifting while typing, same intent the long-press
+    /// originally had) and opens the merged list+add panel in one go.
+    private var commentButton: some View {
+        Button {
+            player?.pause()
+            withAnimation { showCommentPanel.toggle() }
+            if showCommentPanel { commentFieldFocused = true }
+        } label: {
+            Label("\(comments.count)", systemImage: "bubble.left.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(.black.opacity(0.45))
+                .clipShape(Capsule())
+        }
+        .accessibilityLabel(language.t("videoPlayerSheet.comments"))
     }
 
     private var commentListOverlay: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
+                // 2026-07-26 — the comment button that opens this panel
+                // hides itself while the panel is showing (see body
+                // above), so there needs to be an explicit close affordance
+                // in here instead of relying purely on the swipe-down
+                // gesture.
+                HStack {
+                    Text(language.t("videoPlayerSheet.comments"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.6))
+                    Spacer()
+                    Button {
+                        withAnimation { showCommentPanel = false }
+                    } label: {
+                        Image(systemName: "chevron.down.circle.fill")
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+                }
                 if comments.isEmpty {
                     Text(language.t("videoPlayerSheet.noComments"))
                         .font(.caption)
@@ -198,11 +310,21 @@ struct VideoPlayerSheet: View {
         .padding(.horizontal)
     }
 
+    // 2026-07-26, Lino: "Das momentane Kommentarfeld... soll fast
+    // bildschirmbreit sein" — was constrained by a fixed 100pt name field
+    // PLUS padding applied twice (once around the HStack, again around the
+    // whole bar), eating ~64pt of horizontal space on top of that on a
+    // ~390pt-wide phone. authorName is already auto-filled from the
+    // signed-in account (see the .task above) — shrunk to a small,
+    // still-editable 64pt field instead of dropping it outright, single
+    // outer padding, so the comment TextField itself gets the vast
+    // majority of the screen width.
     private var commentBar: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             TextField(language.t("videoPlayerSheet.yourName"), text: $authorName)
                 .textFieldStyle(.roundedBorder)
-                .frame(width: 100)
+                .frame(width: 64)
+                .font(.caption)
             TextField(language.t("videoPlayerSheet.commentPlaceholder"), text: $commentText)
                 .textFieldStyle(.roundedBorder)
                 .focused($commentFieldFocused)
@@ -214,10 +336,12 @@ struct VideoPlayerSheet: View {
             }
             .disabled(posting || authorName.trimmingCharacters(in: .whitespaces).isEmpty || commentText.trimmingCharacters(in: .whitespaces).isEmpty)
         }
-        .padding()
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
-        .padding()
+        .padding(.horizontal, 6)
+        .padding(.bottom, 6)
     }
 
     private func timeLabel(_ seconds: Double) -> String {
@@ -243,7 +367,7 @@ struct VideoPlayerSheet: View {
             updated.comments = comments
             onVersionUpdated(updated)
             commentText = ""
-            showCommentField = false
+            showCommentPanel = false
             player.play()
         } catch {
             errorMessage = error.localizedDescription

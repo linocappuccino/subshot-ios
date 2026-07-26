@@ -126,6 +126,8 @@ extension AppLanguage {
             "videoPlayerSheet.noComments": "Noch keine Kommentare.",
             "videoPlayerSheet.yourName": "Dein Name",
             "videoPlayerSheet.commentPlaceholder": "Kommentar…",
+            "videoPlayerSheet.comments": "Kommentare",
+            "videoPlayerSheet.share": "Teilen",
 
             // NotificationsSheet.swift
             "notificationsSheet.empty": "Keine neuen Benachrichtigungen",
@@ -258,6 +260,8 @@ extension AppLanguage {
             "videoPlayerSheet.noComments": "No comments yet.",
             "videoPlayerSheet.yourName": "Your name",
             "videoPlayerSheet.commentPlaceholder": "Comment…",
+            "videoPlayerSheet.comments": "Comments",
+            "videoPlayerSheet.share": "Share",
 
             // NotificationsSheet.swift
             "notificationsSheet.empty": "No new notifications",
