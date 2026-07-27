@@ -626,6 +626,23 @@ final class APIClient {
         return try await send(req)
     }
 
+    /// 2026-07-27, Todoist #356 — "Intern abgenommen/abgelehnt", the
+    /// internal PL/Admin review gate (separate from approveIdea above).
+    /// Idempotent, same shape: a second call once internal_status is
+    /// already set is a no-op, see backend's own doc comment.
+    func internalApproveIdea(_ id: String) async throws -> Idea {
+        let req = try await authorizedRequest("ideas/\(id)/internal-approve", method: "POST")
+        return try await send(req)
+    }
+
+    /// Also sets the idea's regular `status` to "rejected" server-side
+    /// (reuses the existing client-facing reject mechanism instead of a
+    /// second parallel one) — see internal_reject_idea's doc comment.
+    func internalRejectIdea(_ id: String) async throws -> Idea {
+        let req = try await authorizedRequest("ideas/\(id)/internal-reject", method: "POST")
+        return try await send(req)
+    }
+
     /// Read-only from this app's side — client feedback is only ever
     /// WRITTEN on the public web share page (no login there). Only "sent"
     /// feedback is ever returned (drafts filtered out server-side).

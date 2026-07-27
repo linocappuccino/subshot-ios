@@ -12,6 +12,13 @@ struct IdeaEditSheet: View {
     @ObservedObject var viewModel: ShotListViewModel
     @ObservedObject private var language = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
+    /// 2026-07-27, Todoist #356 — gates the "Intern abgenommen/abgelehnt"
+    /// buttons to Projektleiter/Owner; every member still SEES the status
+    /// read-only regardless of role. Self-fetched (same pattern as
+    /// PostproductionListView's own myRole) rather than threaded through
+    /// both of this sheet's call sites.
+    @State private var myRole: String?
+    private var canInternalReview: Bool { myRole == "projektleiter" || myRole == "owner" }
 
     @State private var title: String
     /// 2026-07-21, #277 — owns the description text AND the whole
@@ -32,6 +39,11 @@ struct IdeaEditSheet: View {
     @State private var showFeedback = false
     @State private var approving = false
     @State private var deleting = false
+    /// 2026-07-27, Todoist #356 — internal PL/Admin review gate, separate
+    /// request-in-flight flags from `approving` above (different buttons,
+    /// different endpoints).
+    @State private var internalApproving = false
+    @State private var internalRejecting = false
     /// 2026-07-21, #278 — tap an idea image to view it fullscreen, tap
     /// again to dismiss back to this card. Independent of the delete "x"
     /// button (that stays its own small tap target inside the same tile,
@@ -124,6 +136,18 @@ struct IdeaEditSheet: View {
         await viewModel.approveIdea(idea)
     }
 
+    private func internalApprove() async {
+        internalApproving = true
+        defer { internalApproving = false }
+        await viewModel.internalApproveIdea(idea)
+    }
+
+    private func internalReject() async {
+        internalRejecting = true
+        defer { internalRejecting = false }
+        await viewModel.internalRejectIdea(idea)
+    }
+
     private func performDelete() async {
         deleting = true
         await viewModel.deleteIdea(idea)
@@ -175,6 +199,69 @@ struct IdeaEditSheet: View {
                     Text(language.t("ideaEditSheet.slashHint"))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                }
+
+                // 2026-07-27, Todoist #356 — "Intern abgenommen/abgelehnt",
+                // a SEPARATE PL/Admin-only review gate from the client-
+                // facing Abgenommen button below. Blocks creating/sending
+                // the Ideas preview ShareLink until every open idea has
+                // gone through this. Visible to every member (read-only for
+                // non-PL/Admin, canInternalReview gates the actual
+                // buttons); hidden once there's nothing meaningful to show
+                // (idea already client-decided AND never internally
+                // reviewed — i.e. predates this feature), same condition as
+                // the web app's IdeaFloatingCard.
+                if liveIdea.status == .open || liveIdea.internalStatus != nil {
+                    Section(language.t("ideaEditSheet.internalReviewSectionLabel")) {
+                        if liveIdea.internalStatus == "approved" {
+                            Label(
+                                language.t("ideaEditSheet.internalApprovedBy")
+                                    .replacingOccurrences(of: "{name}", with: liveIdea.internalReviewedByName ?? "")
+                                    .replacingOccurrences(of: "{when}", with: liveIdea.internalReviewedAt.map { Self.dateFormatter.string(from: $0) } ?? ""),
+                                systemImage: "checkmark.circle.fill"
+                            )
+                            .foregroundStyle(.green)
+                        } else if liveIdea.internalStatus == "rejected" {
+                            Label(
+                                language.t("ideaEditSheet.internalRejectedBy")
+                                    .replacingOccurrences(of: "{name}", with: liveIdea.internalReviewedByName ?? "")
+                                    .replacingOccurrences(of: "{when}", with: liveIdea.internalReviewedAt.map { Self.dateFormatter.string(from: $0) } ?? ""),
+                                systemImage: "xmark.circle.fill"
+                            )
+                            .foregroundStyle(.red)
+                        } else if canInternalReview {
+                            HStack(spacing: 8) {
+                                Button {
+                                    Task { await internalReject() }
+                                } label: {
+                                    Text(language.t("ideaEditSheet.internalReject"))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 6)
+                                        .background(Color(.systemGray5))
+                                        .foregroundStyle(.primary)
+                                        .clipShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(internalApproving || internalRejecting)
+
+                                Button {
+                                    Task { await internalApprove() }
+                                } label: {
+                                    Text(language.t("ideaEditSheet.internalApprove"))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 6)
+                                        .background(Color(.systemGray5))
+                                        .foregroundStyle(.primary)
+                                        .clipShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(internalApproving || internalRejecting)
+                            }
+                        } else {
+                            Text(language.t("ideaEditSheet.internalReviewPending"))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
 
                 Section(language.t("ideaEditSheet.feedbackSectionLabel")) {
@@ -295,6 +382,11 @@ struct IdeaEditSheet: View {
         }
         .onAppear {
             slashController.onTextChanged = { scheduleAutosave() }
+        }
+        .task {
+            if let me = try? await APIClient.shared.me() {
+                myRole = viewModel.members.first(where: { $0.userId == me.id })?.role
+            }
         }
         .preferredColorScheme(.dark)
         .alert(language.t("ideaEditSheet.noCreditsTitle"), isPresented: $showInsufficientCreditsAlert) {

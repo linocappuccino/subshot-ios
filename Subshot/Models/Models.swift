@@ -361,6 +361,16 @@ enum ShotStatus: String, Codable {
 
 enum IdeaStatus: String, Codable {
     case open, approved
+    /// 2026-07-27, Todoist #356 — added defensively: internal_reject_idea
+    /// (new, see below) sets this same status the web app's existing
+    /// "Abgelehnt" button always could, but this case never existed here.
+    /// Without it, decoding a SINGLE rejected idea would throw and fail the
+    /// ENTIRE `[Idea]` array fetch for the whole project — not just hide
+    /// that one idea. The client-facing "Abgelehnt" UI itself (web's own
+    /// reject button/badge) is still a separate, pre-existing, un-ported
+    /// iOS gap (see feedback_ios_web_parity) — out of scope here, this is
+    /// only the minimum decode-safety fix.
+    case rejected
 }
 
 enum IdeaImageStatus: String, Codable {
@@ -437,6 +447,14 @@ struct Idea: Codable, Identifiable, Hashable {
     /// Wann die Idee angenommen wurde (2026-07-17) — nil solange status
     /// "open" ist, einmalig gesetzt beim Wechsel zu "approved".
     var approvedAt: Date?
+    /// 2026-07-27, Todoist #356 — a SEPARATE internal PL/Admin review gate,
+    /// unrelated to status/approvedAt above (that's the client-facing
+    /// Section/Scene conversion). Blocks creating the Ideas preview
+    /// ShareLink until every open idea has one of these two decisions. Set
+    /// once, no undo. See backend Idea.internal_status's doc comment.
+    var internalStatus: String?
+    var internalReviewedAt: Date?
+    var internalReviewedByName: String?
     var images: [IdeaImage] = []
     /// Count of "sent" client feedback only (drafts never counted) — drives
     /// the Idee/1. Feedback/2. Feedback/Abgenommen grouping, see
@@ -453,6 +471,9 @@ struct Idea: Codable, Identifiable, Hashable {
         case sceneId = "scene_id"
         case createdAt = "created_at"
         case approvedAt = "approved_at"
+        case internalStatus = "internal_status"
+        case internalReviewedAt = "internal_reviewed_at"
+        case internalReviewedByName = "internal_reviewed_by_name"
         case feedbackCount = "feedback_count"
     }
 

@@ -153,7 +153,18 @@ struct ShareLinkSheet: View {
             hasPassword = result.has_password
             isProtecting = result.has_password
         } catch {
-            errorMessage = error.localizedDescription
+            // 2026-07-27, Todoist #356 — get_or_create_share_link returns a
+            // structured {"error":"ideas_not_internally_reviewed"} 409 when
+            // kind=="ideas" and not every open idea has gone through the
+            // internal PL/Admin review gate yet. This client (unlike the
+            // web app's api.ts) doesn't parse the JSON body anywhere, so
+            // matching the raw substring here is the minimal fix rather
+            // than reworking APIError's shared error-handling.
+            if case APIError.server(status: 409, message: let raw) = error, raw.contains("ideas_not_internally_reviewed") {
+                errorMessage = language.t("shareLinkSheet.notAllInternallyReviewed")
+            } else {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 

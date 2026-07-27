@@ -261,6 +261,29 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
+    /// 2026-07-27, Todoist #356 — internal PL/Admin review gate, separate
+    /// from approveIdea above. No Section/Scene is created here, so unlike
+    /// approveIdea a full `load()` isn't needed — just patch the local copy.
+    func internalApproveIdea(_ idea: Idea) async {
+        do {
+            let updated = try await APIClient.shared.internalApproveIdea(idea.id)
+            if let index = ideas.firstIndex(where: { $0.id == updated.id }) { ideas[index] = updated }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Also flips the idea's regular `status` to "rejected" server-side
+    /// (see APIClient.internalRejectIdea's doc comment).
+    func internalRejectIdea(_ idea: Idea) async {
+        do {
+            let updated = try await APIClient.shared.internalRejectIdea(idea.id)
+            if let index = ideas.firstIndex(where: { $0.id == updated.id }) { ideas[index] = updated }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     #if canImport(UIKit)
     func uploadIdeaImage(_ idea: Idea, image: UIImage) async {
         do {

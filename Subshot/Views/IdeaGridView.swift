@@ -159,6 +159,13 @@ private struct IdeaTileView: View {
                     Text(idea.title)
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
+                    // 2026-07-27, Todoist #356 — same amber "intern noch
+                    // nicht abgenommen" indicator as web's IdeaTile.tsx.
+                    if idea.status == .open && idea.internalStatus == nil {
+                        Circle()
+                            .fill(Color.orange.opacity(0.8))
+                            .frame(width: 6, height: 6)
+                    }
                     if approved {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.caption)
