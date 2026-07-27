@@ -97,6 +97,13 @@ struct AsyncShotThumbnail: View {
                 image = fetched
                 return
             } catch {
+                // 2026-07-27 — every failure used to be swallowed completely
+                // (silent fallback to the "photo" placeholder), making a
+                // real fetch failure indistinguishable from "no image set"
+                // and impossible to diagnose without a compiler/device
+                // (Lino's Postproduction "tiles are empty" report). Log the
+                // actual error so a next repro at least shows WHY.
+                print("[AsyncShotThumbnail] fetch failed (attempt \(attempt + 1)/3) for \(path): \(error)")
                 if attempt < 2 {
                     try? await Task.sleep(nanoseconds: 400_000_000 * UInt64(attempt + 1))
                 }
