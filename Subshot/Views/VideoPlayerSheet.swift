@@ -443,12 +443,16 @@ struct VideoPlayerSheet: View {
             }
             let generator = AVAssetImageGenerator(asset: currentItem.asset)
             generator.appliesPreferredTrackTransform = true
-            // copyCGImage is synchronous/blocking, not the newer iOS-16-only
-            // async image(at:) — deliberately the older, long-stable API
-            // here since this can't be compiler-verified before Lino builds
-            // it (see this file's own doc comment at the top about not
-            // guessing at unverifiable AVKit surface).
-            let cgImage = try generator.copyCGImage(at: player.currentTime(), actualTime: nil)
+            let requestedTime = player.currentTime()
+            let cgImage = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<CGImage, Error>) in
+                generator.generateCGImageAsynchronously(for: requestedTime) { image, _, error in
+                    if let image {
+                        continuation.resume(returning: image)
+                    } else {
+                        continuation.resume(throwing: error ?? CocoaError(.fileReadUnknown))
+                    }
+                }
+            }
             let uiImage = UIImage(cgImage: cgImage)
             try await PHPhotoLibrary.shared().performChanges {
                 PHAssetChangeRequest.creationRequestForAsset(from: uiImage)
