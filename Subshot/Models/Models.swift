@@ -70,14 +70,6 @@ struct Project: Codable, Identifiable, Hashable {
         case modulePostproduction = "module_postproduction"
         case pipelineStage = "pipeline_stage"
     }
-
-    /// Deletion cron (scripts/deletion_job.py) warns at day 25, deletes at
-    /// day 30 of inactivity — purely a function of lastOpenedAt, no separate
-    /// backend field needed.
-    var daysUntilDeletion: Int {
-        let deletesAt = lastOpenedAt.addingTimeInterval(30 * 24 * 3600)
-        return max(0, Calendar.current.dateComponents([.day], from: .now, to: deletesAt).day ?? 0)
-    }
 }
 
 /// 2026-07-21, #285 — same 4-stage vocabulary as the web app's

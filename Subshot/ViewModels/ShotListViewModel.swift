@@ -43,10 +43,6 @@ final class ShotListViewModel: ObservableObject {
     // scene overview — separate from `scenes`/`shots` since it belongs to
     // the project, not any single scene.
     @Published var shootDate: Date?
-    /// Deletion cron (scripts/deletion_job.py) deletes at 30 days of
-    /// inactivity — see Project.daysUntilDeletion for the same computation
-    /// on the project-list side.
-    @Published var lastOpenedAt: Date?
     @Published var locationAddress: String?
     @Published var locationLat: Double?
     @Published var locationLng: Double?
@@ -143,7 +139,6 @@ final class ShotListViewModel: ObservableObject {
                 .filter { $0.status != .deleted }
                 .sorted { $0.sortOrder < $1.sortOrder }
             shootDate = detail.shootDate
-            lastOpenedAt = detail.lastOpenedAt
             locationAddress = detail.locationAddress
             locationLat = detail.locationLat
             locationLng = detail.locationLng

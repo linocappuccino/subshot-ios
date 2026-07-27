@@ -346,7 +346,7 @@ struct ProjectListView: View {
         NavigationLink(value: project) {
             tileBody(
                 title: project.name,
-                subtitle: language.t("common.deletingInDays").replacingOccurrences(of: "{days}", with: "\(project.daysUntilDeletion)"),
+                subtitle: nil,
                 color: project.color,
                 thumbnailPath: project.thumbnailUrl,
                 fallbackIcon: "film.stack",
@@ -404,7 +404,7 @@ struct ProjectListView: View {
             // the preview's size match the source view's real size.
             tileBody(
                 title: project.name,
-                subtitle: language.t("common.deletingInDays").replacingOccurrences(of: "{days}", with: "\(project.daysUntilDeletion)"),
+                subtitle: nil,
                 color: project.color,
                 thumbnailPath: project.thumbnailUrl,
                 fallbackIcon: "film.stack",

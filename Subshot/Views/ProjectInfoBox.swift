@@ -286,9 +286,6 @@ struct ProjectInfoBox: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            if let lastOpenedAt = viewModel.lastOpenedAt {
-                deletionNotice(lastOpenedAt: lastOpenedAt)
-            }
             if isExpanded {
                 VStack(alignment: .leading, spacing: 16) {
                     Divider()
@@ -353,20 +350,6 @@ struct ProjectInfoBox: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    /// Static info, not a countdown/timer widget — the project page
-    /// explicitly doesn't need one of those (unlike scenes). Purely computed
-    /// from lastOpenedAt (scripts/deletion_job.py's 30-day cutoff), no
-    /// separate backend field. Shown outside the collapsible body so it's
-    /// visible even while Projektinfos is collapsed (its default state).
-    private func deletionNotice(lastOpenedAt: Date) -> some View {
-        let deletesAt = lastOpenedAt.addingTimeInterval(30 * 24 * 3600)
-        let daysLeft = max(0, Calendar.current.dateComponents([.day], from: .now, to: deletesAt).day ?? 0)
-        return Label(language.t("common.deletingInDays").replacingOccurrences(of: "{days}", with: "\(daysLeft)"), systemImage: "clock")
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-            .padding(.top, 4)
     }
 
     private var peopleSection: some View {
