@@ -20,12 +20,14 @@ import Photos
 /// trailing), the exact corner AVKit's own fullscreen chrome renders its
 /// AirPlay/PiP icons in — Lino: "der kommentar button... ist zu nahe am
 /// Volumen button, soll nach rechts unten". Moved to a bottom-trailing
-/// custom cluster instead, well clear of that native corner, next to a new
-/// custom "Teilen" button (reuses ShareLinkSheet, same as the project-level
-/// share button elsewhere in this app) — `player.allowsExternalPlayback =
-/// false` below also drops the native AirPlay icon so there's no leftover
-/// duplicate/confusing second "share to a display" affordance once ours
-/// exists.
+/// custom cluster instead, well clear of that native corner —
+/// `player.allowsExternalPlayback = false` below also drops the native
+/// AirPlay icon.
+/// 2026-07-27 — the custom "Teilen" button (reused ShareLinkSheet) that
+/// used to sit in this cluster was removed again: Lino doesn't want a
+/// share affordance inside the iOS video player itself (unlike web).
+/// `saveFrameButton`/`commentButton` also nudged up (`.padding(.bottom, 56)`
+/// on the cluster) — they were overlapping AVKit's own transport bar.
 /// NOT changed: AVKit's native bottom-right "..." (playback speed) menu —
 /// there is no public API to selectively hide just that button while
 /// keeping the rest of the system transport bar (play/pause/scrub); doing
@@ -58,9 +60,6 @@ struct VideoPlayerSheet: View {
     @State private var posting = false
     @State private var errorMessage: String?
     @FocusState private var commentFieldFocused: Bool
-    @State private var showingShareLinkSheet = false
-    @State private var shareLinkURL: URL?
-    @State private var isPresentingActivityShare = false
     // 2026-07-27, Lino: "hat man pause gedrückt auf einem video soll man
     // diesen frame per download button direkt als PNg downloadn können" —
     // iOS has no "Downloads" concept, Photos is the platform-native
@@ -137,7 +136,11 @@ struct VideoPlayerSheet: View {
                         controlCluster
                     }
                     .padding(.trailing, 16)
-                    .padding(.bottom, 8)
+                    // 2026-07-27, Lino: "die buttons unten überdecken nun
+                    // die videoplayer buttons" — AVKit's own native
+                    // transport bar (play/pause/scrub) sits right at the
+                    // bottom edge; raised well clear of it (was 8).
+                    .padding(.bottom, 56)
                 }
                 if showCommentPanel {
                     commentListOverlay
@@ -155,19 +158,6 @@ struct VideoPlayerSheet: View {
             p.allowsExternalPlayback = false
             player = p
             p.play()
-        }
-        .sheet(isPresented: $showingShareLinkSheet) {
-            if let projectId {
-                ShareLinkSheet(projectId: projectId, kind: "video") { url in
-                    shareLinkURL = url
-                    isPresentingActivityShare = true
-                }
-            }
-        }
-        .sheet(isPresented: $isPresentingActivityShare) {
-            if let shareLinkURL {
-                ActivityView(activityItems: [shareLinkURL])
-            }
         }
         .task {
             // 2026-07-23 (#322) — authorName started every long-press comment
@@ -206,9 +196,6 @@ struct VideoPlayerSheet: View {
     /// rechts unten"), a little spacing between them.
     private var controlCluster: some View {
         HStack(spacing: 14) {
-            if projectId != nil {
-                shareButton
-            }
             saveFrameButton
             commentButton
         }
@@ -246,20 +233,6 @@ struct VideoPlayerSheet: View {
         }
         .disabled(savingFrame)
         .accessibilityLabel(language.t("videoPlayerSheet.saveFrame"))
-    }
-
-    private var shareButton: some View {
-        Button {
-            showingShareLinkSheet = true
-        } label: {
-            Image(systemName: "square.and.arrow.up")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 44, height: 44)
-                .background(.black.opacity(0.45))
-                .clipShape(Circle())
-        }
-        .accessibilityLabel(language.t("videoPlayerSheet.share"))
     }
 
     /// 2026-07-26 — replaces the old broken long-press: an always-tappable

@@ -616,6 +616,14 @@ final class APIClient {
         try await sendNoContent(req)
     }
 
+    /// Mirrors duplicateScene above — same "insert right after original,
+    /// images copied by reference not file-bytes" shape, resets status/
+    /// section/feedback, title gets a "Kopie" suffix (all server-side).
+    func duplicateIdea(_ id: String) async throws -> Idea {
+        let req = try await authorizedRequest("ideas/\(id)/duplicate", method: "POST")
+        return try await send(req)
+    }
+
     /// "Abgenommen" — idempotent server-side (a second call on an
     /// already-approved idea is a no-op, see backend approve_idea's own doc
     /// comment): creates a new Section named after the idea's title plus

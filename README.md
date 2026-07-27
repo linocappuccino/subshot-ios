@@ -34,7 +34,16 @@ Dateien rein — danach ist alles normale Xcode-Arbeit.
    PhotosPicker braucht keinen Info.plist-Eintrag, deshalb fällt es dort
    nicht auf).
 
-5. **Bauen & testen:** Cmd+R im Simulator. Login-Screen sollte erscheinen,
+5. **Fotomediathek-Berechtigung eintragen (2026-07-27):** gleiche Stelle,
+   Key **Privacy - Add Photo Only Usage Description**
+   (`NSPhotoLibraryAddUsageDescription`), z.B. Wert "Wird benötigt, um den
+   aktuellen Video-Frame als Foto zu speichern." Der "Frame speichern"-Button
+   im Video-Player (`VideoPlayerSheet.saveCurrentFrame`) ruft
+   `PHPhotoLibrary.requestAuthorization(for: .addOnly)` auf — ohne diesen Key
+   crasht die App komplett, sobald der Button angetippt wird, exakt wie beim
+   fehlenden Kamera-Key oben.
+
+6. **Bauen & testen:** Cmd+R im Simulator. Login-Screen sollte erscheinen,
    "Anmelden" öffnet Clerks Auth-Sheet (Google + E-Mail, wie schon auf der
    Web-Testseite gesehen).
 

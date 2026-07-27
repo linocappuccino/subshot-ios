@@ -151,6 +151,24 @@ final class IdeaSlashEditorController: ObservableObject {
 
     private func isLineEmpty(_ s: Substring) -> Bool { trimmed(s).isEmpty }
 
+    /// The full NSRange of the line containing `location` (excluding its
+    /// trailing newline). The close* helpers below use this instead of the
+    /// raw collapsed cursor `range` so an already-seeded prefix (Dialog's
+    /// "🗣️ ", still present on an otherwise-"blank" continuation line) gets
+    /// removed together with the end-marker insertion, rather than left
+    /// behind in front of it — a bare `"🗣️ "` line never truly reaches zero
+    /// characters on its own, only isDialogLineEmpty treats it as blank.
+    /// For Scene/Beschreibung, whose blank lines already have zero
+    /// characters, this is a no-op (identical to the old `range`).
+    private func fullLineRange(in ns: NSString, at location: Int) -> NSRange {
+        let lineRange = ns.lineRange(for: NSRange(location: location, length: 0))
+        var length = lineRange.length
+        if length > 0, ns.character(at: lineRange.location + length - 1) == 10 {
+            length -= 1
+        }
+        return NSRange(location: lineRange.location, length: length)
+    }
+
     /// Dialog continuation lines are pre-seeded with just the icon prefix
     /// (matches web's isDialogLineEmpty) — that alone must ALSO count as
     /// "blank", or Dialog could never close (every fresh continuation
@@ -298,6 +316,7 @@ final class IdeaSlashEditorController: ObservableObject {
         }
 
         let state = blockState(lines: currentLines, beforeIndex: idx)
+        let lineRange = fullLineRange(in: ns, at: range.location)
         // 2026-07-26, #338 — Beschreibung is free multi-line text with no
         // per-line prefix (unlike Dialog), so its close gesture mirrors
         // Szene's own blank-line-closes shape below exactly, just nested
@@ -305,14 +324,14 @@ final class IdeaSlashEditorController: ObservableObject {
         // stays open), a non-empty line is an ordinary new content line.
         if state.descriptionOpen {
             if isLineEmpty(currentLine) {
-                closeDescription(textView: textView, at: range)
+                closeDescription(textView: textView, at: lineRange)
                 return false
             }
             return true
         }
         if state.dialogOpen {
             if isDialogLineEmpty(currentLine) {
-                closeDialog(textView: textView, at: range)
+                closeDialog(textView: textView, at: lineRange)
             } else {
                 insertDialogContinuation(textView: textView, at: range)
             }
@@ -320,7 +339,7 @@ final class IdeaSlashEditorController: ObservableObject {
         }
         if state.sceneOpen {
             if isLineEmpty(currentLine) {
-                closeScene(textView: textView, at: range)
+                closeScene(textView: textView, at: lineRange)
                 return false
             }
             return true // plain Enter, an ordinary new content line inside the still-open scene

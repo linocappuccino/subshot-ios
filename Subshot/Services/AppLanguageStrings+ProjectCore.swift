@@ -216,7 +216,10 @@ extension AppLanguage {
             "shareLinkSheet.titleDefault": "Link teilen",
             // 2026-07-27, Todoist #356 — shown instead of the raw server
             // error when kind=="ideas" and not every open idea has gone
-            // through the internal PL/Admin review gate yet.
+            // through the internal PL/Admin review gate yet. Own alert
+            // title (not the generic "Fehler") since Lino doesn't consider
+            // this an error state, just a blocking precondition.
+            "shareLinkSheet.notAllInternallyReviewedTitle": "Interne Abnahme notwendig:",
             "shareLinkSheet.notAllInternallyReviewed": "Es sind noch nicht alle Ideen intern abgenommen worden. Bitte zuerst jede offene Idee intern abnehmen oder ablehnen, bevor der Preview-Link erstellt werden kann.",
 
             // ProjectInfoBox.swift (also covers SectionInfoBox / SceneProjectInfoTile,
@@ -438,6 +441,7 @@ extension AppLanguage {
             "shareLinkSheet.titleIdeas": "Share ideas link",
             "shareLinkSheet.titleVideo": "Share video feedback link",
             "shareLinkSheet.titleDefault": "Share link",
+            "shareLinkSheet.notAllInternallyReviewedTitle": "Internal review required:",
             "shareLinkSheet.notAllInternallyReviewed": "Not every idea has been internally approved yet. Please internally approve or reject each open idea before the preview link can be created.",
 
             // ProjectInfoBox.swift (also covers SectionInfoBox / SceneProjectInfoTile,

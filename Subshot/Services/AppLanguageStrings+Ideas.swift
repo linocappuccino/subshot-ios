@@ -30,6 +30,8 @@ extension AppLanguage {
             "ideaGrid.groupFeedback2": "2. Feedback",
             "ideaGrid.groupApproved": "✓ Abgenommen",
             "ideaGrid.newIdeaTitle": "Neue Idee",
+            "ideaGrid.duplicateIdea": "Idee duplizieren",
+            "ideaGrid.deleteIdea": "Idee löschen",
             "ideaTile.approvedOn": "Angenommen am {date}",
 
             // IdeaEditSheet.swift
@@ -176,6 +178,8 @@ extension AppLanguage {
             "ideaGrid.groupFeedback2": "2nd feedback",
             "ideaGrid.groupApproved": "✓ Approved",
             "ideaGrid.newIdeaTitle": "New idea",
+            "ideaGrid.duplicateIdea": "Duplicate idea",
+            "ideaGrid.deleteIdea": "Delete idea",
             "ideaTile.approvedOn": "Approved on {date}",
 
             // IdeaEditSheet.swift

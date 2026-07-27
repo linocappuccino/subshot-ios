@@ -235,6 +235,18 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
+    /// Server inserts the duplicate right after the original — reload the
+    /// whole list (server-authoritative sort order) rather than guessing
+    /// where to splice it in locally, same reasoning as moveIdea above.
+    func duplicateIdea(_ idea: Idea) async {
+        do {
+            _ = try await APIClient.shared.duplicateIdea(idea.id)
+            ideas = try await APIClient.shared.listIdeas(projectId: projectId).sorted { $0.sortOrder < $1.sortOrder }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func moveIdea(_ idea: Idea, beforeIdeaId: String?) async {
         do {
             _ = try await APIClient.shared.moveIdea(idea.id, beforeIdeaId: beforeIdeaId)

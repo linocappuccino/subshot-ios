@@ -1428,45 +1428,62 @@ struct ShotListView: View {
     /// not a hand-rolled gesture). "Ohne Abschnitt" has nothing to
     /// rename/delete, so it only gets the tap-to-collapse behavior, no
     /// long-press menu.
+    ///
+    /// 2026-07-27, Lino: "Abschnitte ein und aufklappen funktioniert sehr
+    /// schlecht!" — this row (for a real section) also carries .draggable
+    /// AND .dropDestination from sectionHeader below, on the SAME view. A
+    /// plain `.onTapGesture` is a pure SwiftUI recognizer competing
+    /// independently against those two UIKit-backed interactions (plus
+    /// .contextMenu) for the same touch — this exact class of conflict has
+    /// bitten this file before (see sceneToDelete's doc comment: a
+    /// hand-rolled long-press lost outright to .draggable's own
+    /// recognizer). The one place in this app that reliably combines
+    /// tap+drag+drop on one view is ProjectListView's project tile, which
+    /// uses a `NavigationLink` (a UIKit-Button-style tap, not
+    /// `.onTapGesture`) — mirrored here with a plain `Button` instead.
     @ViewBuilder
     private func sectionHeaderRow(section: SceneSection?) -> some View {
-        HStack {
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.secondary)
-                .rotationEffect(.degrees(isSectionCollapsed(section) ? 0 : 90))
-                .frame(width: 30, height: 30)
-            Text(section?.name ?? language.t("shotListView.noSection"))
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(.secondary)
-            if let section {
-                let scenes = viewModel.scenes(in: section)
-                let done = scenes.filter(\.completed).count
-                Text("\(done)/\(scenes.count)")
-                    .font(.caption.weight(.semibold))
+        Button {
+            toggleSectionCollapse(section)
+        } label: {
+            HStack {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
-                // #11 Schritt 6 — kurzer Statushinweis direkt am Abschnitt,
-                // die eigentliche Bearbeitung passiert in PostproductionListView.
-                if section.inPostproduction, let status = section.postproductionStatus {
-                    Text("· \(status.label)")
+                    .rotationEffect(.degrees(isSectionCollapsed(section) ? 0 : 90))
+                    .frame(width: 30, height: 30)
+                Text(section?.name ?? language.t("shotListView.noSection"))
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                if let section {
+                    let scenes = viewModel.scenes(in: section)
+                    let done = scenes.filter(\.completed).count
+                    Text("\(done)/\(scenes.count)")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
+                    // #11 Schritt 6 — kurzer Statushinweis direkt am Abschnitt,
+                    // die eigentliche Bearbeitung passiert in PostproductionListView.
+                    if section.inPostproduction, let status = section.postproductionStatus {
+                        Text("· \(status.label)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                Spacer()
             }
-            Spacer()
+            .padding(.horizontal, 16)
+            // Was sized purely by its content (~30pt, just the chevron's own
+            // frame) — well under the 44pt tap target this app uses everywhere
+            // else (see e.g. MemberAvatar/initialsCircle comments), and far
+            // smaller than a whole scene tile. A long-press-to-drag gesture
+            // needs the initial press to land and hold on the target; a strip
+            // this thin made that unreliable, which likely explains "Abschnitte
+            // haben nie einen Indikator" (2026-07-11) — scenes, with their much
+            // bigger tile area, don't have this problem.
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 16)
-        // Was sized purely by its content (~30pt, just the chevron's own
-        // frame) — well under the 44pt tap target this app uses everywhere
-        // else (see e.g. MemberAvatar/initialsCircle comments), and far
-        // smaller than a whole scene tile. A long-press-to-drag gesture
-        // needs the initial press to land and hold on the target; a strip
-        // this thin made that unreliable, which likely explains "Abschnitte
-        // haben nie einen Indikator" (2026-07-11) — scenes, with their much
-        // bigger tile area, don't have this problem.
-        .frame(minHeight: 44)
-        .contentShape(Rectangle())
-        .onTapGesture { toggleSectionCollapse(section) }
+        .buttonStyle(.plain)
     }
 
     /// No "Einstellung hinzufügen" row here (unlike sceneCard) — new shots

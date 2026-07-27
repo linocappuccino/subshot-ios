@@ -82,6 +82,18 @@ struct IdeaGridView: View {
                             ForEach(entry.ideas) { idea in
                                 IdeaTileView(idea: idea)
                                     .onTapGesture { editingIdea = idea }
+                                    .contextMenu {
+                                        Button {
+                                            Task { await viewModel.duplicateIdea(idea) }
+                                        } label: {
+                                            Label(language.t("ideaGrid.duplicateIdea"), systemImage: "plus.square.on.square")
+                                        }
+                                        Button(role: .destructive) {
+                                            Task { await viewModel.deleteIdea(idea) }
+                                        } label: {
+                                            Label(language.t("ideaGrid.deleteIdea"), systemImage: "trash")
+                                        }
+                                    }
                             }
                         }
                     }

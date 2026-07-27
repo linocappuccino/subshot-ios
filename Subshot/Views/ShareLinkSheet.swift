@@ -24,6 +24,10 @@ struct ShareLinkSheet: View {
     @State private var hasPassword = false
     @State private var isLoading = false
     @State private var errorMessage: String?
+    /// 2026-07-27, Todoist #356 follow-up — the internal-review-gate 409
+    /// isn't really an error, just a blocking precondition, so its alert
+    /// gets its own title instead of the generic "Fehler" one.
+    @State private var isInternalReviewGateError = false
 
     @State private var isProtecting = false
     @State private var passwordText = ""
@@ -130,7 +134,7 @@ struct ShareLinkSheet: View {
                     Button(language.t("common.done")) { dismiss() }
                 }
             }
-            .alert(language.t("common.error"), isPresented: Binding(
+            .alert(isInternalReviewGateError ? language.t("shareLinkSheet.notAllInternallyReviewedTitle") : language.t("common.error"), isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
             )) {
@@ -161,8 +165,10 @@ struct ShareLinkSheet: View {
             // matching the raw substring here is the minimal fix rather
             // than reworking APIError's shared error-handling.
             if case APIError.server(status: 409, message: let raw) = error, raw.contains("ideas_not_internally_reviewed") {
+                isInternalReviewGateError = true
                 errorMessage = language.t("shareLinkSheet.notAllInternallyReviewed")
             } else {
+                isInternalReviewGateError = false
                 errorMessage = error.localizedDescription
             }
         }
