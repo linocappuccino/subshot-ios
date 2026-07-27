@@ -386,8 +386,40 @@ struct PostproductionListView: View {
             if let index = sectionVideos[target.sectionId]?.firstIndex(where: { $0.id == video.id }) {
                 sectionVideos[target.sectionId]?[index].versions.append(completed)
             }
+            pollForThumbnail(sectionId: target.sectionId, videoId: video.id, versionId: completed.id)
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    /// 2026-07-27, Lino: "lädt man ein video hoch bleibt es unendlich auf
+    /// 'In Verarbeitung'... man muss die Seite reloaden" — mirrors web's
+    /// postproduction/page.tsx pollForFilmstrip. `completed` above is
+    /// captured straight from the `/complete` response, returned BEFORE the
+    /// server's background job (video_processing.py) has generated
+    /// thumbnail_key/filmstrip_key (~40s) — nothing here ever re-fetched
+    /// afterward, so the tile stayed on "In Verarbeitung" (thumbnail's own
+    /// doc comment already flagged this exact gap) until a full relaunch
+    /// happened to re-fetch fresh data. Polls this section's video list
+    /// until the new version's thumbnailUrl shows up, then merges the whole
+    /// section back in. Gives up silently after ~1 minute, same window web
+    /// uses — a manual pull-to-refresh still works as fallback.
+    private func pollForThumbnail(sectionId: String, videoId: String, versionId: String) {
+        Task {
+            for _ in 0..<30 {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                do {
+                    let videos = try await APIClient.shared.listVideos(sectionId: sectionId)
+                    if let video = videos.first(where: { $0.id == videoId }),
+                       let version = video.versions.first(where: { $0.id == versionId }),
+                       version.thumbnailUrl != nil {
+                        sectionVideos[sectionId] = videos
+                        return
+                    }
+                } catch {
+                    // network hiccup — just retry
+                }
+            }
         }
     }
 
