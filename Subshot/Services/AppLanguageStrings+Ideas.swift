@@ -128,6 +128,10 @@ extension AppLanguage {
             "videoPlayerSheet.commentPlaceholder": "Kommentar…",
             "videoPlayerSheet.comments": "Kommentare",
             "videoPlayerSheet.share": "Teilen",
+            "videoPlayerSheet.saveFrame": "Frame als Foto speichern",
+            "videoPlayerSheet.frameSaved": "Frame gespeichert",
+            "videoPlayerSheet.frameSaveFailed": "Frame konnte nicht gespeichert werden.",
+            "videoPlayerSheet.photoLibraryDenied": "Kein Zugriff auf Fotos — in den Einstellungen erlauben.",
 
             // NotificationsSheet.swift
             "notificationsSheet.empty": "Keine neuen Benachrichtigungen",
@@ -262,6 +266,10 @@ extension AppLanguage {
             "videoPlayerSheet.commentPlaceholder": "Comment…",
             "videoPlayerSheet.comments": "Comments",
             "videoPlayerSheet.share": "Share",
+            "videoPlayerSheet.saveFrame": "Save frame as photo",
+            "videoPlayerSheet.frameSaved": "Frame saved",
+            "videoPlayerSheet.frameSaveFailed": "Could not save frame.",
+            "videoPlayerSheet.photoLibraryDenied": "No access to Photos — allow it in Settings.",
 
             // NotificationsSheet.swift
             "notificationsSheet.empty": "No new notifications",

@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import Photos
 
 /// Vollbild-Player fuers Video-Feedback-Tool.
 ///
@@ -60,6 +61,13 @@ struct VideoPlayerSheet: View {
     @State private var showingShareLinkSheet = false
     @State private var shareLinkURL: URL?
     @State private var isPresentingActivityShare = false
+    // 2026-07-27, Lino: "hat man pause gedrückt auf einem video soll man
+    // diesen frame per download button direkt als PNg downloadn können" —
+    // iOS has no "Downloads" concept, Photos is the platform-native
+    // equivalent (same reasoning as reusing ShareLinkSheet/ActivityView
+    // above instead of a literal port of anything web-specific).
+    @State private var savingFrame = false
+    @State private var frameJustSaved = false
 
     init(video: Video, version: VideoVersion, projectId: String? = nil, onVersionUpdated: @escaping (VideoVersion) -> Void) {
         self.video = video
@@ -201,8 +209,43 @@ struct VideoPlayerSheet: View {
             if projectId != nil {
                 shareButton
             }
+            saveFrameButton
             commentButton
         }
+    }
+
+    /// 2026-07-27, Lino: pause on a frame you like, tap this to save that
+    /// exact frame to Photos — same "pause first, capture what's showing"
+    /// intent as web's downloadCurrentFrame in VideoReviewModal.tsx, just
+    /// via Photos instead of a browser download. Also pauses on tap itself
+    /// (same as commentButton above) so the frame can't drift mid-capture
+    /// if the user taps while still playing.
+    private var saveFrameButton: some View {
+        Button {
+            Task { await saveCurrentFrame() }
+        } label: {
+            Group {
+                if savingFrame {
+                    ProgressView().tint(.white)
+                } else if frameJustSaved {
+                    Image(systemName: "checkmark")
+                } else {
+                    // "square.and.arrow.down" — long-stable SF Symbol (iOS
+                    // 13+), deliberately not "photo.badge.arrow.down"
+                    // (unverifiable whether that exact symbol name exists,
+                    // no compiler here to check — see this file's own
+                    // doc comment about not guessing at unverifiable stuff).
+                    Image(systemName: "square.and.arrow.down")
+                }
+            }
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 44, height: 44)
+            .background(.black.opacity(0.45))
+            .clipShape(Circle())
+        }
+        .disabled(savingFrame)
+        .accessibilityLabel(language.t("videoPlayerSheet.saveFrame"))
     }
 
     private var shareButton: some View {
@@ -371,6 +414,50 @@ struct VideoPlayerSheet: View {
             player.play()
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    /// 2026-07-27 — grabs whatever frame `player` is currently showing via
+    /// `AVAssetImageGenerator` and saves it to Photos.
+    /// `appliesPreferredTrackTransform = true` matters here: without it, a
+    /// portrait phone-shot video (this app's normal case, see #341's
+    /// aspect-ratio fix elsewhere) comes back sideways, since the raw pixel
+    /// buffer ignores the track's rotation transform.
+    ///
+    /// NOTE for whoever wires this into Xcode: `PHPhotoLibrary.
+    /// requestAuthorization(for: .addOnly)` needs `NSPhotoLibraryAddUsageDescription`
+    /// set in Info.plist (Xcode's Info tab → "Privacy - Add Photo Only Usage
+    /// Description") — this is the FIRST feature in this app that writes to
+    /// Photos, so that key doesn't exist yet. Without it the app crashes the
+    /// moment this button is tapped, not silently fails.
+    private func saveCurrentFrame() async {
+        guard let player, let currentItem = player.currentItem, !savingFrame else { return }
+        player.pause()
+        savingFrame = true
+        defer { savingFrame = false }
+        do {
+            let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            guard status == .authorized || status == .limited else {
+                errorMessage = language.t("videoPlayerSheet.photoLibraryDenied")
+                return
+            }
+            let generator = AVAssetImageGenerator(asset: currentItem.asset)
+            generator.appliesPreferredTrackTransform = true
+            // copyCGImage is synchronous/blocking, not the newer iOS-16-only
+            // async image(at:) — deliberately the older, long-stable API
+            // here since this can't be compiler-verified before Lino builds
+            // it (see this file's own doc comment at the top about not
+            // guessing at unverifiable AVKit surface).
+            let cgImage = try generator.copyCGImage(at: player.currentTime(), actualTime: nil)
+            let uiImage = UIImage(cgImage: cgImage)
+            try await PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest.creationRequestForAsset(from: uiImage)
+            }
+            frameJustSaved = true
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            frameJustSaved = false
+        } catch {
+            errorMessage = language.t("videoPlayerSheet.frameSaveFailed")
         }
     }
 
