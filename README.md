@@ -35,13 +35,16 @@ Dateien rein — danach ist alles normale Xcode-Arbeit.
    nicht auf).
 
 5. **Fotomediathek-Berechtigung eintragen (2026-07-27):** gleiche Stelle,
-   Key **Privacy - Add Photo Only Usage Description**
+   Key **Privacy - Photo Library Additions Usage Description**
    (`NSPhotoLibraryAddUsageDescription`), z.B. Wert "Wird benötigt, um den
-   aktuellen Video-Frame als Foto zu speichern." Der "Frame speichern"-Button
-   im Video-Player (`VideoPlayerSheet.saveCurrentFrame`) ruft
+   aktuellen Video-Frame als Foto zu speichern." Taucht der Name beim Tippen
+   nicht im Autocomplete auf, direkt den rohen Key `NSPhotoLibraryAddUsageDescription`
+   eintippen — funktioniert genauso. Der "Frame speichern"-Button im
+   Video-Player (`VideoPlayerSheet.saveCurrentFrame`) ruft
    `PHPhotoLibrary.requestAuthorization(for: .addOnly)` auf — ohne diesen Key
    crasht die App komplett, sobald der Button angetippt wird, exakt wie beim
-   fehlenden Kamera-Key oben.
+   fehlenden Kamera-Key oben (bestätigt durch einen echten Sentry-Crash-Report,
+   SIGABRT/TCC_CRASHING_DUE_TO_PRIVACY_VIOLATION, 2026-07-27 17:20 UTC).
 
 6. **Bauen & testen:** Cmd+R im Simulator. Login-Screen sollte erscheinen,
    "Anmelden" öffnet Clerks Auth-Sheet (Google + E-Mail, wie schon auf der
