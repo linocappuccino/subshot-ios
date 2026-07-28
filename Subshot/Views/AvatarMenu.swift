@@ -19,6 +19,7 @@ struct AvatarMenu: View {
     @EnvironmentObject private var auth: BackendAuth
     @ObservedObject private var language = AppLanguage.shared
     @State private var signingOut = false
+    @State private var showNotificationSettings = false
 
     var body: some View {
         Menu {
@@ -45,6 +46,15 @@ struct AvatarMenu: View {
                 Label(language.t("avatar.language"), systemImage: "globe")
             }
 
+            // 2026-07-28 — opens NotificationSettingsView.swift as a sheet
+            // rather than another nested Menu (see that file's own doc
+            // comment for why: a Menu can't host several stateful Toggles).
+            Button {
+                showNotificationSettings = true
+            } label: {
+                Label(language.t("avatar.notifications"), systemImage: "bell")
+            }
+
             // 2026-07-22 — mirrors the web app's avatar-menu UserButton.Link
             // to the same URL (see AppShell.tsx); these pages live on the
             // backend (subshot.ch), no reason to duplicate their content
@@ -68,6 +78,9 @@ struct AvatarMenu: View {
             )
         }
         .disabled(signingOut)
+        .sheet(isPresented: $showNotificationSettings) {
+            NotificationSettingsView()
+        }
     }
 
     private func pick(_ lang: String) async {

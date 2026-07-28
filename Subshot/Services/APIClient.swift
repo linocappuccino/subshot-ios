@@ -162,6 +162,45 @@ final class APIClient {
         return try await send(req)
     }
 
+    /// 2026-07-28 — NotificationSettingsView.swift's per-email-kind toggles.
+    /// Every param optional (nil = don't touch), matching MePatch in
+    /// schemas.py — a custom `encode(to:)` (not the default Encodable
+    /// synthesis) so an omitted param is left OUT of the JSON body entirely
+    /// rather than sent as an explicit `null`, since main.py's patch_me only
+    /// updates a field when its Pydantic value `is not None`.
+    func patchMe(
+        emailNotifyIdeaFeedback: Bool? = nil,
+        emailNotifyVideoFeedback: Bool? = nil,
+        emailNotifyPostproductionStatus: Bool? = nil
+    ) async throws -> Me {
+        struct Body: Encodable {
+            let emailNotifyIdeaFeedback: Bool?
+            let emailNotifyVideoFeedback: Bool?
+            let emailNotifyPostproductionStatus: Bool?
+
+            enum CodingKeys: String, CodingKey {
+                case emailNotifyIdeaFeedback = "email_notify_idea_feedback"
+                case emailNotifyVideoFeedback = "email_notify_video_feedback"
+                case emailNotifyPostproductionStatus = "email_notify_postproduction_status"
+            }
+
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encodeIfPresent(emailNotifyIdeaFeedback, forKey: .emailNotifyIdeaFeedback)
+                try container.encodeIfPresent(emailNotifyVideoFeedback, forKey: .emailNotifyVideoFeedback)
+                try container.encodeIfPresent(emailNotifyPostproductionStatus, forKey: .emailNotifyPostproductionStatus)
+            }
+        }
+        var req = try await authorizedRequest("me", method: "PATCH")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try encoder.encode(Body(
+            emailNotifyIdeaFeedback: emailNotifyIdeaFeedback,
+            emailNotifyVideoFeedback: emailNotifyVideoFeedback,
+            emailNotifyPostproductionStatus: emailNotifyPostproductionStatus
+        ))
+        return try await send(req)
+    }
+
     // MARK: - Projects
 
     /// nil = root level (folder_id IS NULL on the backend), a folder's id =

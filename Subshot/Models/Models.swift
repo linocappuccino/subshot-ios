@@ -13,10 +13,19 @@ struct Me: Codable {
     // Backend liefert das Feld IMMER (Default "de", nie null), darum hier
     // non-optional statt String? — matcht MeOut.language in schemas.py.
     let language: String
+    // 2026-07-28 — E-Mail-Benachrichtigungs-Einstellungen (siehe
+    // NotificationSettingsView.swift). Nur das Feld fuer den jeweiligen
+    // EMAIL-Versand, in-app/push feuert unabhaengig davon immer.
+    let emailNotifyIdeaFeedback: Bool
+    let emailNotifyVideoFeedback: Bool
+    let emailNotifyPostproductionStatus: Bool
 
     enum CodingKeys: String, CodingKey {
         case id, email, name, language
         case avatarUrl = "avatar_url"
+        case emailNotifyIdeaFeedback = "email_notify_idea_feedback"
+        case emailNotifyVideoFeedback = "email_notify_video_feedback"
+        case emailNotifyPostproductionStatus = "email_notify_postproduction_status"
     }
 }
 
