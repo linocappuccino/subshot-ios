@@ -128,12 +128,26 @@ final class ShotListViewModel: ObservableObject {
     /// doc comment for the original ask) — the silent poll now passes
     /// false, leaving loadGeneration (and therefore those views' own
     /// expand/collapse state) untouched.
+    /// 2026-08-05, Lino: "jegliche lade... prozesse müssen ein wenig
+    /// schneller werden" — the project/members/ideas fetches below are
+    /// fully independent (each already has its own try/catch, "member
+    /// load failing shouldn't block scenes" etc.) but used to run as three
+    /// sequential awaits, so total load time was the SUM of all three
+    /// round trips. `async let` starts all three the instant this function
+    /// runs; the `try await` below each one only waits for a request
+    /// that's already in flight, so total time drops to roughly the
+    /// SLOWEST single one instead of the sum — same fix, same reasoning,
+    /// as the web app's own projects/[id]/page.tsx waterfall fix same day.
     func load(resetGeneration: Bool = true) async {
         isLoading = true
         if resetGeneration { loadGeneration += 1 }
         defer { isLoading = false }
+        async let detailTask = APIClient.shared.getProject(projectId)
+        async let membersTask = APIClient.shared.members(projectId: projectId)
+        async let ideasTask = APIClient.shared.listIdeas(projectId: projectId)
+
         do {
-            let detail = try await APIClient.shared.getProject(projectId)
+            let detail = try await detailTask
             scenes = detail.scenes.sorted { $0.sortOrder < $1.sortOrder }
             shots = detail.shots
                 .filter { $0.status != .deleted }
@@ -158,7 +172,7 @@ final class ShotListViewModel: ObservableObject {
         // Independent of the main load — a failure here shouldn't block the
         // scene/shot list from showing.
         do {
-            members = try await APIClient.shared.members(projectId: projectId)
+            members = try await membersTask
         } catch {
             // Silent: the info box just shows an empty people list; the user
             // can still open "Team" from the toolbar, which surfaces errors.
@@ -166,7 +180,8 @@ final class ShotListViewModel: ObservableObject {
         // Same "independent, silent on failure" treatment — an Ideas-section
         // outage shouldn't take the scene/shot list down with it.
         do {
-            ideas = try await APIClient.shared.listIdeas(projectId: projectId).sorted { $0.sortOrder < $1.sortOrder }
+            let fetchedIdeas = try await ideasTask
+            ideas = fetchedIdeas.sorted { $0.sortOrder < $1.sortOrder }
         } catch {
             // Silent, same reasoning as members above.
         }

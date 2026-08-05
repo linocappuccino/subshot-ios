@@ -24,6 +24,36 @@ private func sceneAccentColor(_ priority: ShotPriority?) -> Color {
     }
 }
 
+/// 2026-08-05, Lino: "ist man in der postproduction seite und swiped nach
+/// rechts kommt man direkt auf die projekt übersicht, was ja falsch ist,
+/// man soll durch jede seite swipen können" — root cause: edgeSwipeZone's
+/// own leading-edge zone (see its doc comment, "matching iOS's own system
+/// back gesture") sits at the exact same screen edge as the REAL system
+/// back-swipe (UINavigationController's own interactivePopGestureRecognizer),
+/// which starts recognizing on touch-down with less travel needed than this
+/// SwiftUI DragGesture's `minimumDistance: 24` — it wins the race almost
+/// every time, popping this whole screen back to ProjectListView regardless
+/// of which workflow panel is active, completely bypassing
+/// previousWorkflowSection's own Ideas/Scripting/Postproduction logic.
+/// Standard SwiftUI recipe for conditionally disabling that system gesture:
+/// a zero-size UIViewControllerRepresentable reaching into its own parent's
+/// navigationController. Enabled ONLY when there's no previousWorkflowSection
+/// to swipe to instead (i.e. genuinely on the first enabled panel) — that
+/// case still wants the real system back-to-Projects behavior, unchanged.
+private struct SwipeBackGestureController: UIViewControllerRepresentable {
+    var isEnabled: Bool
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        UIViewController()
+    }
+
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
+        DispatchQueue.main.async {
+            uiViewController.parent?.navigationController?.interactivePopGestureRecognizer?.isEnabled = isEnabled
+        }
+    }
+}
+
 private extension View {
     /// Conditionally attaches .scrollTargetBehavior(.viewAligned) — 2026-07-14,
     /// Lino: "smoother tiktok scroll effekt" was only ever meant for the
@@ -978,6 +1008,7 @@ struct ShotListView: View {
                 edgeSwipeZone(goingTo: nextWorkflowSection, requiredDirection: -1)
             }
         }
+        .background(SwipeBackGestureController(isEnabled: previousWorkflowSection == nil))
     }
 
     /// One edge-swipe hit zone. `requiredDirection`: +1 means only a

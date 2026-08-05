@@ -331,14 +331,34 @@ struct PostproductionListView: View {
 
     // MARK: - data loading
 
+    /// 2026-08-05, Lino: "jegliche lade... prozesse müssen ein wenig
+    /// schneller werden" — used to await each section's videos ONE AT A
+    /// TIME in a plain for loop, so total load time scaled with section
+    /// count (N sections = N sequential round trips) instead of the single
+    /// round trip's worth of latency this could be. withTaskGroup fires
+    /// every section's listVideos concurrently; results are only applied
+    /// back to `sectionVideos` (a View's @State, implicitly MainActor) as
+    /// each one resolves via `for await`, which resumes on this function's
+    /// own calling context — safe, no concurrent-mutation risk despite the
+    /// child tasks themselves running in parallel.
     private func loadAllVideos() async {
         isLoadingVideos = true
         defer { isLoadingVideos = false }
-        for section in sections {
-            do {
-                sectionVideos[section.id] = try await APIClient.shared.listVideos(sectionId: section.id)
-            } catch {
-                errorMessage = error.localizedDescription
+        await withTaskGroup(of: (String, Result<[Video], Error>).self) { group in
+            for section in sections {
+                group.addTask {
+                    do {
+                        return (section.id, .success(try await APIClient.shared.listVideos(sectionId: section.id)))
+                    } catch {
+                        return (section.id, .failure(error))
+                    }
+                }
+            }
+            for await (sectionId, result) in group {
+                switch result {
+                case .success(let videos): sectionVideos[sectionId] = videos
+                case .failure(let error): errorMessage = error.localizedDescription
+                }
             }
         }
     }
