@@ -169,7 +169,6 @@ private struct IdeaTileView: View {
             }
             .aspectRatio(16.0 / 9.0, contentMode: .fit)
             .frame(maxWidth: .infinity)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 4) {
@@ -203,8 +202,20 @@ private struct IdeaTileView: View {
                         .lineLimit(2)
                 }
             }
-            .padding(.top, 6)
+            .padding(10)
         }
+        // 2026-08-05, Lino: "hier müssen die einzelnen ideen jeweils in
+        // einer kachel sein" — only the cover-photo area above had a
+        // background/rounded corners of its own (see the ZStack's
+        // .clipShape, now removed from there); the title/text area below
+        // it sat directly on the grid's plain background with no card
+        // container at all, so adjacent tiles' text visually ran together
+        // with nothing marking where one idea ends and the next begins.
+        // Moved the background+corner-radius to the WHOLE tile (image +
+        // text together) instead, same "one bordered card per tile"
+        // pattern PostproductionVideoTile already uses.
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .opacity(approved ? 0.6 : 1)
         .contentShape(Rectangle())
     }

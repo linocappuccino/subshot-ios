@@ -352,7 +352,19 @@ struct PostproductionListView: View {
         defer { creatingUnplanned = false }
         guard let section = await viewModel.createSection(name: "Video", startInPostproduction: true) else { return }
         sectionVideos[section.id] = []
-        pickerTarget = PickerTarget(sectionId: section.id, videoId: nil)
+        // 2026-08-05, Lino: "video hochladen... geht immer noch nicht" —
+        // root cause: this only ever set `pickerTarget` (drives the
+        // .photosPicker sheet's own isPresented binding), never
+        // `pendingUploadTarget` — the ONE var .onChange(of: pickerItem)
+        // actually reads to know what to upload to (see #334's own doc
+        // comment on pendingUploadTarget for why it reads that copy, not
+        // pickerTarget). Every per-tile onTapUpload sets BOTH; this "+"
+        // FAB path (creating a brand-new unplanned video) only ever set
+        // one of them — picking a video here opened the picker fine, but
+        // silently did nothing at all afterward, no error, nothing.
+        let target = PickerTarget(sectionId: section.id, videoId: nil)
+        pickerTarget = target
+        pendingUploadTarget = target
     }
 
     // MARK: - upload pipeline (same steps the old VideoPanelView.handlePicked used)
@@ -512,8 +524,10 @@ private struct PostproductionVideoTile: View {
             thumbnail
             if let video {
                 HStack(spacing: 6) {
+                    // 2026-08-05, Lino: "hier können die titel in der
+                    // kachel grösser dargestellt werden" — headline -> title3.
                     Text(video.title)
-                        .font(.headline)
+                        .font(.title3.weight(.semibold))
                         .lineLimit(1)
                     if canEditTitleAndDeadline {
                         Button(action: onEditTitle) {
@@ -565,7 +579,7 @@ private struct PostproductionVideoTile: View {
                 }
             } else {
                 Text(section.name)
-                    .font(.headline)
+                    .font(.title3.weight(.semibold))
                     .lineLimit(1)
                 Text(language.t("postproductionListView.noVideoYet"))
                     .font(.caption)
@@ -574,11 +588,9 @@ private struct PostproductionVideoTile: View {
         }
         .padding(12)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
-        // 2026-07-23 (#321) — soft per-status glow, cheap iOS equivalent of
-        // web's VideoTile.tsx glow border (a CSS box-shadow using the same
-        // STATUS_GLOW_COLOR). Only once a real video exists — an empty
-        // upload-slot tile has no status to glow yet.
-        .shadow(color: video != nil ? statusColor.opacity(0.35) : .clear, radius: 8)
+        // 2026-08-05, Lino: "den glow nehmen wir hier ganz weg" — removes
+        // the #321 per-status shadow glow entirely (the small status dot
+        // above, statusColor's other use, stays).
     }
 
     @ViewBuilder

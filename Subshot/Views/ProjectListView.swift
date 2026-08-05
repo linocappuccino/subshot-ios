@@ -192,6 +192,17 @@ struct ProjectListView: View {
             .padding(16)
         }
         .background(Color(.systemGroupedBackground))
+        // 2026-08-05, Lino: "Startseite der app, mach den hintergrund auch
+        // im typischen subshot style" — this screen never forced dark mode
+        // (unlike LoginView/PostproductionListView/VideoPlayerSheet/
+        // SceneAIImageSheet, all of which already do), so on a device set
+        // to Light Mode the actual home/projects screen showed the plain
+        // light-gray systemGroupedBackground instead of matching the rest
+        // of the app's consistently dark aesthetic. Same one-line fix as
+        // those other screens — systemGroupedBackground above is already
+        // an adaptive color, forcing dark here is enough, no separate
+        // background color needed.
+        .preferredColorScheme(.dark)
         .navigationTitle(folderName ?? "Subshot")
         .navigationBarTitleDisplayMode(.inline)
         .overlay {
