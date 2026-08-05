@@ -1561,6 +1561,7 @@ struct ShotListView: View {
                 Spacer()
             }
             .padding(.horizontal, 16)
+            .padding(.vertical, 8)
             // Was sized purely by its content (~30pt, just the chevron's own
             // frame) — well under the 44pt tap target this app uses everywhere
             // else (see e.g. MemberAvatar/initialsCircle comments), and far
@@ -1569,7 +1570,17 @@ struct ShotListView: View {
             // this thin made that unreliable, which likely explains "Abschnitte
             // haben nie einen Indikator" (2026-07-11) — scenes, with their much
             // bigger tile area, don't have this problem.
-            .frame(minHeight: 44)
+            // 2026-08-05, Lino: "muss man einen sehr genauen punkt treffen um
+            // ein oder auf zu klappen" — 44pt (bumped from the original ~30pt
+            // above) was already Apple's own HIG minimum, evidently still not
+            // comfortable enough in practice for a row that ALSO carries
+            // .contextMenu/.draggable/.dropDestination (see sectionHeader),
+            // whose own gesture recognizers compete with this Button's tap for
+            // ANY finger drift during the tap — bumped further to 60pt plus
+            // real vertical padding (was frame-only, no padding, so the row
+            // never actually grew visually) for a genuinely bigger, more
+            // forgiving target, not just a technically-HIG-compliant one.
+            .frame(minHeight: 60)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
