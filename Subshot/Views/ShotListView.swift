@@ -750,6 +750,7 @@ struct ShotListView: View {
             default:
                 break
             }
+            if activeWorkflowSection == .scripting { collapseFullyDoneSections() }
         }
         .refreshable { await viewModel.load() }
         // Lightweight "live updates" (2026-07-10): polls every 12s while
@@ -1011,6 +1012,7 @@ struct ShotListView: View {
     // the cross-fade.
     private func goToWorkflowSection(_ section: WorkflowSection) {
         guard section != activeWorkflowSection else { return }
+        if section == .scripting { collapseFullyDoneSections() }
         withAnimation(.easeInOut(duration: 0.3)) {
             activeWorkflowSection = section
         }
@@ -1290,6 +1292,31 @@ struct ShotListView: View {
 
     private func isSectionCollapsed(_ section: SceneSection?) -> Bool {
         collapsedSections.contains(section?.id ?? unassignedSectionKey)
+    }
+
+    /// "Every real scene in this section is completed" — same "REAL scene"
+    /// exclusion (no Projektinfo tiles, no Zwischenschritt beats) the
+    /// backend already uses for its own auto-postproduction flip. Shared by
+    /// imKastenButton's own tap handler and collapseFullyDoneSections below.
+    private func isSectionFullyDone(_ section: SceneSection?) -> Bool {
+        let real = viewModel.scenes(in: section).filter { !$0.isProjectInfo && !$0.isIntermediateStep }
+        return !real.isEmpty && real.allSatisfy(\.completed)
+    }
+
+    /// 2026-08-05, Lino: "swiped man herum in den verschiedenen pipelines
+    /// sollen auf der szenen seite abschnitte wo alle szenen im kasten sind
+    /// IMMER eingeklappt angezeigt werden" — re-asserted every time the
+    /// Scripting panel becomes active (goToWorkflowSection + the initial
+    /// .task), not just once at the moment a section first becomes fully
+    /// done (imKastenButton's own auto-collapse). Deliberately only ADDS to
+    /// collapsedSections, never removes — a manually re-expanded section
+    /// that's still fully done collapses again on the NEXT swipe away and
+    /// back, but doesn't fight the user's toggle while they're actively
+    /// looking at it mid-visit.
+    private func collapseFullyDoneSections() {
+        let doneKeys = viewModel.sections.filter { isSectionFullyDone($0) }.map(\.id)
+        guard !doneKeys.isEmpty else { return }
+        collapsedSections.formUnion(doneKeys)
     }
 
     /// Resolves lastOpenedSectionKey to an actual section id for new-scene
@@ -2469,9 +2496,8 @@ struct ShotListView: View {
                 // one back off — that's the user's own call via the
                 // section header).
                 if completing {
-                    let siblings = viewModel.scenes(in: scene.sectionId.flatMap { id in viewModel.sections.first(where: { $0.id == id }) })
-                        .filter { !$0.isProjectInfo && !$0.isIntermediateStep }
-                    if !siblings.isEmpty, siblings.allSatisfy(\.completed) {
+                    let section = scene.sectionId.flatMap { id in viewModel.sections.first(where: { $0.id == id }) }
+                    if isSectionFullyDone(section) {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
                             collapsedSections.insert(scene.sectionId ?? unassignedSectionKey)
                         }
