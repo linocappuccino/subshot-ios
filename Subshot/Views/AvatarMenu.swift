@@ -68,6 +68,19 @@ struct AvatarMenu: View {
             } label: {
                 Label(language.t("avatar.signOut"), systemImage: "rectangle.portrait.and.arrow.right")
             }
+
+            // 2026-08-05, Lino: "kann ich irgendwie schon in xcode sehen
+            // welche version es ist" — this app never showed a build number
+            // anywhere, in Xcode or on-device, so there was no quick way to
+            // confirm which of Claude's commits an installed build actually
+            // contains (Todoist/git commit messages use a "bN" tag per
+            // batch, e.g. "b10" — see subshot-ios repo log). Reads
+            // CFBundleVersion, which now mirrors that same number
+            // (CURRENT_PROJECT_VERSION bumped alongside it in the same
+            // commit going forward) — plain disabled Text renders fine as a
+            // non-interactive info line inside a SwiftUI Menu.
+            Text("Build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?")")
+                .font(.caption)
         } label: {
             MemberAvatar(
                 name: auth.currentUser?.name,
