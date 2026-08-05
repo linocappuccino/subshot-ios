@@ -1,0 +1,42 @@
+{
+  "originHash" : "49740918e1f2ff17413ba5ec41f2dbb078a4d72d5fd9d937c4c861696a3af908",
+  "pins" : [
+    {
+      "identity" : "clerk-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/clerk/clerk-ios",
+      "state" : {
+        "revision" : "73a4945e05769229f46701677ff047a015431a25",
+        "version" : "1.2.7"
+      }
+    },
+    {
+      "identity" : "nuke",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/kean/Nuke.git",
+      "state" : {
+        "revision" : "63a8fcbd6621340a2410bc3e9575ac97058615f4",
+        "version" : "13.0.6"
+      }
+    },
+    {
+      "identity" : "phonenumberkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/PhoneNumberKit/PhoneNumberKit",
+      "state" : {
+        "revision" : "ab06a8333394f4a4fb6eecca447dae0aa06c1eca",
+        "version" : "5.0.4"
+      }
+    },
+    {
+      "identity" : "sentry-cocoa",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/getsentry/sentry-cocoa",
+      "state" : {
+        "revision" : "afa7510e05b99f35c1febe47566bfd868fa53fb9",
+        "version" : "9.23.0"
+      }
+    }
+  ],
+  "version" : 3
+}
