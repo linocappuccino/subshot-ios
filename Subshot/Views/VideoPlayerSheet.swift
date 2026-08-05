@@ -414,7 +414,10 @@ struct VideoPlayerSheet: View {
             onVersionUpdated(updated)
             commentText = ""
             showCommentPanel = false
-            player.play()
+            // 2026-08-05, Lino: "spielt das video automatisch wieder ab,
+            // das ist falsch, man soll wieder auf das video klicken" —
+            // used to auto-resume here; now stays paused, same as
+            // finishing typing without sending would leave it.
         } catch {
             errorMessage = error.localizedDescription
         }
