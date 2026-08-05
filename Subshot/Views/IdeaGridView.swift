@@ -78,7 +78,12 @@ struct IdeaGridView: View {
                         Text(groupLabel(entry.group).uppercased() + " (\(entry.ideas.count))")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                        // 2026-08-05, Lino: "hier müssen die ideen auch in
+                        // einzelne kacheln lass ein wenig platz zwischen
+                        // den kacheln" — 10pt read as tiles touching almost
+                        // edge-to-edge; bumped to 16pt, same 2-column-grid
+                        // spacing convention ProjectListView already uses.
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
                             ForEach(entry.ideas) { idea in
                                 IdeaTileView(idea: idea)
                                     .onTapGesture { editingIdea = idea }

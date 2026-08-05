@@ -37,11 +37,39 @@ struct LoginView: View {
 
     var body: some View {
         ZStack {
+            // 2026-08-05, Lino: "der hintergrund soll irgendwie dunkel
+            // sein" — this screen never set an explicit background before,
+            // so on a device set to Light Mode it showed the system's
+            // plain white/light background behind the (fairly subtle)
+            // orbs. A solid near-black base underneath backgroundOrbs plus
+            // .preferredColorScheme(.dark) below makes this screen read as
+            // dark unconditionally, independent of the device's own
+            // appearance setting — same reasoning every other full-screen
+            // sheet in this app already applies (VideoPlayerSheet,
+            // PostproductionListView, etc.).
+            Color.black.ignoresSafeArea()
             backgroundOrbs
 
             VStack(spacing: 12) {
                 Spacer()
                 VStack(spacing: 10) {
+                    // 2026-08-05, Lino: "hier soll das app icon zentral
+                    // dargestellt werden mit dem Schriftzug SUBSHOT
+                    // darunter" — AppIcon.appiconset itself isn't directly
+                    // loadable via Image(_:) (App Icon asset sets aren't
+                    // exposed as a regular named image), so the same
+                    // 1024px source was also copied into a plain
+                    // AppIconDisplay imageset purely for in-UI display —
+                    // standard workaround, same icon file both places.
+                    // clipShape(.rect(cornerRadius:)) approximates iOS's
+                    // own squircle mask closely enough at this size; no
+                    // public API exposes the exact superellipse curve.
+                    Image("AppIconDisplay")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 96, height: 96)
+                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                        .shadow(color: .black.opacity(0.4), radius: 12, y: 6)
                     // 2026-07-17, Lino: erst "der Thunderfont soll auch so
                     // in der iOS uebernommen werden", dann noch am selben
                     // Tag "wir wechseln da auf den Font ANTON" — mirrors
@@ -102,6 +130,7 @@ struct LoginView: View {
         .sheet(isPresented: $authIsPresented) {
             AuthView()
         }
+        .preferredColorScheme(.dark)
     }
 
     /// Three softly blurred, slow-drifting accent-color circles behind

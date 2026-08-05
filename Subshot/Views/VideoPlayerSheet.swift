@@ -106,6 +106,22 @@ struct VideoPlayerSheet: View {
                                 }
                             }
                     )
+                    // 2026-08-05, Lino: "egal wo man auf das video klickt,
+                    // soll das video stoppen oder weiter spielen" — NOT a
+                    // `.gesture()` (a plain `.onTapGesture`/`.gesture`
+                    // modifier here would COMPETE with AVKit's own internal
+                    // tap recognizer for exclusive ownership, the exact
+                    // failure mode this file's own top-of-file doc comment
+                    // already documents for the old long-press-to-comment
+                    // gesture — it silently lost that race most of the
+                    // time). `.simultaneousGesture` explicitly does NOT
+                    // claim exclusivity, so this fires ALONGSIDE AVKit's own
+                    // tap-to-show/hide-chrome behavior instead of racing it,
+                    // and never swallows a tap that lands on the native
+                    // transport bar/scrub controls when they're visible.
+                    .simultaneousGesture(
+                        TapGesture().onEnded { togglePlayback() }
+                    )
             }
             VStack {
                 // Small handlebar (2026-07-21, #284: "a small handlebar
@@ -358,6 +374,20 @@ struct VideoPlayerSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .padding(.horizontal, 6)
         .padding(.bottom, 6)
+    }
+
+    /// 2026-08-05 — backs the tap-anywhere-on-the-video gesture above.
+    /// `player.rate != 0` (not `timeControlStatus == .playing`) is the
+    /// right check here: `.playing` briefly reports `.waitingToPlayAtSpecifiedRate`
+    /// during buffering, which would make a tap-to-pause during a brief
+    /// stall read as "already paused" and incorrectly call `.play()` again.
+    private func togglePlayback() {
+        guard let player else { return }
+        if player.rate == 0 {
+            player.play()
+        } else {
+            player.pause()
+        }
     }
 
     private func timeLabel(_ seconds: Double) -> String {

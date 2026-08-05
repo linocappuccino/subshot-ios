@@ -86,7 +86,7 @@ struct IdeaEditSheet: View {
     }
 
     private func handleImagePicked(_ image: UIImage) {
-        guard liveIdea.images.count < 10 else { return }
+        guard liveIdea.images.count < 50 else { return }
         uploading = true
         Task {
             await viewModel.uploadIdeaImage(idea, image: image)
@@ -98,7 +98,7 @@ struct IdeaEditSheet: View {
     /// handleImagePicked above, wired to IdeaMediaSourceButton's
     /// onVideoPicked below.
     private func handleVideoPicked(_ fileURL: URL, _ contentType: String) {
-        guard liveIdea.images.count < 10 else { return }
+        guard liveIdea.images.count < 50 else { return }
         uploading = true
         Task {
             await viewModel.uploadIdeaVideo(idea, fileURL: fileURL, filename: fileURL.lastPathComponent, contentType: contentType)
@@ -172,13 +172,13 @@ struct IdeaEditSheet: View {
                         IdeaMediaSourceButton(onImagePicked: handleImagePicked, onVideoPicked: handleVideoPicked) {
                             Label(uploading ? language.t("ideaEditSheet.uploadingImage") : language.t("ideaEditSheet.addImageButton"), systemImage: "photo.badge.plus")
                         }
-                        .disabled(uploading || liveIdea.images.count >= 10)
+                        .disabled(uploading || liveIdea.images.count >= 50)
                         Button {
                             showGeneratePopup = true
                         } label: {
                             Label(language.t("ideaEditSheet.generatePopupTitle"), systemImage: "sparkles")
                         }
-                        .disabled(liveIdea.images.count >= 10)
+                        .disabled(liveIdea.images.count >= 50)
                     }
                 }
 

@@ -111,6 +111,13 @@ extension AppLanguage {
             "sceneEditSheet.generating": "Erstellt…",
             "sceneEditSheet.generateImage": "Bild generieren",
             "sceneEditSheet.needsDescriptionFirst": "Erst eine Beschreibung eintragen",
+
+            // SceneAIImageSheet.swift
+            "sceneAIImageSheet.menuLabel": "AI Bild generieren",
+            "sceneAIImageSheet.navTitle": "AI Bild generieren",
+            "sceneAIImageSheet.promptSection": "Bildprompt",
+            "sceneAIImageSheet.promptPlaceholder": "Beschreibe das Bild",
+            "sceneAIImageSheet.generateButton": "Bild generieren",
             "sceneEditSheet.nameSection": "Name",
             "sceneEditSheet.namePlaceholder": "z.B. Küche, Aussen Tag 1",
             "sceneEditSheet.prioritySection": "Priorität",
@@ -166,6 +173,8 @@ extension AppLanguage {
             "sectionEditSheet.renameTitle": "Abschnitt umbenennen",
 
             // ProjectEditSheet.swift
+            "projectEditSheet.clientNameSection": "Auftraggeber",
+            "projectEditSheet.clientNamePlaceholder": "Auftraggeber",
             "projectEditSheet.nameSection": "Name",
             "projectEditSheet.namePlaceholder": "Projektname",
             "projectEditSheet.emojiSection": "Emoji",
@@ -337,6 +346,13 @@ extension AppLanguage {
             "sceneEditSheet.generating": "Generating…",
             "sceneEditSheet.generateImage": "Generate image",
             "sceneEditSheet.needsDescriptionFirst": "Enter a description first",
+
+            // SceneAIImageSheet.swift
+            "sceneAIImageSheet.menuLabel": "Generate AI image",
+            "sceneAIImageSheet.navTitle": "Generate AI image",
+            "sceneAIImageSheet.promptSection": "Image prompt",
+            "sceneAIImageSheet.promptPlaceholder": "Describe the image",
+            "sceneAIImageSheet.generateButton": "Generate image",
             "sceneEditSheet.nameSection": "Name",
             "sceneEditSheet.namePlaceholder": "e.g. kitchen, exterior day 1",
             "sceneEditSheet.prioritySection": "Priority",
@@ -392,6 +408,8 @@ extension AppLanguage {
             "sectionEditSheet.renameTitle": "Rename section",
 
             // ProjectEditSheet.swift
+            "projectEditSheet.clientNameSection": "Client",
+            "projectEditSheet.clientNamePlaceholder": "Client",
             "projectEditSheet.nameSection": "Name",
             "projectEditSheet.namePlaceholder": "Project name",
             "projectEditSheet.emojiSection": "Emoji",

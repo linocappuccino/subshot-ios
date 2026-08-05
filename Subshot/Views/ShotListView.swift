@@ -110,6 +110,12 @@ struct ShotListView: View {
     @StateObject private var viewModel: ShotListViewModel
     @ObservedObject private var language = AppLanguage.shared
     let projectName: String
+    /// Auftraggeber (2026-07-29, Lino: "IMMER im header auf den pipelines
+    /// dargestellt") — shown as a small line above `projectName` in the nav
+    /// title, mirroring the web app's projects/[id]/page.tsx +
+    /// postproduction/page.tsx header. Nil for the (still common) real
+    /// projects that predate this field — see Project.clientName's comment.
+    let projectClientName: String?
     /// .regular (iPad, full-width Split View) gets the adjustable-column
     /// grid (see ipadColumnCount + columnCountPopover); .compact iPad
     /// (narrow Slide Over/multitasking) keeps the simple 1-vs-2 isGridMode
@@ -188,6 +194,10 @@ struct ShotListView: View {
     /// is what fixes the "enlarge/destroy" complaint without giving up the
     /// native disambiguation.
     @State private var sceneToDelete: Scene?
+    /// 2026-08-05 — drives SceneAIImageSheet, reached from sceneTile/
+    /// sceneCompactTile's own .contextMenu ("AI Bild generieren"), separate
+    /// from editingScene's own full edit sheet.
+    @State private var generatingImageScene: Scene?
     /// Which scene tile is currently hovered by an in-flight drag — drives
     /// the thin accent-color landing indicator above that tile (see
     /// sceneCard). Not "which scene is being dragged": .draggable() doesn't
@@ -267,6 +277,33 @@ struct ShotListView: View {
     /// small tiles (2026-07-14, see scrollTargetBehaviorIf's doc comment).
     private var wantsScrollSnap: Bool {
         !isCompactTileMode && !(isPad && isGridMode) && horizontalSizeClass != .regular
+    }
+    /// 2026-08-05, Lino: "hat man nur einen abschnitt und szene... drückt im
+    /// kasten, verschwinden alle einträge... man muss zuerst zürück swipen
+    /// zur ideen seite und dann wieder... damit man die abgeschlossenen
+    /// szenen sieht" — root cause: .scrollTargetBehavior(.viewAligned)
+    /// below snaps to each top-level LazyVStack child (each section, see
+    /// .scrollTargetLayout() on that LazyVStack). With exactly ONE snap
+    /// target, "im Kasten" collapsing that section's only scene into its
+    /// much-shorter sceneCollapsedRow mid-animation shrinks the ONLY
+    /// target's height while the scroll offset stays put — with nothing
+    /// else to snap to, the content ends up scrolled past the now much
+    /// shorter single target, reading as "everything vanished". Snapping
+    /// was never meaningful with fewer than 2 targets anyway (nothing to
+    /// snap BETWEEN), so gating it out here is a pure no-op for that case,
+    /// not a workaround — switching workflow tabs and back only "fixes" it
+    /// today because that remounts the ScrollView at offset 0, the
+    /// underlying data was never actually missing. Mirrors the exact
+    /// top-level-child structure built in body below (unassignedSection +
+    /// either flat sceneGrid or one sectionGroup per section plus the
+    /// "Ohne Abschnitt" bucket).
+    private var scrollSnapTargetCount: Int {
+        let unassignedShotsTarget = viewModel.shots(in: nil).isEmpty ? 0 : 1
+        if viewModel.sections.isEmpty {
+            return unassignedShotsTarget + 1
+        }
+        let unassignedScenesTarget = viewModel.scenes(in: nil).isEmpty ? 0 : 1
+        return unassignedShotsTarget + viewModel.sections.count + unassignedScenesTarget
     }
     /// iPad-only column count, adjustable via a slider (see
     /// columnCountPopover) — 1...4, stored as Double since Slider needs a
@@ -377,12 +414,14 @@ struct ShotListView: View {
     /// two real navigation call sites in ProjectListView.swift always pass
     /// the tapped Project's actual values.
     init(
-        projectId: String, projectName: String, pendingDeepLinkKind: String? = nil, pendingDeepLinkId: String? = nil,
+        projectId: String, projectName: String, projectClientName: String? = nil,
+        pendingDeepLinkKind: String? = nil, pendingDeepLinkId: String? = nil,
         moduleConcept: Bool = true, moduleScripting: Bool = true, modulePostproduction: Bool = true
     ) {
         self.projectId = projectId
         _viewModel = StateObject(wrappedValue: ShotListViewModel(projectId: projectId))
         self.projectName = projectName
+        self.projectClientName = projectClientName
         self.pendingDeepLinkKind = pendingDeepLinkKind
         self.pendingDeepLinkId = pendingDeepLinkId
         let initialSection = [
@@ -530,7 +569,7 @@ struct ShotListView: View {
             .padding(.vertical, 16)
             .animation(.easeInOut(duration: 0.25), value: activeWorkflowSection)
         }
-        .scrollTargetBehaviorIf(wantsScrollSnap && activeWorkflowSection == .scripting)
+        .scrollTargetBehaviorIf(wantsScrollSnap && activeWorkflowSection == .scripting && scrollSnapTargetCount > 1)
         // 2026-07-23 (#320) — the Postproduction branch above already had
         // its own .transition(.opacity), but this branch (Ideas/Scripting)
         // never did, so swiping into/out of Postproduction faded one side
@@ -557,6 +596,26 @@ struct ShotListView: View {
         .navigationTitle(projectName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // 2026-07-29, Lino: "Auftraggeber und Projektname sollen dann
+            // IMMER im header auf den pipelines dargestellt werden" — a
+            // custom .principal item so the client name can render as a
+            // small line above the bold project name, mirroring the web
+            // app's header (projects/[id]/page.tsx). .navigationTitle above
+            // still carries the plain projectName for VoiceOver and the
+            // back-button label on whatever gets pushed next; this visually
+            // overrides it. Only shown when set — most existing real
+            // projects predate this field (see Project.clientName).
+            ToolbarItem(placement: .principal) {
+                VStack(spacing: 0) {
+                    if let projectClientName, !projectClientName.isEmpty {
+                        Text(projectClientName)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(projectName)
+                        .font(.headline)
+                }
+            }
             // 2026-07-14, Lino: "momentan ist die icon bar oben ja immer
             // offen, können wir diese schliessen? und wenn man drückt geht
             // sie schnell auf mit einem überstrecht effect? ... das stretch
@@ -718,6 +777,9 @@ struct ShotListView: View {
         }
         .sheet(item: $selectedShot) { shot in
             ShotDetailSheet(shot: shot, viewModel: viewModel)
+        }
+        .sheet(item: $generatingImageScene) { scene in
+            SceneAIImageSheet(scene: scene, viewModel: viewModel)
         }
         .sheet(isPresented: $showingPostproductionList) {
             PostproductionListView(viewModel: viewModel)
@@ -2093,6 +2155,11 @@ struct ShotListView: View {
             } label: {
                 Label(language.t("common.duplicate"), systemImage: "plus.square.on.square")
             }
+            Button {
+                generatingImageScene = scene
+            } label: {
+                Label(language.t("sceneAIImageSheet.menuLabel"), systemImage: "sparkles")
+            }
             Button(role: .destructive) {
                 sceneToDelete = scene
             } label: {
@@ -2226,6 +2293,11 @@ struct ShotListView: View {
                     Task { await viewModel.duplicateScene(scene) }
                 } label: {
                     Label(language.t("common.duplicate"), systemImage: "plus.square.on.square")
+                }
+                Button {
+                    generatingImageScene = scene
+                } label: {
+                    Label(language.t("sceneAIImageSheet.menuLabel"), systemImage: "sparkles")
                 }
                 Button(role: .destructive) {
                     sceneToDelete = scene
@@ -2381,7 +2453,31 @@ struct ShotListView: View {
     @ViewBuilder
     private func imKastenButton(scene: Scene) -> some View {
         Button {
-            Task { await viewModel.setSceneCompleted(scene, completed: !scene.completed) }
+            let completing = !scene.completed
+            Task {
+                await viewModel.setSceneCompleted(scene, completed: completing)
+                // 2026-08-05, Lino: "sind von einem abschnitt alle szenen
+                // im kasten, klappt sich dieser abschnitt automatisch zu"
+                // — same "every REAL scene" exclusion the backend already
+                // uses for its own auto-postproduction flip (Info tiles
+                // and Zwischenschritt beats don't count as shootable
+                // scenes, see Section.postproduction_status's backend doc
+                // comment), checked AFTER setSceneCompleted's own PATCH
+                // resolves so this reads the just-updated `completed` flag
+                // rather than the stale value still in `scene` here. Only
+                // fires when completing (never un-collapses on toggling
+                // one back off — that's the user's own call via the
+                // section header).
+                if completing {
+                    let siblings = viewModel.scenes(in: scene.sectionId.flatMap { id in viewModel.sections.first(where: { $0.id == id }) })
+                        .filter { !$0.isProjectInfo && !$0.isIntermediateStep }
+                    if !siblings.isEmpty, siblings.allSatisfy(\.completed) {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+                            collapsedSections.insert(scene.sectionId ?? unassignedSectionKey)
+                        }
+                    }
+                }
+            }
         } label: {
             Label(language.t("shotListView.inTheCan"), systemImage: scene.completed ? "checkmark.seal.fill" : "checkmark.seal")
                 .font(.subheadline.weight(.semibold))

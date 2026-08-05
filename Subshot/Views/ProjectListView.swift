@@ -135,7 +135,7 @@ struct ProjectListView: View {
                 gridScreen
                     .navigationDestination(for: Project.self) { project in
                         ShotListView(
-                            projectId: project.id, projectName: project.name,
+                            projectId: project.id, projectName: project.name, projectClientName: project.clientName,
                             moduleConcept: project.moduleConcept, moduleScripting: project.moduleScripting,
                             modulePostproduction: project.modulePostproduction
                         )
@@ -145,7 +145,7 @@ struct ProjectListView: View {
                     }
                     .navigationDestination(for: NotificationDeepLink.self) { link in
                         ShotListView(
-                            projectId: link.project.id, projectName: link.project.name,
+                            projectId: link.project.id, projectName: link.project.name, projectClientName: link.project.clientName,
                             pendingDeepLinkKind: link.entityKind, pendingDeepLinkId: link.entityId,
                             moduleConcept: link.project.moduleConcept, moduleScripting: link.project.moduleScripting,
                             modulePostproduction: link.project.modulePostproduction
@@ -598,24 +598,16 @@ struct ProjectListView: View {
                                 .blur(radius: 6)
                             }
                             .allowsHitTesting(false)
-                            // Emoji still shows even with an image now — laid
-                            // over the photo as a small corner badge instead
-                            // of the two being mutually exclusive as before
-                            // ("ein Emoji kann dann noch über das Bild gelegt
-                            // werden").
-                            if let emoji, !emoji.isEmpty {
-                                VStack {
-                                    Spacer()
-                                    HStack {
-                                        Spacer()
-                                        Text(emoji)
-                                            .font(.system(size: 22))
-                                            .padding(6)
-                                            .background(Circle().fill(.black.opacity(0.35)))
-                                            .padding(6)
-                                    }
-                                }
-                            }
+                            // 2026-08-05, Lino: "ist in der projekt oder
+                            // ordner kachel ein Bild übernommen worden,
+                            // verschiebt sich das emojo vom Ordner oder
+                            // Projekt an den anfang vom Projekttitel" —
+                            // the corner-badge-over-photo treatment (2026-07-
+                            // something, "ein Emoji kann dann noch über das
+                            // Bild gelegt werden") is gone; an image-having
+                            // tile no longer renders the emoji here at all,
+                            // it's prepended straight into the title Text
+                            // below instead.
                         } else if let emoji, !emoji.isEmpty {
                             Text(emoji)
                                 .font(.system(size: 48))
@@ -633,43 +625,6 @@ struct ProjectListView: View {
                             endPoint: .bottomTrailing
                         )
                         .allowsHitTesting(false)
-                        // 2026-07-21, #285 — pipeline-stage badge (Idee/
-                        // Konzept, Scripting/Shooting, Postproduction,
-                        // Abgeschlossen), top-leading corner so it doesn't
-                        // collide with the emoji-over-photo badge above
-                        // (bottom-trailing). Server-computed, see
-                        // ProjectPipelineStage's own doc comment.
-                        if let pipelineStage {
-                            // 2026-07-23 (#319, Lino: badge "abgeschnitten"/
-                            // "zu weit links" on some tiles) — turned out to
-                            // be a contrast problem, not a position bug: a
-                            // 20%-opacity tint background over a BRIGHT part
-                            // of a photo (e.g. a lamp sitting right behind
-                            // this top-leading corner) washed the amber text
-                            // out badly enough to read as missing/cut-off
-                            // letters. A solid dark base underneath the tint
-                            // — same idea as the emoji-over-photo badge's own
-                            // .black.opacity(0.35) circle just below — keeps
-                            // this legible over any photo, not just plain
-                            // color fills.
-                            VStack {
-                                HStack {
-                                    Text(pipelineStage.label)
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundStyle(pipelineStage.tintColor)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 3)
-                                        .background(
-                                            Capsule()
-                                                .fill(.black.opacity(0.55))
-                                                .overlay(Capsule().fill(pipelineStage.tintColor.opacity(0.35)))
-                                        )
-                                        .padding(6)
-                                    Spacer()
-                                }
-                                Spacer()
-                            }
-                        }
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -686,10 +641,30 @@ struct ProjectListView: View {
                 .shadow(color: thumbnailPath != nil ? Color(hex: color).opacity(0.55) : .clear, radius: 10)
                 .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
 
-            Text(title)
+            // 2026-08-05, Lino: "ist in der projekt oder ordner kachel ein
+            // Bild übernommen worden, verschiebt sich das emojo vom Ordner
+            // oder Projekt an den anfang vom Projekttitel" — only while a
+            // real thumbnail is showing (see the corner-badge removal
+            // above); with no image the emoji already renders large,
+            // centered, filling the whole tile, so prepending it here too
+            // would show it twice.
+            Text((thumbnailPath != nil && emoji?.isEmpty == false) ? "\(emoji!) \(title)" : title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
+            // 2026-08-05, Lino: "der pipeline status vom projekt kann nun
+            // unter den projektname auf der projektübersicht" — moved off
+            // the thumbnail's top-leading corner (see #319's own doc
+            // comment above, now removed along with the overlay itself)
+            // to directly under the title instead. No contrast/background
+            // trick needed anymore now that it's sitting on the tile's
+            // plain (non-photo) footer area rather than over an arbitrary
+            // photo.
+            if let pipelineStage {
+                Text(pipelineStage.label)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(pipelineStage.tintColor)
+            }
             if let subtitle {
                 Text(subtitle)
                     .font(.footnote)
@@ -716,9 +691,9 @@ private struct GridSheets: ViewModifier {
     func body(content: Content) -> some View {
         content
             .sheet(isPresented: $creatingProject) {
-                ProjectEditSheet(project: nil, defaultColor: viewModel.nextDefaultColor) { name, color, emoji, concept, scripting, postproduction in
+                ProjectEditSheet(project: nil, defaultColor: viewModel.nextDefaultColor) { name, color, emoji, concept, scripting, postproduction, clientName in
                     if let project = await viewModel.create(
-                        name: name, color: color, emoji: emoji,
+                        name: name, color: color, emoji: emoji, clientName: clientName,
                         moduleConcept: concept, moduleScripting: scripting,
                         modulePostproduction: postproduction
                     ) { path.append(project) }
@@ -730,9 +705,9 @@ private struct GridSheets: ViewModifier {
                 }
             }
             .sheet(item: $editingProject) { project in
-                ProjectEditSheet(project: project) { name, color, emoji, concept, scripting, postproduction in
+                ProjectEditSheet(project: project) { name, color, emoji, concept, scripting, postproduction, clientName in
                     await viewModel.update(
-                        project, name: name, color: color, emoji: emoji,
+                        project, name: name, color: color, emoji: emoji, clientName: clientName,
                         moduleConcept: concept, moduleScripting: scripting,
                         modulePostproduction: postproduction
                     )

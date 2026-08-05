@@ -140,7 +140,7 @@ final class ProjectListViewModel: ObservableObject {
     /// Returns the newly created project so the caller can navigate straight
     /// into it (Reminders-style: name it, hit return, you're in the list).
     func create(
-        name: String, color: String? = nil, emoji: String? = nil,
+        name: String, color: String? = nil, emoji: String? = nil, clientName: String? = nil,
         moduleConcept: Bool = true, moduleScripting: Bool = true,
         modulePostproduction: Bool = true
     ) async -> Project? {
@@ -154,7 +154,7 @@ final class ProjectListViewModel: ObservableObject {
             // there, not after.
             let sortOrder = (projects.map(\.sortOrder).min() ?? 0) - 1
             let project = try await APIClient.shared.createProject(
-                name: trimmed, color: color ?? nextDefaultColor, emoji: emoji, folderId: folderId, sortOrder: sortOrder,
+                name: trimmed, color: color ?? nextDefaultColor, emoji: emoji, clientName: clientName, folderId: folderId, sortOrder: sortOrder,
                 moduleConcept: moduleConcept, moduleScripting: moduleScripting,
                 modulePostproduction: modulePostproduction
             )
@@ -213,13 +213,14 @@ final class ProjectListViewModel: ObservableObject {
     }
 
     func update(
-        _ project: Project, name: String, color: String, emoji: String?,
+        _ project: Project, name: String, color: String, emoji: String?, clientName: String? = nil,
         moduleConcept: Bool, moduleScripting: Bool, modulePostproduction: Bool
     ) async {
         do {
             let updated = try await APIClient.shared.patchProject(
                 project.id, name: name, color: color,
                 emoji: emoji, clearEmoji: emoji == nil,
+                clientName: clientName,
                 moduleConcept: moduleConcept, moduleScripting: moduleScripting,
                 modulePostproduction: modulePostproduction
             )

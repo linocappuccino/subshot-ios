@@ -41,8 +41,10 @@ struct Project: Codable, Identifiable, Hashable {
     var locationAddress: String?
     var locationLat: Double?
     var locationLng: Double?
-    /// Client the shoot is for (2026-07-13, Lino) — shown on the
-    /// project-level Projektinfo tile only.
+    /// Auftraggeber (2026-07-13, Lino). 2026-07-29: asked first (before
+    /// name) in ProjectEditSheet's creation form, and shown in the pipeline
+    /// header on ShotListView/PostproductionListView, mirroring the web
+    /// app's projects/[id]/page.tsx + postproduction/page.tsx headers.
     var clientName: String?
     var folderId: String?
     var thumbnailUrl: String?

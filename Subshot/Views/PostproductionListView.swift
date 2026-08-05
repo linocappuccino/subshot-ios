@@ -157,7 +157,14 @@ struct PostproductionListView: View {
                 // these tiles carry a lot more footer content — title,
                 // status picker, deadline toggle — than a plain project
                 // tile, so they benefit from more breathing room).
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 22), GridItem(.flexible(), spacing: 22)], spacing: 22) {
+                // 2026-08-05, Lino: "die kacheln sollen nun die ganze breite
+                // nutzen (jetzt haben wir ja zwei spalten), dies soll nur zu
+                // einer spalte geändert werden, dann haben wir auf der
+                // kachel mehr platz um texte ein wenig grösser darzustellen"
+                // — single-column full-width tile, matches web's own
+                // single-column flex-wrap layout (VideoTile.tsx) more
+                // closely than the old 2-up grid did.
+                LazyVGrid(columns: [GridItem(.flexible())], spacing: 22) {
                     ForEach(tiles) { tile in
                         PostproductionVideoTile(
                             section: tile.section,
@@ -497,25 +504,29 @@ private struct PostproductionVideoTile: View {
     private var statusColor: Color { (section.postproductionStatus ?? .wartend).glowColor }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        // 2026-08-05, Lino: single-column full-width tile now has real
+        // room to breathe — every footer text bumped one step up from the
+        // 2-column sizes above (subheadline->headline, caption->subheadline,
+        // caption2->caption), padding 8->12, status dot 7->9.
+        VStack(alignment: .leading, spacing: 8) {
             thumbnail
             if let video {
-                HStack(spacing: 4) {
+                HStack(spacing: 6) {
                     Text(video.title)
-                        .font(.subheadline.weight(.semibold))
+                        .font(.headline)
                         .lineLimit(1)
                     if canEditTitleAndDeadline {
                         Button(action: onEditTitle) {
                             Image(systemName: "pencil")
-                                .font(.caption2)
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
                 }
-                HStack(spacing: 5) {
+                HStack(spacing: 6) {
                     Circle()
                         .fill(statusColor)
-                        .frame(width: 7, height: 7)
+                        .frame(width: 9, height: 9)
                     if canEditStatus {
                         Picker(language.t("postproductionListView.statusLabel"), selection: Binding(
                             get: { section.postproductionStatus ?? .wartend },
@@ -526,10 +537,10 @@ private struct PostproductionVideoTile: View {
                             }
                         }
                         .pickerStyle(.menu)
-                        .font(.caption)
+                        .font(.subheadline)
                     } else {
                         Text(PostproductionListView.statusLabel(section.postproductionStatus ?? .wartend, language: language))
-                            .font(.caption)
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -538,30 +549,30 @@ private struct PostproductionVideoTile: View {
                         get: { section.postproductionDeadline != nil },
                         set: { onDeadlineChange($0 ? deadline : nil) }
                     ))
-                    .font(.caption)
+                    .font(.subheadline)
                     if section.postproductionDeadline != nil {
                         DatePicker(language.t("postproductionListView.dateLabel"), selection: Binding(
                             get: { deadline },
                             set: { deadline = $0; onDeadlineChange($0) }
                         ), displayedComponents: .date)
                         .labelsHidden()
-                        .font(.caption)
+                        .font(.subheadline)
                     }
                 } else if let deadline = section.postproductionDeadline {
                     Text(language.t("postproductionListView.deadlineWithValue").replacingOccurrences(of: "{date}", with: deadline.formatted(date: .abbreviated, time: .omitted)))
-                        .font(.caption2)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             } else {
                 Text(section.name)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.headline)
                     .lineLimit(1)
                 Text(language.t("postproductionListView.noVideoYet"))
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(8)
+        .padding(12)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
         // 2026-07-23 (#321) — soft per-status glow, cheap iOS equivalent of
         // web's VideoTile.tsx glow border (a CSS box-shadow using the same

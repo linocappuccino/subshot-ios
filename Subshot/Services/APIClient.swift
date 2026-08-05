@@ -212,19 +212,19 @@ final class APIClient {
     }
 
     func createProject(
-        name: String, color: String, emoji: String? = nil, folderId: String? = nil, sortOrder: Int = 0,
+        name: String, color: String, emoji: String? = nil, clientName: String? = nil, folderId: String? = nil, sortOrder: Int = 0,
         moduleConcept: Bool = true, moduleScripting: Bool = true,
         modulePostproduction: Bool = true
     ) async throws -> Project {
         var req = try await authorizedRequest("projects", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         struct Body: Encodable {
-            let name: String; let color: String; let emoji: String?; let sort_order: Int
+            let name: String; let client_name: String?; let color: String; let emoji: String?; let sort_order: Int
             let module_concept: Bool; let module_scripting: Bool
             let module_postproduction: Bool
         }
         req.httpBody = try encoder.encode(Body(
-            name: name, color: color, emoji: emoji, sort_order: sortOrder,
+            name: name, client_name: clientName, color: color, emoji: emoji, sort_order: sortOrder,
             module_concept: moduleConcept, module_scripting: moduleScripting,
             module_postproduction: modulePostproduction
         ))
@@ -490,11 +490,16 @@ final class APIClient {
     /// returns fast.
     struct GenerateImageAck: Decodable { let status: String }
 
-    func generateSceneImage(_ sceneId: String, style: String, aspectRatio: String) async throws -> GenerateImageAck {
+    /// 2026-08-05 — `prompt` mirrors the backend's `SceneImageGenerate.prompt`
+    /// (already optional there, added 2026-07-17 for web's own prompt popup,
+    /// never wired up on iOS until now): nil/omitted falls back to the
+    /// scene's own description server-side, exactly like the old
+    /// description-only call still does.
+    func generateSceneImage(_ sceneId: String, style: String, aspectRatio: String, prompt: String? = nil) async throws -> GenerateImageAck {
         var req = try await authorizedRequest("scenes/\(sceneId)/generate-image", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        struct Body: Encodable { let style: String; let aspect_ratio: String }
-        req.httpBody = try encoder.encode(Body(style: style, aspect_ratio: aspectRatio))
+        struct Body: Encodable { let style: String; let aspect_ratio: String; let prompt: String? }
+        req.httpBody = try encoder.encode(Body(style: style, aspect_ratio: aspectRatio, prompt: prompt))
         return try await send(req)
     }
 

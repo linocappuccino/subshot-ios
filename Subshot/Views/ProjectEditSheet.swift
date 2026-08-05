@@ -9,9 +9,10 @@ import SwiftUI
 /// time instead of only afterward via a separate edit step.
 struct ProjectEditSheet: View {
     let project: Project?
-    var onSave: (String, String, String?, Bool, Bool, Bool) async -> Void
+    var onSave: (String, String, String?, Bool, Bool, Bool, String?) async -> Void
     @ObservedObject private var language = AppLanguage.shared
 
+    @State private var clientName: String
     @State private var name: String
     @State private var color: String
     @State private var emoji: String
@@ -22,10 +23,11 @@ struct ProjectEditSheet: View {
 
     init(
         project: Project?, defaultColor: String = Color.subshotPalette[0],
-        onSave: @escaping (String, String, String?, Bool, Bool, Bool) async -> Void
+        onSave: @escaping (String, String, String?, Bool, Bool, Bool, String?) async -> Void
     ) {
         self.project = project
         self.onSave = onSave
+        _clientName = State(initialValue: project?.clientName ?? "")
         _name = State(initialValue: project?.name ?? "")
         _color = State(initialValue: project?.color ?? defaultColor)
         _emoji = State(initialValue: project?.emoji ?? "")
@@ -37,6 +39,11 @@ struct ProjectEditSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                // 2026-07-29, Lino: "zuerst: Auftraggeber: dann Projektname"
+                // — same field order as the web app's ProjectEditModal.tsx.
+                Section(language.t("projectEditSheet.clientNameSection")) {
+                    TextField(language.t("projectEditSheet.clientNamePlaceholder"), text: $clientName)
+                }
                 Section(language.t("projectEditSheet.nameSection")) {
                     TextField(language.t("projectEditSheet.namePlaceholder"), text: $name)
                 }
@@ -93,10 +100,12 @@ struct ProjectEditSheet: View {
                         // below does) - empty just does nothing, same guard
                         // the old bare name-only creation sheet had.
                         guard project != nil || !trimmed.isEmpty else { return }
+                        let trimmedClientName = clientName.trimmingCharacters(in: .whitespacesAndNewlines)
                         Task {
                             await onSave(
                                 trimmed.isEmpty ? (project?.name ?? "") : trimmed, color, trimmedEmoji.isEmpty ? nil : trimmedEmoji,
-                                moduleConcept, moduleScripting, modulePostproduction
+                                moduleConcept, moduleScripting, modulePostproduction,
+                                trimmedClientName.isEmpty ? nil : trimmedClientName
                             )
                             dismiss()
                         }
