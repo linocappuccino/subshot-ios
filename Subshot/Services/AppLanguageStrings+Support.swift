@@ -51,6 +51,18 @@ extension AppLanguage {
             "shotListViewModel.unnamedScene": "Unbenannte Szene",
             "shotListViewModel.sceneDeletedUndoLabel": "Szene „{name}“ gelöscht",
             "shotListViewModel.newIdeaTitle": "Neue Idee",
+
+            // TodoSidebarSheet.swift (#412) — keys copied verbatim from
+            // web's lib/i18n.tsx todoSidebar.* so both platforms read
+            // identically; postproductionStatus.* already exists (see
+            // AppLanguageStrings+Ideas.swift), reused as-is.
+            "projectListView.todoListButton": "Todoliste",
+            "todoSidebar.sheetTitle": "Todoliste",
+            "todoSidebar.myTodosTitle": "Meine Todos",
+            "todoSidebar.myTodosEmpty": "Keine offenen Todos.",
+            "todoSidebar.deadlinesTitle": "Postproduction-Deadlines",
+            "todoSidebar.deadlinesEmpty": "Keine anstehenden Deadlines.",
+            "todoSidebar.markDone": "Als erledigt markieren",
         ],
         "en": [
             "emojiPickerField.searchPlaceholder": "Search…",
@@ -77,6 +89,14 @@ extension AppLanguage {
             "shotListViewModel.unnamedScene": "Untitled scene",
             "shotListViewModel.sceneDeletedUndoLabel": "Scene \u{201C}{name}\u{201D} deleted",
             "shotListViewModel.newIdeaTitle": "New idea",
+
+            "projectListView.todoListButton": "To-dos",
+            "todoSidebar.sheetTitle": "To-do list",
+            "todoSidebar.myTodosTitle": "My Todos",
+            "todoSidebar.myTodosEmpty": "No open todos.",
+            "todoSidebar.deadlinesTitle": "Postproduction Deadlines",
+            "todoSidebar.deadlinesEmpty": "No upcoming deadlines.",
+            "todoSidebar.markDone": "Mark as done",
         ],
     ]
 }

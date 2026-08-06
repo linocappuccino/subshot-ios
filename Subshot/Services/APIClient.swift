@@ -1351,6 +1351,16 @@ final class APIClient {
         let req = try await authorizedRequest("me/notifications/read-all", method: "POST")
         try await sendNoContent(req)
     }
+
+    // MARK: - Todo Sidebar
+
+    /// Powers TodoSidebarSheet (#412) — mirrors web's TodoSidebar.tsx /
+    /// GET /me/todo-sidebar exactly: open TodoItems assigned to the current
+    /// user plus postproduction video deadlines, both cross-project.
+    func todoSidebar() async throws -> TodoSidebarData {
+        let req = try await authorizedRequest("me/todo-sidebar")
+        return try await send(req)
+    }
 }
 
 private extension JSONDecoder.DateDecodingStrategy {

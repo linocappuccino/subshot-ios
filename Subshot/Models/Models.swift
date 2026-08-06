@@ -677,6 +677,67 @@ struct TodoList: Codable, Identifiable, Hashable {
     }
 }
 
+/// Powers TodoSidebarSheet (#412) — one TodoItem assigned to the current
+/// user, cross-project. Mirrors web's lib/types.ts MyTodo exactly. A
+/// dedicated type rather than reusing TodoItem since GET /me/todo-sidebar
+/// returns extra project/list context TodoItem itself doesn't carry.
+struct MyTodo: Codable, Identifiable, Hashable {
+    let id: String
+    var text: String
+    var done: Bool
+    var dueAt: Date?
+    let projectId: String
+    let projectName: String
+    let todoListId: String
+    let todoListName: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, text, done
+        case dueAt = "due_at"
+        case projectId = "project_id"
+        case projectName = "project_name"
+        case todoListId = "todo_list_id"
+        case todoListName = "todo_list_name"
+    }
+}
+
+/// One Video whose parent Section is in postproduction with a deadline set
+/// — the deadline itself lives on the Section (shared by every video in
+/// it), surfaced per-video for TodoSidebarSheet (#412). Mirrors web's
+/// PostproductionVideoDeadline exactly.
+struct PostproductionVideoDeadline: Codable, Identifiable, Hashable {
+    var id: String { videoId }
+    let videoId: String
+    let videoTitle: String
+    let sectionId: String
+    let sectionName: String
+    let projectId: String
+    let projectName: String
+    let postproductionStatus: PostproductionStatus?
+    let postproductionDeadline: Date
+
+    enum CodingKeys: String, CodingKey {
+        case videoId = "video_id"
+        case videoTitle = "video_title"
+        case sectionId = "section_id"
+        case sectionName = "section_name"
+        case projectId = "project_id"
+        case projectName = "project_name"
+        case postproductionStatus = "postproduction_status"
+        case postproductionDeadline = "postproduction_deadline"
+    }
+}
+
+struct TodoSidebarData: Codable, Hashable {
+    var todos: [MyTodo]
+    var postproductionDeadlines: [PostproductionVideoDeadline]
+
+    enum CodingKeys: String, CodingKey {
+        case todos
+        case postproductionDeadlines = "postproduction_deadlines"
+    }
+}
+
 /// Named `SceneSection` (not `Section`) to avoid shadowing SwiftUI's own
 /// `Section` view type in this module — the exact same trap as the earlier
 /// `Scene`/`SwiftUI.Scene` collision (see SubshotApp.swift), and `Section(...)

@@ -96,6 +96,7 @@ struct ProjectListView: View {
     @State private var editingProject: Project?
     @State private var editingFolder: ProjectFolder?
     @State private var showingNotifications = false
+    @State private var showingTodoSidebar = false
     /// Landing indicator while dragging a project tile onto another project
     /// tile to reorder — same idea as ShotListView's dropTargetSceneId.
     @State private var dropTargetProjectId: String?
@@ -167,15 +168,17 @@ struct ProjectListView: View {
             .toolbar { toolbarContent }
             .task { await viewModel.load() }
             .task { if folderId == nil { await viewModel.loadNotifications() } }
+            .task { if folderId == nil { await viewModel.loadTodoSidebar() } }
             .refreshable {
                 await viewModel.load()
                 if folderId == nil { await viewModel.loadNotifications() }
+                if folderId == nil { await viewModel.loadTodoSidebar() }
             }
             .modifier(GridSheets(
                 viewModel: viewModel, path: $path,
                 creatingProject: $creatingProject, creatingFolder: $creatingFolder,
                 editingProject: $editingProject, editingFolder: $editingFolder,
-                showingNotifications: $showingNotifications
+                showingNotifications: $showingNotifications, showingTodoSidebar: $showingTodoSidebar
             ))
     }
 
@@ -218,6 +221,36 @@ struct ProjectListView: View {
         }
         .overlay(alignment: .bottomTrailing) {
             addButton
+        }
+        .overlay(alignment: .bottom) {
+            todoListButton
+        }
+    }
+
+    /// Bottom-center entry point (#412) to TodoSidebarSheet — the iOS
+    /// equivalent of web's always-visible right sidebar (TodoSidebar.tsx),
+    /// which has no room on a phone. Cross-project data, same scoping as the
+    /// notification bell/avatar menu — only rendered on the root screen, not
+    /// inside an opened folder.
+    @ViewBuilder
+    private var todoListButton: some View {
+        if folderId == nil {
+            Button {
+                showingTodoSidebar = true
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "checklist")
+                    Text(language.t("projectListView.todoListButton"))
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 12)
+                .background(Color(hex: "242426"), in: Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1))
+                .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
+            }
+            .padding(.bottom, 20)
         }
     }
 
@@ -698,6 +731,7 @@ private struct GridSheets: ViewModifier {
     @Binding var editingProject: Project?
     @Binding var editingFolder: ProjectFolder?
     @Binding var showingNotifications: Bool
+    @Binding var showingTodoSidebar: Bool
 
     func body(content: Content) -> some View {
         content
@@ -736,6 +770,11 @@ private struct GridSheets: ViewModifier {
                     } else {
                         path.append(project)
                     }
+                }
+            }
+            .sheet(isPresented: $showingTodoSidebar) {
+                TodoSidebarSheet(viewModel: viewModel) { project in
+                    path.append(project)
                 }
             }
     }

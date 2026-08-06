@@ -12,7 +12,7 @@ import UserNotifications
 /// touches Subshot iOS source, so a glance at the Projects screen settles
 /// whether a `git pull` + rebuild actually picked up the latest commit.
 enum Config {
-    static let buildTag = "b13"
+    static let buildTag = "b14"
 }
 
 /// Registers for remote notifications so a scene-timer push (see

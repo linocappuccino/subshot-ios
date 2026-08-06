@@ -20,6 +20,9 @@ final class ProjectListViewModel: ObservableObject {
     /// Batched notifications (currently just todo-item assignments — see the
     /// backend Notification model docstring for the collapsing logic).
     @Published var notifications: [AppNotification] = []
+    /// Powers TodoSidebarSheet (#412) — cross-project open todos + postproduction
+    /// deadlines, same feed as web's TodoSidebar. nil until the first load resolves.
+    @Published var todoSidebarData: TodoSidebarData?
 
     init(folderId: String? = nil) {
         self.folderId = folderId
@@ -124,6 +127,31 @@ final class ProjectListViewModel: ObservableObject {
             try await APIClient.shared.markAllNotificationsRead()
         } catch {
             notifications = previous
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func loadTodoSidebar() async {
+        // Best-effort, same reasoning as loadNotifications — a failed fetch
+        // just means a stale/empty sheet next time it's opened, not worth an
+        // error banner over the whole project list.
+        todoSidebarData = (try? await APIClient.shared.todoSidebar()) ?? todoSidebarData
+    }
+
+    /// Mirrors web's TodoSidebar.completeTodo — the sidebar only ever shows
+    /// OPEN todos (backend filters done=false), so checking one off here is a
+    /// one-way action: it just drops out of the list, same as it would on the
+    /// next poll anyway. Reverts (re-adds it) if the PATCH fails.
+    func completeTodo(_ todo: MyTodo) async {
+        guard var data = todoSidebarData else { return }
+        data.todos.removeAll { $0.id == todo.id }
+        todoSidebarData = data
+        do {
+            _ = try await APIClient.shared.patchTodoItem(todo.id, done: true)
+        } catch {
+            guard var reverted = todoSidebarData else { return }
+            reverted.todos.append(todo)
+            todoSidebarData = reverted
             errorMessage = error.localizedDescription
         }
     }

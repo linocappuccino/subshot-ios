@@ -194,16 +194,30 @@ struct VideoPlayerSheet: View {
 
     private var topBar: some View {
         HStack {
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.white, .black.opacity(0.4))
-            }
+            closeButton
             Spacer()
         }
         .padding()
+    }
+
+    /// 2026-08-06, Lino: "können wir da den x button schöner machen um das
+    /// video zu schliessen?" — was a flat two-tone `xmark.circle.fill`
+    /// glyph; swapped for a frosted-glass circular backdrop (same material
+    /// AVKit's own transport-bar chrome uses) with a plain bold xmark
+    /// centered inside, closer to how native fullscreen media viewers
+    /// (Photos, Camera) style their own close buttons.
+    private var closeButton: some View {
+        Button {
+            dismiss()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 34, height: 34)
+                .background(.ultraThinMaterial, in: Circle())
+                .overlay(Circle().stroke(.white.opacity(0.15), lineWidth: 1))
+                .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+        }
     }
 
     /// 2026-07-26 — bottom-trailing custom row: "Teilen" (share) button on
