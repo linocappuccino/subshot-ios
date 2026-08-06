@@ -73,6 +73,7 @@ extension AppLanguage {
             "ideaEditSheet.styleLabel": "Stil",
             "ideaEditSheet.styleRealistic": "Realistisch",
             "ideaEditSheet.styleSketch": "Sketch",
+            "ideaEditSheet.styleFunnySketch": "Funny Sketch",
             "ideaEditSheet.generatingLabel": "Erstellt…",
             "ideaEditSheet.generateImageButton": "Bild generieren",
 
@@ -225,6 +226,7 @@ extension AppLanguage {
             "ideaEditSheet.styleLabel": "Style",
             "ideaEditSheet.styleRealistic": "Realistic",
             "ideaEditSheet.styleSketch": "Sketch",
+            "ideaEditSheet.styleFunnySketch": "Funny Sketch",
             "ideaEditSheet.generatingLabel": "Generating…",
             "ideaEditSheet.generateImageButton": "Generate image",
 

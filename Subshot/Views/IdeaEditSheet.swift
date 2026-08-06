@@ -463,6 +463,7 @@ struct IdeaEditSheet: View {
                     Picker(language.t("ideaEditSheet.styleLabel"), selection: $style) {
                         Text(language.t("ideaEditSheet.styleRealistic")).tag("realistic")
                         Text(language.t("ideaEditSheet.styleSketch")).tag("sketch")
+                        Text(language.t("ideaEditSheet.styleFunnySketch")).tag("funny_sketch")
                     }
                     .pickerStyle(.segmented)
                 }

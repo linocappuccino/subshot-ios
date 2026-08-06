@@ -57,6 +57,7 @@ struct SceneAIImageSheet: View {
                     Picker(language.t("sceneEditSheet.stylePicker"), selection: $style) {
                         Text(language.t("sceneEditSheet.styleRealistic")).tag("realistic")
                         Text(language.t("sceneEditSheet.styleSketch")).tag("sketch")
+                        Text(language.t("sceneEditSheet.styleFunnySketch")).tag("funny_sketch")
                     }
                     .pickerStyle(.segmented)
                 }
