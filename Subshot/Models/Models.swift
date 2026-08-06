@@ -688,6 +688,9 @@ struct MyTodo: Codable, Identifiable, Hashable {
     var dueAt: Date?
     let projectId: String
     let projectName: String
+    /// 2026-08-06, Lino: "darunter kommt auftraggeber: Projekt" — Project.
+    /// clientName, nullable (not every project has one set).
+    let projectClientName: String?
     let todoListId: String
     let todoListName: String
     /// 2026-08-06 (#412 follow-up) — which pipeline stage the OWNING
@@ -700,6 +703,7 @@ struct MyTodo: Codable, Identifiable, Hashable {
         case dueAt = "due_at"
         case projectId = "project_id"
         case projectName = "project_name"
+        case projectClientName = "project_client_name"
         case todoListId = "todo_list_id"
         case todoListName = "todo_list_name"
         case pipelineStage = "pipeline_stage"
@@ -718,6 +722,7 @@ struct PostproductionVideoDeadline: Codable, Identifiable, Hashable {
     let sectionName: String
     let projectId: String
     let projectName: String
+    let projectClientName: String?
     let postproductionStatus: PostproductionStatus?
     let postproductionDeadline: Date
     var pipelineStage: ProjectPipelineStage = .postproduction
@@ -729,6 +734,7 @@ struct PostproductionVideoDeadline: Codable, Identifiable, Hashable {
         case sectionName = "section_name"
         case projectId = "project_id"
         case projectName = "project_name"
+        case projectClientName = "project_client_name"
         case postproductionStatus = "postproduction_status"
         case postproductionDeadline = "postproduction_deadline"
         case pipelineStage = "pipeline_stage"

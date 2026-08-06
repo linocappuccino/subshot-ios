@@ -79,6 +79,14 @@ struct TodoSidebarSheet: View {
         .preferredColorScheme(.dark)
     }
 
+    /// 2026-08-06, Lino: "zuerst kommt der eintrag... darunter kommt
+    /// auftraggeber: Projekt" — clientName is optional (not every project
+    /// has an Auftraggeber set), falls back to the bare project name.
+    private static func clientProjectLabel(_ clientName: String?, _ projectName: String) -> String {
+        guard let clientName, !clientName.isEmpty else { return projectName }
+        return "\(clientName): \(projectName)"
+    }
+
     @ViewBuilder
     private func deadlineRow(_ deadline: PostproductionVideoDeadline) -> some View {
         let urgency = Self.dueUrgency(deadline.postproductionDeadline)
@@ -89,32 +97,21 @@ struct TodoSidebarSheet: View {
                 Text(deadline.videoTitle)
                     .font(.body)
                     .foregroundStyle(.primary)
-                Text("\(deadline.projectName) · \(deadline.sectionName)")
+                Text(Self.clientProjectLabel(deadline.projectClientName, deadline.projectName))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                // 2026-08-06, Lino: "habe ich nicht gesagt es soll direkt
-                // über der deadline angezeigt werden?" — was its own full-
-                // width line above this whole row (which also has the
-                // status on the left), so it sat above the LEFT side, not
-                // stacked with the date on the right. Grouped into the same
-                // trailing VStack as the date instead — badge directly
-                // above it now, not just "somewhere above the row".
-                HStack(alignment: .bottom) {
-                    if let status = deadline.postproductionStatus {
-                        HStack(spacing: 5) {
-                            Circle().fill(status.glowColor).frame(width: 7, height: 7)
-                            Text(PostproductionListView.statusLabel(status, language: language))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                // 2026-08-06, Lino: "darunter links der pipeline batch und
+                // rechts dann die deadline" — exact 3-line spec, replaces
+                // the old project/section line + status pill (status is
+                // still readable via the colored dot on the postproduction
+                // grid tile itself, not re-added here since he didn't ask
+                // for it back).
+                HStack {
+                    PipelineBadge(stage: deadline.pipelineStage)
                     Spacer()
-                    VStack(alignment: .trailing, spacing: 3) {
-                        PipelineBadge(stage: deadline.pipelineStage)
-                        Text(Self.formatDateTime(deadline.postproductionDeadline))
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(deadline.postproductionDeadline < Date() ? .red : .secondary)
-                    }
+                    Text(Self.formatDateTime(deadline.postproductionDeadline))
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(deadline.postproductionDeadline < Date() ? .red : .secondary)
                 }
                 .padding(.top, 1)
             }
@@ -142,22 +139,21 @@ struct TodoSidebarSheet: View {
                         .font(.body)
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
-                    // 2026-08-06 — same "group with the date, not a separate
-                    // full-width line" fix as deadlineRow above.
-                    HStack(alignment: .bottom) {
-                        Text(todo.projectName)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                    Text(Self.clientProjectLabel(todo.projectClientName, todo.projectName))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    // 2026-08-06 — same "badge left, deadline right" spec as
+                    // deadlineRow above.
+                    HStack {
+                        PipelineBadge(stage: todo.pipelineStage)
                         Spacer()
-                        VStack(alignment: .trailing, spacing: 3) {
-                            PipelineBadge(stage: todo.pipelineStage)
-                            if let dueAt = todo.dueAt {
-                                Text(Self.formatDateTime(dueAt))
-                                    .font(.caption.weight(.medium))
-                                    .foregroundStyle(dueAt < Date() ? .red : .secondary)
-                            }
+                        if let dueAt = todo.dueAt {
+                            Text(Self.formatDateTime(dueAt))
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(dueAt < Date() ? .red : .secondary)
                         }
                     }
+                    .padding(.top, 1)
                 }
             }
             .buttonStyle(.plain)
