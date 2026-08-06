@@ -192,6 +192,11 @@ struct PostproductionListView: View {
                                 } else {
                                     Task { await viewModel.patchSectionPostproduction(tile.section, clearDeadline: true) }
                                 }
+                            },
+                            onDeleteVideo: {
+                                if let video = tile.video {
+                                    Task { await deleteVideo(video) }
+                                }
                             }
                         )
                     }
@@ -475,6 +480,19 @@ struct PostproductionListView: View {
         }
     }
 
+    /// 2026-08-06 — long-press-on-thumbnail delete (see PostproductionVideoTile's
+    /// contextMenu/confirmationDialog). Same scope as web's onDeleteVideo:
+    /// only the Video itself (backend cascades to its VideoVersions/
+    /// VideoComments), the Section and its real Scenes are untouched.
+    private func deleteVideo(_ video: Video) async {
+        do {
+            try await APIClient.shared.deleteVideo(video.id)
+            sectionVideos[video.sectionId]?.removeAll { $0.id == video.id }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     private func updateVersion(_ updated: VideoVersion, videoId: String) {
         for (sectionId, videos) in sectionVideos {
             if let vIndex = videos.firstIndex(where: { $0.id == videoId }),
@@ -508,13 +526,22 @@ private struct PostproductionVideoTile: View {
     let onEditTitle: () -> Void
     let onStatusChange: (PostproductionStatus) -> Void
     let onDeadlineChange: (Date?) -> Void
+    let onDeleteVideo: () -> Void
 
     @State private var deadline: Date
+    /// 2026-08-06, Lino: "wenn man feste oder lange auf ein video ... drückt,
+    /// kann man das video löschen" — long-press (contextMenu) on the
+    /// thumbnail offers "Video löschen", which then asks for confirmation
+    /// here before actually calling onDeleteVideo. Matches web's confirm
+    /// wording/scope exactly (VideoReviewModal's onDeleteVideo): only the
+    /// Video itself (+ its versions/comments), NOT the Section or its Scenes.
+    @State private var showingDeleteConfirm = false
 
     init(
         section: SceneSection, video: Video?, canEditStatus: Bool, canEditTitleAndDeadline: Bool, uploading: Bool,
         onTapUpload: @escaping () -> Void, onPlay: @escaping (Video, VideoVersion) -> Void, onEditTitle: @escaping () -> Void,
-        onStatusChange: @escaping (PostproductionStatus) -> Void, onDeadlineChange: @escaping (Date?) -> Void
+        onStatusChange: @escaping (PostproductionStatus) -> Void, onDeadlineChange: @escaping (Date?) -> Void,
+        onDeleteVideo: @escaping () -> Void
     ) {
         self.section = section
         self.video = video
@@ -526,6 +553,7 @@ private struct PostproductionVideoTile: View {
         self.onEditTitle = onEditTitle
         self.onStatusChange = onStatusChange
         self.onDeadlineChange = onDeadlineChange
+        self.onDeleteVideo = onDeleteVideo
         _deadline = State(initialValue: section.postproductionDeadline ?? .now)
     }
 
@@ -611,6 +639,18 @@ private struct PostproductionVideoTile: View {
         // 2026-08-05, Lino: "den glow nehmen wir hier ganz weg" — removes
         // the #321 per-status shadow glow entirely (the small status dot
         // above, statusColor's other use, stays).
+        .confirmationDialog(
+            language.t("postproductionListView.deleteVideo"),
+            isPresented: $showingDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button(language.t("common.delete"), role: .destructive) {
+                onDeleteVideo()
+            }
+            Button(language.t("common.cancel"), role: .cancel) {}
+        } message: {
+            Text(language.t("postproductionListView.deleteVideoMessage").replacingOccurrences(of: "{title}", with: video?.title ?? ""))
+        }
     }
 
     @ViewBuilder
@@ -671,6 +711,15 @@ private struct PostproductionVideoTile: View {
                 Color.black.opacity(readyVersion.thumbnailUrl != nil ? 0.15 : 0)
                     .contentShape(Rectangle())
                     .onTapGesture { onPlay(video, readyVersion) }
+                    .contextMenu {
+                        if canEditStatus {
+                            Button(role: .destructive) {
+                                showingDeleteConfirm = true
+                            } label: {
+                                Label(language.t("postproductionListView.deleteVideo"), systemImage: "trash")
+                            }
+                        }
+                    }
                 Image(systemName: "play.circle.fill")
                     .font(.system(size: 32))
                     .foregroundStyle(.white, Color.accentColor)

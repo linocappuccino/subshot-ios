@@ -7,9 +7,19 @@ import SwiftUI
 /// (Postproduction-Deadlines above Meine Todos), same urgency-color rule
 /// (2026-08-05/2026-08-06, ported from TodoSidebar.tsx's dueUrgency):
 /// yellow one calendar day before a deadline, red on the deadline's own
-/// day AND once it's overdue. Todos are checkable here too, mirroring
-/// web's completeTodo (one-way — the list only ever shows open todos, so
-/// checking one off just drops it from the list).
+/// day AND once it's overdue.
+///
+/// 2026-08-06, Lino: "die todolisten müssen allgemein mehr apple like
+/// dargestellt werden (wie in der apple erinnerungs app)" — insetGrouped
+/// list (Reminders' own rounded-card sections), a thin ring checkbox that
+/// fills with a white checkmark on a colored disc when tapped (same SF
+/// Symbol two-tone technique Reminders itself uses), and plain-weight body
+/// text with a small secondary subtitle line — was semibold subheadline
+/// throughout. Interaction was already right (this sheet already only ever
+/// shipped this way): tapping the CIRCLE completes the todo, tapping the
+/// TEXT navigates to that item's project — mirrors web's completeTodo
+/// (one-way, the list only ever shows open todos, so checking one off just
+/// drops it from the list once the brief checked-flourish below finishes).
 struct TodoSidebarSheet: View {
     @ObservedObject var viewModel: ProjectListViewModel
     var onSelectProject: (Project) -> Void
@@ -53,6 +63,9 @@ struct TodoSidebarSheet: View {
                     }
                 }
             }
+            // Reminders' own list style — rounded-card sections rather than
+            // a plain edge-to-edge list.
+            .listStyle(.insetGrouped)
             .navigationTitle(language.t("todoSidebar.sheetTitle"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -72,29 +85,30 @@ struct TodoSidebarSheet: View {
         Button {
             selectProject(id: deadline.projectId)
         } label: {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(deadline.videoTitle)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.body)
                     .foregroundStyle(.primary)
                 Text("\(deadline.projectName) · \(deadline.sectionName)")
-                    .font(.caption)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
                 HStack {
                     if let status = deadline.postproductionStatus {
                         HStack(spacing: 5) {
                             Circle().fill(status.glowColor).frame(width: 7, height: 7)
                             Text(PostproductionListView.statusLabel(status, language: language))
-                                .font(.caption2)
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
                     Spacer()
                     Text(Self.formatDateTime(deadline.postproductionDeadline))
-                        .font(.caption2.weight(.medium))
+                        .font(.caption.weight(.medium))
                         .foregroundStyle(deadline.postproductionDeadline < Date() ? .red : .secondary)
                 }
+                .padding(.top, 1)
             }
-            .padding(.vertical, 2)
+            .padding(.vertical, 3)
         }
         .buttonStyle(.plain)
         .listRowBackground(Self.urgencyBackground(urgency))
@@ -103,34 +117,29 @@ struct TodoSidebarSheet: View {
     @ViewBuilder
     private func todoRow(_ todo: MyTodo) -> some View {
         let urgency = todo.dueAt.flatMap(Self.dueUrgency)
-        HStack(alignment: .top, spacing: 10) {
-            Button {
-                Task { await viewModel.completeTodo(todo) }
-            } label: {
-                Circle()
-                    .strokeBorder(Color.secondary.opacity(0.5), lineWidth: 1.5)
-                    .frame(width: 18, height: 18)
-            }
-            .buttonStyle(.plain)
+        HStack(alignment: .top, spacing: 12) {
+            ReminderCheckbox(action: {
+                await viewModel.completeTodo(todo)
+            })
             .accessibilityLabel(language.t("todoSidebar.markDone"))
-            .padding(.top, 2)
+            .padding(.top, 1)
 
             Button {
                 selectProject(id: todo.projectId)
             } label: {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(todo.text)
-                        .font(.subheadline.weight(.medium))
+                        .font(.body)
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
                     HStack {
                         Text(todo.projectName)
-                            .font(.caption)
+                            .font(.footnote)
                             .foregroundStyle(.secondary)
                         Spacer()
                         if let dueAt = todo.dueAt {
                             Text(Self.formatDateTime(dueAt))
-                                .font(.caption2.weight(.medium))
+                                .font(.caption.weight(.medium))
                                 .foregroundStyle(dueAt < Date() ? .red : .secondary)
                         }
                     }
@@ -138,7 +147,7 @@ struct TodoSidebarSheet: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 3)
         .listRowBackground(Self.urgencyBackground(urgency))
     }
 
@@ -176,5 +185,49 @@ struct TodoSidebarSheet: View {
 
     private static func formatDateTime(_ date: Date) -> String {
         dateTimeFormatter.string(from: date)
+    }
+}
+
+/// Apple Reminders' own checkbox: a thin gray ring that, on tap, fills with
+/// a colored disc + white checkmark (SF Symbol `.palette` rendering — same
+/// two-layer technique Reminders itself uses, not a plain green dot) before
+/// handing off to `action`. The brief local flourish runs independently of
+/// the network call so the tap always feels instant; `action` is expected to
+/// remove the row from its parent list shortly after (this sheet only ever
+/// shows OPEN todos), which is why this never needs to reset back to unchecked.
+private struct ReminderCheckbox: View {
+    let action: () async -> Void
+    @State private var checked = false
+
+    var body: some View {
+        Button {
+            guard !checked else { return }
+            withAnimation(.easeOut(duration: 0.15)) { checked = true }
+            Task {
+                try? await Task.sleep(nanoseconds: 220_000_000)
+                await action()
+            }
+        } label: {
+            Group {
+                // `.palette` rendering only makes sense for "checkmark.circle.fill"
+                // (two real layers: checkmark glyph + disc fill) — plain "circle"
+                // is a single-layer outline, so applying `.palette` there would
+                // just paint that ONE layer in the first color (a stark solid
+                // white ring instead of a subtle gray one). Two distinct render
+                // paths instead of one unified modifier chain for this reason.
+                if checked {
+                    Image(systemName: "checkmark.circle.fill")
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, Color.accentColor)
+                } else {
+                    Image(systemName: "circle")
+                        .foregroundStyle(Color.secondary.opacity(0.4))
+                }
+            }
+            .font(.system(size: 22))
+            .frame(width: 30, height: 30)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
     }
 }

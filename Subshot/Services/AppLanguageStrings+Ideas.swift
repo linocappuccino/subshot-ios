@@ -116,6 +116,12 @@ extension AppLanguage {
             "postproductionListView.uploadVideo": "Video hochladen",
             "postproductionListView.processing": "In Verarbeitung…",
             "postproductionListView.uploading": "Wird hochgeladen…",
+            // Lange auf ein Video drücken -> löschen (2026-08-06). Gleiche
+            // Semantik wie Web's videoReviewModal.deleteVideo/-Message: löscht
+            // NUR das Video (inkl. Versionen/Kommentare) — der Abschnitt und
+            // seine echten Szenen bleiben unangetastet.
+            "postproductionListView.deleteVideo": "Video löschen",
+            "postproductionListView.deleteVideoMessage": "„{title}“ inkl. aller Versionen und Kommentare wird unwiderruflich gelöscht.",
 
             // VideoPanelView.swift (superseded by PostproductionListView's
             // grid, see that file's own top-of-file doc comment — kept
@@ -262,6 +268,8 @@ extension AppLanguage {
             "postproductionListView.uploadVideo": "Upload video",
             "postproductionListView.processing": "Processing…",
             "postproductionListView.uploading": "Uploading…",
+            "postproductionListView.deleteVideo": "Delete video",
+            "postproductionListView.deleteVideoMessage": "“{title}” including all versions and comments will be permanently deleted.",
 
             // VideoPanelView.swift (superseded by PostproductionListView's
             // grid, see that file's own top-of-file doc comment — kept
