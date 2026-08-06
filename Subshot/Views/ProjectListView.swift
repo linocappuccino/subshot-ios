@@ -103,7 +103,7 @@ struct ProjectListView: View {
                 gridScreen
                     .navigationDestination(for: Project.self) { project in
                         ShotListView(
-                            projectId: project.id, projectName: project.name, projectClientName: project.clientName,
+                            projectId: project.id, projectName: project.name, projectClientName: project.clientName, projectColor: project.color,
                             moduleConcept: project.moduleConcept, moduleScripting: project.moduleScripting,
                             modulePostproduction: project.modulePostproduction
                         )
@@ -113,7 +113,7 @@ struct ProjectListView: View {
                     }
                     .navigationDestination(for: NotificationDeepLink.self) { link in
                         ShotListView(
-                            projectId: link.project.id, projectName: link.project.name, projectClientName: link.project.clientName,
+                            projectId: link.project.id, projectName: link.project.name, projectClientName: link.project.clientName, projectColor: link.project.color,
                             pendingDeepLinkKind: link.entityKind, pendingDeepLinkId: link.entityId,
                             moduleConcept: link.project.moduleConcept, moduleScripting: link.project.moduleScripting,
                             modulePostproduction: link.project.modulePostproduction

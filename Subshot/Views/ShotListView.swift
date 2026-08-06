@@ -146,6 +146,11 @@ struct ShotListView: View {
     /// postproduction/page.tsx header. Nil for the (still common) real
     /// projects that predate this field — see Project.clientName's comment.
     let projectClientName: String?
+    /// 2026-08-06, Lino: "Auftraggeber werden IMMER mit der auf der Kachel
+    /// ausgewählten Farbe dargestellt (Textfarbe)" — was a fixed .secondary
+    /// gray, now the project's own color (same hex the tile itself uses).
+    /// Ported from the identical web fix.
+    let projectColor: String
     /// .regular (iPad, full-width Split View) gets the adjustable-column
     /// grid (see ipadColumnCount + columnCountPopover); .compact iPad
     /// (narrow Slide Over/multitasking) keeps the simple 1-vs-2 isGridMode
@@ -444,7 +449,7 @@ struct ShotListView: View {
     /// two real navigation call sites in ProjectListView.swift always pass
     /// the tapped Project's actual values.
     init(
-        projectId: String, projectName: String, projectClientName: String? = nil,
+        projectId: String, projectName: String, projectClientName: String? = nil, projectColor: String = "8e8e93",
         pendingDeepLinkKind: String? = nil, pendingDeepLinkId: String? = nil,
         moduleConcept: Bool = true, moduleScripting: Bool = true, modulePostproduction: Bool = true
     ) {
@@ -452,6 +457,7 @@ struct ShotListView: View {
         _viewModel = StateObject(wrappedValue: ShotListViewModel(projectId: projectId))
         self.projectName = projectName
         self.projectClientName = projectClientName
+        self.projectColor = projectColor
         self.pendingDeepLinkKind = pendingDeepLinkKind
         self.pendingDeepLinkId = pendingDeepLinkId
         let initialSection = [
@@ -640,7 +646,7 @@ struct ShotListView: View {
                     if let projectClientName, !projectClientName.isEmpty {
                         Text(projectClientName)
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(hex: projectColor))
                     }
                     Text(projectName)
                         .font(.headline)
