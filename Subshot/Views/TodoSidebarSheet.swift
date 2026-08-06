@@ -25,6 +25,14 @@ struct TodoSidebarSheet: View {
     var onSelectProject: (Project) -> Void
     @ObservedObject private var language = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
+    /// 2026-08-06, Lino: "wenn man in der todoliste was abhackt, soll es mit
+    /// einer animation zuerst durchgestrichen werden und dann mit einer
+    /// animation verschwinden" — todoRow (a function, not its own View
+    /// struct, so it can't hold @State itself) reads this to strike through
+    /// the text the moment ReminderCheckbox starts its own checked-flourish,
+    /// BEFORE the row actually disappears (ReminderCheckbox's own delay,
+    /// then ProjectListViewModel.completeTodo's animated removal).
+    @State private var checkingTodoIds: Set<String> = []
 
     /// Same defensive lookup as NotificationsSheet.select — the todo/deadline
     /// always belongs to a project the user can see (backend already scopes
@@ -124,10 +132,18 @@ struct TodoSidebarSheet: View {
     @ViewBuilder
     private func todoRow(_ todo: MyTodo) -> some View {
         let urgency = todo.dueAt.flatMap(Self.dueUrgency)
+        let isChecking = checkingTodoIds.contains(todo.id)
         HStack(alignment: .top, spacing: 12) {
-            ReminderCheckbox(action: {
-                await viewModel.completeTodo(todo)
-            })
+            ReminderCheckbox(
+                action: { await viewModel.completeTodo(todo) },
+                onCheckingChange: { checking in
+                    if checking {
+                        checkingTodoIds.insert(todo.id)
+                    } else {
+                        checkingTodoIds.remove(todo.id)
+                    }
+                }
+            )
             .accessibilityLabel(language.t("todoSidebar.markDone"))
             .padding(.top, 1)
 
@@ -137,7 +153,8 @@ struct TodoSidebarSheet: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(todo.text)
                         .font(.body)
-                        .foregroundStyle(.primary)
+                        .strikethrough(isChecking)
+                        .foregroundStyle(isChecking ? .secondary : .primary)
                         .multilineTextAlignment(.leading)
                     Text(Self.clientProjectLabel(todo.projectClientName, todo.projectName))
                         .font(.footnote)
@@ -157,8 +174,13 @@ struct TodoSidebarSheet: View {
                 }
             }
             .buttonStyle(.plain)
+            // Can't navigate away mid-check — the row is about to vanish,
+            // and completeTodo's revert-on-failure path expects it still
+            // sitting in the same spot.
+            .disabled(isChecking)
         }
         .padding(.vertical, 3)
+        .animation(.easeInOut(duration: 0.2), value: isChecking)
         .listRowBackground(Self.urgencyBackground(urgency))
     }
 
@@ -233,17 +255,31 @@ private struct PipelineBadge: View {
 /// `action` is expected to remove the row from its parent list shortly
 /// after (this sheet only ever shows OPEN todos), which is why this never
 /// needs to reset back to unchecked.
+///
+/// 2026-08-06, Lino: "wenn man in der todoliste was abhackt, soll es mit
+/// einer animation zuerst durchgestrichen werden und dann mit einer
+/// animation verschwinden" — `onCheckingChange(true)` fires the moment the
+/// disc starts filling, letting the PARENT row strike through its text
+/// (todoRow can't hold its own @State, it's a plain function) for the same
+/// ~450ms window before `action` actually removes the row.
 private struct ReminderCheckbox: View {
     let action: () async -> Void
+    var onCheckingChange: (Bool) -> Void = { _ in }
     @State private var checked = false
 
     var body: some View {
         Button {
             guard !checked else { return }
             withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) { checked = true }
+            onCheckingChange(true)
             Task {
-                try? await Task.sleep(nanoseconds: 220_000_000)
+                try? await Task.sleep(nanoseconds: 450_000_000)
                 await action()
+                // Covers the revert-on-failure path (completeTodo re-adds
+                // the todo on a failed PATCH) — without this, a reverted
+                // row would be stuck struck-through/disabled forever since
+                // nothing else ever clears this todo's id back out.
+                onCheckingChange(false)
             }
         } label: {
             Group {

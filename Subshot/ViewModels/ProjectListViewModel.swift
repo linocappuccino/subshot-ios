@@ -142,16 +142,26 @@ final class ProjectListViewModel: ObservableObject {
     /// OPEN todos (backend filters done=false), so checking one off here is a
     /// one-way action: it just drops out of the list, same as it would on the
     /// next poll anyway. Reverts (re-adds it) if the PATCH fails.
+    ///
+    /// 2026-08-06, Lino: "soll mit einer Animation ... verschwinden" — the
+    /// actual array removal (called by ReminderCheckbox only after its own
+    /// strikethrough delay) is wrapped in withAnimation so the row fades/
+    /// collapses out of the List instead of just snapping away; ditto the
+    /// revert-on-failure re-insertion.
     func completeTodo(_ todo: MyTodo) async {
         guard var data = todoSidebarData else { return }
         data.todos.removeAll { $0.id == todo.id }
-        todoSidebarData = data
+        withAnimation(.easeInOut(duration: 0.25)) {
+            todoSidebarData = data
+        }
         do {
             _ = try await APIClient.shared.patchTodoItem(todo.id, done: true)
         } catch {
             guard var reverted = todoSidebarData else { return }
             reverted.todos.append(todo)
-            todoSidebarData = reverted
+            withAnimation(.easeInOut(duration: 0.25)) {
+                todoSidebarData = reverted
+            }
             errorMessage = error.localizedDescription
         }
     }
