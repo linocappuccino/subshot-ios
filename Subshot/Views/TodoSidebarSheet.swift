@@ -92,6 +92,8 @@ struct TodoSidebarSheet: View {
                 Text("\(deadline.projectName) · \(deadline.sectionName)")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                PipelineBadge(stage: deadline.pipelineStage)
+                    .padding(.top, 1)
                 HStack {
                     if let status = deadline.postproductionStatus {
                         HStack(spacing: 5) {
@@ -132,6 +134,8 @@ struct TodoSidebarSheet: View {
                         .font(.body)
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
+                    PipelineBadge(stage: todo.pipelineStage)
+                        .padding(.top, 1)
                     HStack {
                         Text(todo.projectName)
                             .font(.footnote)
@@ -188,13 +192,40 @@ struct TodoSidebarSheet: View {
     }
 }
 
-/// Apple Reminders' own checkbox: a thin gray ring that, on tap, fills with
-/// a colored disc + white checkmark (SF Symbol `.palette` rendering — same
-/// two-layer technique Reminders itself uses, not a plain green dot) before
-/// handing off to `action`. The brief local flourish runs independently of
-/// the network call so the tap always feels instant; `action` is expected to
-/// remove the row from its parent list shortly after (this sheet only ever
-/// shows OPEN todos), which is why this never needs to reset back to unchecked.
+/// 2026-08-06, Lino: "auf der todoliste soll auch zu sehen sein, in welcher
+/// pipeline die todo ist, also Idee, Script/Shotlist, Postproduction, diese
+/// info über der deadline darstellen" — same label/tintColor as
+/// ProjectPipelineStage already provides (shared with the project-tile
+/// badge, see ProjectListView's own tile), just a small pill instead of a
+/// full tile badge to fit this sheet's compact rows.
+private struct PipelineBadge: View {
+    let stage: ProjectPipelineStage
+
+    var body: some View {
+        Text(stage.label)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .background(stage.tintColor, in: Capsule())
+    }
+}
+
+/// Apple Reminders' own checkbox — 2026-08-06 correction: the first pass
+/// kept the ring in the same muted gray the old hand-drawn circle already
+/// used, which (combined with insetGrouped turning out to be a no-op — see
+/// below) read as "nothing changed" at a glance. Real Reminders rings are
+/// COLORED (each list's own tint, visible even in cross-list smart views
+/// like "Today"/"All" — the closest analogue to this cross-project sheet),
+/// not gray, so this now uses the app's own accent blue for an
+/// unmistakably different, unmistakably "Reminders" look: a bold colored
+/// ring that fills with a colored disc + white checkmark (SF Symbol
+/// `.palette` rendering — same two-layer technique Reminders itself uses)
+/// on tap, before handing off to `action`. The brief local flourish runs
+/// independently of the network call so the tap always feels instant;
+/// `action` is expected to remove the row from its parent list shortly
+/// after (this sheet only ever shows OPEN todos), which is why this never
+/// needs to reset back to unchecked.
 private struct ReminderCheckbox: View {
     let action: () async -> Void
     @State private var checked = false
@@ -202,7 +233,7 @@ private struct ReminderCheckbox: View {
     var body: some View {
         Button {
             guard !checked else { return }
-            withAnimation(.easeOut(duration: 0.15)) { checked = true }
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) { checked = true }
             Task {
                 try? await Task.sleep(nanoseconds: 220_000_000)
                 await action()
@@ -210,22 +241,22 @@ private struct ReminderCheckbox: View {
         } label: {
             Group {
                 // `.palette` rendering only makes sense for "checkmark.circle.fill"
-                // (two real layers: checkmark glyph + disc fill) — plain "circle"
-                // is a single-layer outline, so applying `.palette` there would
-                // just paint that ONE layer in the first color (a stark solid
-                // white ring instead of a subtle gray one). Two distinct render
-                // paths instead of one unified modifier chain for this reason.
+                // (two real layers: checkmark glyph + disc fill) — plain
+                // "circle" is a single-layer outline, so applying `.palette`
+                // there would just paint that ONE layer in the first color.
+                // Two distinct render paths instead of one unified modifier
+                // chain for this reason.
                 if checked {
                     Image(systemName: "checkmark.circle.fill")
                         .symbolRenderingMode(.palette)
                         .foregroundStyle(.white, Color.accentColor)
                 } else {
                     Image(systemName: "circle")
-                        .foregroundStyle(Color.secondary.opacity(0.4))
+                        .foregroundStyle(Color.accentColor)
                 }
             }
-            .font(.system(size: 22))
-            .frame(width: 30, height: 30)
+            .font(.system(size: 26, weight: .regular))
+            .frame(width: 32, height: 32)
             .contentShape(Circle())
         }
         .buttonStyle(.plain)

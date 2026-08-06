@@ -690,6 +690,10 @@ struct MyTodo: Codable, Identifiable, Hashable {
     let projectName: String
     let todoListId: String
     let todoListName: String
+    /// 2026-08-06 (#412 follow-up) — which pipeline stage the OWNING
+    /// project is currently in, same read-only computed field as
+    /// Project.pipelineStage, see TodoSidebarSheet's own doc comment.
+    var pipelineStage: ProjectPipelineStage = .idea
 
     enum CodingKeys: String, CodingKey {
         case id, text, done
@@ -698,6 +702,7 @@ struct MyTodo: Codable, Identifiable, Hashable {
         case projectName = "project_name"
         case todoListId = "todo_list_id"
         case todoListName = "todo_list_name"
+        case pipelineStage = "pipeline_stage"
     }
 }
 
@@ -715,6 +720,7 @@ struct PostproductionVideoDeadline: Codable, Identifiable, Hashable {
     let projectName: String
     let postproductionStatus: PostproductionStatus?
     let postproductionDeadline: Date
+    var pipelineStage: ProjectPipelineStage = .postproduction
 
     enum CodingKeys: String, CodingKey {
         case videoId = "video_id"
@@ -725,6 +731,7 @@ struct PostproductionVideoDeadline: Codable, Identifiable, Hashable {
         case projectName = "project_name"
         case postproductionStatus = "postproduction_status"
         case postproductionDeadline = "postproduction_deadline"
+        case pipelineStage = "pipeline_stage"
     }
 }
 
