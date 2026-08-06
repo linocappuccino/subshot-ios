@@ -3,73 +3,47 @@ import UIKit
 import UniformTypeIdentifiers
 import ClerkKit
 
-/// Which of a tile's 4 edges a drop point is nearest to — same nearest-
-/// edge-to-cursor rule as the web app's tileCollisionDetection (distances
-/// = {left: relX, right: 1-relX, top: relY, bottom: 1-relY}, pick the
-/// minimum). File-scope (not nested in ProjectListView) so TileDropDelegate
-/// below can share it without needing a ProjectListView instance.
-fileprivate enum TileEdge {
-    case left, right, top, bottom
-}
-
-fileprivate func nearestEdge(of point: CGPoint, in size: CGSize) -> TileEdge {
-    guard size.width > 0, size.height > 0 else { return .top }
-    let relX = point.x / size.width
-    let relY = point.y / size.height
-    let distances: [(TileEdge, CGFloat)] = [
-        (.left, relX), (.right, 1 - relX), (.top, relY), (.bottom, 1 - relY)
-    ]
-    return distances.min { $0.1 < $1.1 }!.0
-}
-
-fileprivate func tileEdgeAlignment(_ edge: TileEdge) -> Alignment {
-    switch edge {
-    case .left: return .leading
-    case .right: return .trailing
-    case .top: return .top
-    case .bottom: return .bottom
-    }
-}
-
-/// Drives the live directional drop indicator for project/folder grid tiles
-/// (2026-07-15, Lino: "hat man immer noch keinen indikator um ein objekt zu
-/// verschieben und irgendwo zu platzieren"). SwiftUI's Transferable-based
-/// .dropDestination only ever reported a plain Bool "isTargeted" — no
-/// continuous position while hovering, only a CGPoint at the final drop
-/// (see the old tileSizes doc comment, still true of that API). The
-/// classic UIKit-backed DropDelegate protocol (.onDrop(of:delegate:))
-/// receives the exact same drag session .draggable() starts — same
-/// underlying NSItemProvider/UIDragInteraction machinery — but its
-/// dropUpdated(info:) fires continuously with a live location, which is
-/// what actually makes a moving indicator possible here. Shared by both
-/// projectTile and folderTile below; which action a drop performs
-/// (reorder vs. file-into-folder) is still resolved from the dragged
-/// payload's "project:"/"folder:" prefix exactly as before.
-fileprivate struct TileDropDelegate: DropDelegate {
-    let tileSize: CGSize
-    let onHover: (TileEdge?) -> Void
-    let onDrop: (_ payload: String, _ edge: TileEdge) -> Void
+/// Drives the folder-tile drop target (2026-07-15, Lino: "hat man immer
+/// noch keinen indikator um ein objekt zu verschieben und irgendwo zu
+/// platzieren"). SwiftUI's Transferable-based .dropDestination only ever
+/// reported a plain Bool "isTargeted" at the final drop — the classic
+/// UIKit-backed DropDelegate protocol (.onDrop(of:delegate:)) receives the
+/// exact same drag session .draggable() starts (same underlying
+/// NSItemProvider/UIDragInteraction machinery) but fires dropEntered/
+/// dropExited continuously, which is what drives the live ring highlight.
+///
+/// 2026-08-06, Lino (ported from the same web fix): "sortieren soll man
+/// nicht können, aber man soll projekte in ordner ziehen können und ordner
+/// in ordner ziehen können" — manual reordering removed entirely (see
+/// ProjectListViewModel.moveFolder's doc comment for why: the backend never
+/// actually read sort_order for display, so it had been a silent no-op for
+/// weeks). A folder tile is now the ONLY valid drop target at all — no more
+/// 4-directional edge tracking (nearestEdge/TileEdge/beforeId, all
+/// removed), just "is a drag currently over me". Project tiles are no
+/// longer droppable onto at all (still draggable — just nothing accepts a
+/// drop on them now), so this delegate only ever attaches to folder tiles.
+fileprivate struct FolderDropDelegate: DropDelegate {
+    let onHover: (Bool) -> Void
+    let onDrop: (_ payload: String) -> Void
 
     func dropEntered(info: DropInfo) {
-        onHover(nearestEdge(of: info.location, in: tileSize))
+        onHover(true)
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        onHover(nearestEdge(of: info.location, in: tileSize))
-        return DropProposal(operation: .move)
+        DropProposal(operation: .move)
     }
 
     func dropExited(info: DropInfo) {
-        onHover(nil)
+        onHover(false)
     }
 
     func performDrop(info: DropInfo) -> Bool {
-        let edge = nearestEdge(of: info.location, in: tileSize)
-        onHover(nil)
+        onHover(false)
         guard let provider = info.itemProviders(for: [.plainText, .text]).first else { return false }
         _ = provider.loadObject(ofClass: NSString.self) { reading, _ in
             guard let str = reading as? String else { return }
-            DispatchQueue.main.async { onDrop(str, edge) }
+            DispatchQueue.main.async { onDrop(str) }
         }
         return true
     }
@@ -97,26 +71,19 @@ struct ProjectListView: View {
     @State private var editingFolder: ProjectFolder?
     @State private var showingNotifications = false
     @State private var showingTodoSidebar = false
-    /// Landing indicator while dragging a project tile onto another project
-    /// tile to reorder — same idea as ShotListView's dropTargetSceneId.
-    @State private var dropTargetProjectId: String?
     /// Blue outline on a folder tile being dragged over — shown for BOTH a
-    /// project being filed into it AND another folder being reordered onto
-    /// it (Lino, 2026-07-11: "wenn man ein Projekt oder Ordner über einen
+    /// project being filed into it AND another folder being nested into it
+    /// (Lino, 2026-07-11: "wenn man ein Projekt oder Ordner über einen
     /// anderen Ordner legt... soll der Ziel-Ordner blau umrandet werden").
+    /// 2026-08-06: folders/projects are no longer droppable onto each other
+    /// for reordering (removed, see ProjectListViewModel.moveFolder's doc
+    /// comment) — a folder is now the ONLY valid drop target at all, so this
+    /// is the one remaining piece of hover state.
     @State private var dropTargetFolderId: String?
-    /// Which edge of the CURRENTLY hovered tile (dropTargetProjectId/
-    /// dropTargetFolderId) the pointer is nearest to, updated live via
-    /// TileDropDelegate's dropUpdated — drives the directional capsule
-    /// indicator in projectTile/folderTile (2026-07-15, replaces the old
-    /// drop-time-only edge resolution, see TileDropDelegate's own doc
-    /// comment for why that's now possible).
-    @State private var dropTargetEdge: TileEdge?
     /// Each tile's own rendered size, captured passively via
-    /// .onGeometryChange (2026-07-13) — turns TileDropDelegate's live
-    /// DropInfo.location into a relative left/right/top/bottom edge via
-    /// nearestEdge(of:in:), same nearest-edge-to-cursor rule the web app
-    /// uses.
+    /// .onGeometryChange (2026-07-13) — used to size the .contextMenu's
+    /// preview to match the live tile (see projectTile's own doc comment),
+    /// unrelated to drag-and-drop now.
     @State private var tileSizes: [String: CGSize] = [:]
 
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 16)]
@@ -368,21 +335,6 @@ struct ProjectListView: View {
         }
     }
 
-    // MARK: - Directional drop targeting
-
-    /// Right/bottom edges mean "insert after the target" — translated to
-    /// the move endpoints' before_x_id contract by looking up the target's
-    /// next sibling in the currently displayed order (nil if the target is
-    /// last), same as the web app's `next[idx+1]?.id ?? null`. `edge` now
-    /// comes pre-resolved from TileDropDelegate's live tracking, not a
-    /// drop-time-only CGPoint.
-    private func beforeId(edge: TileEdge, onTarget targetId: String, orderedIds: [String]) -> String? {
-        let insertAfter = edge == .right || edge == .bottom
-        guard insertAfter, let idx = orderedIds.firstIndex(of: targetId) else { return targetId }
-        let nextIdx = idx + 1
-        return nextIdx < orderedIds.count ? orderedIds[nextIdx] : nil
-    }
-
     // MARK: - Tiles
 
     @ViewBuilder
@@ -457,47 +409,14 @@ struct ProjectListView: View {
             )
             .frame(width: tileSizes[project.id]?.width, height: tileSizes[project.id]?.height)
         }
-        // Live directional landing indicator (2026-07-15, replaces the old
-        // fixed top-only Capsule — see TileDropDelegate's doc comment for
-        // why this can now track the actual hovered edge instead of only
-        // resolving it once, at drop time).
-        .overlay(alignment: dropTargetProjectId == project.id ? (dropTargetEdge.map(tileEdgeAlignment) ?? .center) : .center) {
-            if dropTargetProjectId == project.id, let edge = dropTargetEdge {
-                Capsule()
-                    .fill(Color.accentColor)
-                    .frame(width: (edge == .left || edge == .right) ? 4 : nil,
-                           height: (edge == .top || edge == .bottom) ? 4 : nil)
-                    .frame(maxWidth: (edge == .top || edge == .bottom) ? .infinity : nil,
-                           maxHeight: (edge == .left || edge == .right) ? .infinity : nil)
-                    .padding(3)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
-            }
-        }
         // Long-press-and-hold picks the tile up (standard iOS drag haptic) —
-        // dropping it on a folder tile files it there, dropping it on
-        // another project tile reorders. "project:"-prefixed so folderTile's
-        // drop delegate below can tell a project drop apart from a folder
-        // being dragged onto it (reorder), same prefix convention
+        // dropping it on a folder tile files it there. "project:"-prefixed
+        // so folderTile's drop delegate can tell a project drop apart from
+        // a folder being dragged onto it (nest), same prefix convention
         // ShotListView already uses for "scene:"/"section:".
+        // 2026-08-06: no longer droppable ONTO — see FolderDropDelegate's
+        // doc comment, a folder tile is the only valid drop target now.
         .draggable("project:\(project.id)")
-        .onDrop(of: [.plainText, .text], delegate: TileDropDelegate(
-            tileSize: tileSizes[project.id] ?? .zero,
-            onHover: { edge in
-                withAnimation(.easeOut(duration: 0.15)) {
-                    dropTargetProjectId = edge != nil ? project.id : (dropTargetProjectId == project.id ? nil : dropTargetProjectId)
-                    if edge != nil { dropTargetEdge = edge }
-                }
-            },
-            onDrop: { raw, edge in
-                guard raw.hasPrefix("project:") else { return }
-                let draggedId = String(raw.dropFirst("project:".count))
-                guard draggedId != project.id else { return }
-                let orderedIds = viewModel.projects.map(\.id)
-                let before = beforeId(edge: edge, onTarget: project.id, orderedIds: orderedIds)
-                Task { await viewModel.reorderProject(draggedId, before: before) }
-            }
-        ))
     }
 
     @ViewBuilder
@@ -540,57 +459,34 @@ struct ProjectListView: View {
             .frame(width: tileSizes[folder.id]?.width, height: tileSizes[folder.id]?.height)
         }
         .overlay {
-            // Full-tile highlight — stays the generic "you're hovering over
-            // this folder" signal, meaningful either way a drop resolves
-            // (file a project INTO it, which has no direction of its own;
-            // or reorder it among other folders, see the directional
-            // capsule below for that case specifically).
+            // Full-tile highlight — "you're hovering over this folder",
+            // meaningful either way a drop resolves (file a project into
+            // it, or nest a dragged folder into it).
             if dropTargetFolderId == folder.id {
                 RoundedRectangle(cornerRadius: 14)
                     .strokeBorder(Color.accentColor, lineWidth: 3)
             }
         }
-        .overlay(alignment: dropTargetFolderId == folder.id ? (dropTargetEdge.map(tileEdgeAlignment) ?? .center) : .center) {
-            // Directional capsule (2026-07-15) — only meaningful for a
-            // folder-onto-folder reorder; harmless to also show while
-            // filing a project in (ignorable, doesn't contradict the
-            // border above).
-            if dropTargetFolderId == folder.id, let edge = dropTargetEdge {
-                Capsule()
-                    .fill(Color.accentColor)
-                    .frame(width: (edge == .left || edge == .right) ? 4 : nil,
-                           height: (edge == .top || edge == .bottom) ? 4 : nil)
-                    .frame(maxWidth: (edge == .top || edge == .bottom) ? .infinity : nil,
-                           maxHeight: (edge == .left || edge == .right) ? .infinity : nil)
-                    .padding(3)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
-            }
-        }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { tileSizes[folder.id] = $0 }
-        // Also draggable now (2026-07-11) — folders could be dropped ONTO
-        // but never picked up themselves, so they could never be reordered
-        // among each other, only ever receive a filed-in project.
+        // Draggable (2026-07-11, onto another folder to nest — new
+        // 2026-08-06) AND droppable (receives a dragged project OR another
+        // dragged folder).
         .draggable("folder:\(folder.id)")
-        .onDrop(of: [.plainText, .text], delegate: TileDropDelegate(
-            tileSize: tileSizes[folder.id] ?? .zero,
-            onHover: { edge in
+        .onDrop(of: [.plainText, .text], delegate: FolderDropDelegate(
+            onHover: { isOver in
                 withAnimation(.easeOut(duration: 0.15)) {
-                    dropTargetFolderId = edge != nil ? folder.id : (dropTargetFolderId == folder.id ? nil : dropTargetFolderId)
-                    if edge != nil { dropTargetEdge = edge }
+                    dropTargetFolderId = isOver ? folder.id : (dropTargetFolderId == folder.id ? nil : dropTargetFolderId)
                 }
             },
-            onDrop: { raw, edge in
+            onDrop: { raw in
                 if raw.hasPrefix("project:") {
                     let projectId = String(raw.dropFirst("project:".count))
                     guard let project = viewModel.projects.first(where: { $0.id == projectId }) else { return }
                     Task { await viewModel.moveProject(project, toFolder: folder.id) }
                 } else if raw.hasPrefix("folder:") {
                     let draggedId = String(raw.dropFirst("folder:".count))
-                    guard draggedId != folder.id else { return }
-                    let orderedIds = viewModel.folders.map(\.id)
-                    let before = beforeId(edge: edge, onTarget: folder.id, orderedIds: orderedIds)
-                    Task { await viewModel.reorderFolder(draggedId, before: before) }
+                    guard draggedId != folder.id, let draggedFolder = viewModel.folders.first(where: { $0.id == draggedId }) else { return }
+                    Task { await viewModel.moveFolder(draggedFolder, toParent: folder.id) }
                 }
             }
         ))

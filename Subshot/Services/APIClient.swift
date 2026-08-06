@@ -302,10 +302,16 @@ final class APIClient {
         return try await send(req)
     }
 
+    /// `parentFolderId`/`clearParentFolder` (2026-08-06) — nesting via drag,
+    /// same escape-hatch convention as clearEmoji/clearBackgroundImage (a
+    /// plain nil parentFolderId means "don't touch it", not "un-nest").
+    /// Mirrors web's api.patchFolder exactly; the backend (patch_folder)
+    /// already had this field, just unreachable from iOS before now — only
+    /// FolderEditSheet's own creation-time parentFolderId path used it.
     func patchFolder(
         _ id: String, name: String? = nil, color: String? = nil,
         emoji: String? = nil, clearEmoji: Bool = false, sortOrder: Int? = nil,
-        clearBackgroundImage: Bool = false
+        clearBackgroundImage: Bool = false, parentFolderId: String? = nil, clearParentFolder: Bool = false
     ) async throws -> ProjectFolder {
         var req = try await authorizedRequest("folders/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -314,8 +320,13 @@ final class APIClient {
             let emoji: String?; let clear_emoji: Bool
             let sort_order: Int?
             let clear_background_image: Bool
+            let parent_folder_id: String?
+            let clear_parent_folder: Bool
         }
-        req.httpBody = try encoder.encode(Body(name: name, color: color, emoji: emoji, clear_emoji: clearEmoji, sort_order: sortOrder, clear_background_image: clearBackgroundImage))
+        req.httpBody = try encoder.encode(Body(
+            name: name, color: color, emoji: emoji, clear_emoji: clearEmoji, sort_order: sortOrder,
+            clear_background_image: clearBackgroundImage, parent_folder_id: parentFolderId, clear_parent_folder: clearParentFolder
+        ))
         return try await send(req)
     }
 
@@ -543,22 +554,6 @@ final class APIClient {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         struct Body: Encodable { let before_shot_id: String? }
         req.httpBody = try encoder.encode(Body(before_shot_id: beforeShotId))
-        return try await send(req)
-    }
-
-    func moveProject(_ id: String, beforeProjectId: String?) async throws -> Project {
-        var req = try await authorizedRequest("projects/\(id)/move", method: "POST")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        struct Body: Encodable { let before_project_id: String? }
-        req.httpBody = try encoder.encode(Body(before_project_id: beforeProjectId))
-        return try await send(req)
-    }
-
-    func moveFolder(_ id: String, beforeFolderId: String?) async throws -> ProjectFolder {
-        var req = try await authorizedRequest("folders/\(id)/move", method: "POST")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        struct Body: Encodable { let before_folder_id: String? }
-        req.httpBody = try encoder.encode(Body(before_folder_id: beforeFolderId))
         return try await send(req)
     }
 

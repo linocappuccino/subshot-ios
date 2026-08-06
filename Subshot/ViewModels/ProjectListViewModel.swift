@@ -194,48 +194,36 @@ final class ProjectListViewModel: ObservableObject {
         }
     }
 
-    /// Drag & drop reorder for project tiles — single server-authoritative
-    /// move (2026-07-13), replacing what used to be a per-changed-project
-    /// patchProject(sortOrder:) loop (same architectural fix as
-    /// ShotListViewModel.reorderSection/moveShot — see move_project in the
-    /// backend). targetId IS already exactly "insert before this project
-    /// id", so no local recomputation is needed to derive it; `list` below
-    /// is purely the optimistic visual preview.
-    func reorderProject(_ projectId: String, before targetId: String?) async {
-        var list = projects
-        guard let project = list.first(where: { $0.id == projectId }) else { return }
-        let targetIndex = targetId.flatMap { id in projects.firstIndex(where: { $0.id == id }) }
-        list.removeAll { $0.id == projectId }
-        list.insert(project, at: targetIndex.map { min($0, list.count) } ?? list.count)
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
-            projects = list
+    /// 2026-08-06, Lino (web session): "sortieren soll man nicht können,
+    /// aber man soll projekte in ordner ziehen können und ordner in ordner
+    /// ziehen können" — manual drag-to-reorder removed entirely, ported
+    /// from the same fix on web. Root cause there (identical backend, so
+    /// equally true here): list_projects/list_folders always sort by "most
+    /// recently opened", never by sort_order at all, so the old
+    /// reorderProject/reorderFolder pair (and their APIClient.moveProject/
+    /// moveFolder calls, both removed) had been a silent no-op for weeks —
+    /// a reorder drag "succeeded" but reverted on the next app relaunch,
+    /// nobody had noticed since it never actually did anything.
+    ///
+    /// Drag & drop: nests a folder tile onto another folder tile — new
+    /// (2026-08-06), folders could previously only nest via explicit
+    /// create/edit (parentFolderId), never by dragging one onto another.
+    /// Mirrors moveProject's optimistic shape exactly; the backend
+    /// (patch_folder) already has the cycle guard (can't nest a folder into
+    /// its own descendant).
+    func moveFolder(_ folder: ProjectFolder, toParent targetFolderId: String) async {
+        guard folder.id != targetFolderId else { return }
+        folders.removeAll { $0.id == folder.id }
+        if let i = folders.firstIndex(where: { $0.id == targetFolderId }) {
+            folders[i].folderCount += 1
         }
         do {
-            let updated = try await APIClient.shared.moveProject(projectId, beforeProjectId: targetId)
-            if let i = projects.firstIndex(where: { $0.id == updated.id }) {
-                projects[i] = updated
-            }
+            _ = try await APIClient.shared.patchFolder(folder.id, parentFolderId: targetFolderId)
         } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    /// Same as reorderProject above, for folder tiles.
-    func reorderFolder(_ folderId: String, before targetId: String?) async {
-        var list = folders
-        guard let folder = list.first(where: { $0.id == folderId }) else { return }
-        let targetIndex = targetId.flatMap { id in folders.firstIndex(where: { $0.id == id }) }
-        list.removeAll { $0.id == folderId }
-        list.insert(folder, at: targetIndex.map { min($0, list.count) } ?? list.count)
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
-            folders = list
-        }
-        do {
-            let updated = try await APIClient.shared.moveFolder(folderId, beforeFolderId: targetId)
-            if let i = folders.firstIndex(where: { $0.id == updated.id }) {
-                folders[i] = updated
+            folders.append(folder)
+            if let i = folders.firstIndex(where: { $0.id == targetFolderId }) {
+                folders[i].folderCount -= 1
             }
-        } catch {
             errorMessage = error.localizedDescription
         }
     }
