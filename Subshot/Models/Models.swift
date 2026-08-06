@@ -691,6 +691,10 @@ struct MyTodo: Codable, Identifiable, Hashable {
     /// 2026-08-06, Lino: "darunter kommt auftraggeber: Projekt" — Project.
     /// clientName, nullable (not every project has one set).
     let projectClientName: String?
+    /// 2026-08-06, Lino: "soll auch die textfarbe vom Auftraggeber wieder
+    /// übernommen werden" — Project.color, used as ONLY the client-name
+    /// portion's text color (same treatment as the pipeline header).
+    var projectColor: String = "8e8e93"
     let todoListId: String
     let todoListName: String
     /// 2026-08-06 (#412 follow-up) — which pipeline stage the OWNING
@@ -704,6 +708,7 @@ struct MyTodo: Codable, Identifiable, Hashable {
         case projectId = "project_id"
         case projectName = "project_name"
         case projectClientName = "project_client_name"
+        case projectColor = "project_color"
         case todoListId = "todo_list_id"
         case todoListName = "todo_list_name"
         case pipelineStage = "pipeline_stage"
@@ -723,6 +728,7 @@ struct PostproductionVideoDeadline: Codable, Identifiable, Hashable {
     let projectId: String
     let projectName: String
     let projectClientName: String?
+    var projectColor: String = "8e8e93"
     let postproductionStatus: PostproductionStatus?
     let postproductionDeadline: Date
     var pipelineStage: ProjectPipelineStage = .postproduction
@@ -735,6 +741,7 @@ struct PostproductionVideoDeadline: Codable, Identifiable, Hashable {
         case projectId = "project_id"
         case projectName = "project_name"
         case projectClientName = "project_client_name"
+        case projectColor = "project_color"
         case postproductionStatus = "postproduction_status"
         case postproductionDeadline = "postproduction_deadline"
         case pipelineStage = "pipeline_stage"

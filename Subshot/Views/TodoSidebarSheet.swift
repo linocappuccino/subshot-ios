@@ -90,9 +90,24 @@ struct TodoSidebarSheet: View {
     /// 2026-08-06, Lino: "zuerst kommt der eintrag... darunter kommt
     /// auftraggeber: Projekt" — clientName is optional (not every project
     /// has an Auftraggeber set), falls back to the bare project name.
-    private static func clientProjectLabel(_ clientName: String?, _ projectName: String) -> String {
-        guard let clientName, !clientName.isEmpty else { return projectName }
-        return "\(clientName): \(projectName)"
+    /// Later same day: "soll auch die textfarbe vom Auftraggeber wieder
+    /// übernommen werden" — only the client-name PORTION gets the
+    /// project's own color (same treatment as ShotListView's pipeline
+    /// header), so this is now a small view instead of a plain string.
+    /// Bakes font+color into EACH concatenated segment individually rather
+    /// than relying on an outer .font()/.foregroundStyle() modifier —
+    /// SwiftUI's Text-concatenation (`+`) resolves per-segment attributes
+    /// at concatenation time, so an ancestor .foregroundStyle() applied
+    /// AFTER concatenating risks overriding the colored client-name segment
+    /// specifically; safer to never rely on that ambiguity.
+    @ViewBuilder
+    private static func clientProjectLine(_ clientName: String?, _ projectName: String, _ projectColor: String) -> some View {
+        if let clientName, !clientName.isEmpty {
+            Text(clientName).font(.footnote).foregroundStyle(Color(hex: projectColor))
+                + Text(": \(projectName)").font(.footnote).foregroundStyle(.secondary)
+        } else {
+            Text(projectName).font(.footnote).foregroundStyle(.secondary)
+        }
     }
 
     @ViewBuilder
@@ -105,9 +120,7 @@ struct TodoSidebarSheet: View {
                 Text(deadline.videoTitle)
                     .font(.body)
                     .foregroundStyle(.primary)
-                Text(Self.clientProjectLabel(deadline.projectClientName, deadline.projectName))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                Self.clientProjectLine(deadline.projectClientName, deadline.projectName, deadline.projectColor)
                 // 2026-08-06, Lino: "darunter links der pipeline batch und
                 // rechts dann die deadline" — exact 3-line spec, replaces
                 // the old project/section line + status pill (status is
@@ -156,9 +169,7 @@ struct TodoSidebarSheet: View {
                         .strikethrough(isChecking)
                         .foregroundStyle(isChecking ? .secondary : .primary)
                         .multilineTextAlignment(.leading)
-                    Text(Self.clientProjectLabel(todo.projectClientName, todo.projectName))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    Self.clientProjectLine(todo.projectClientName, todo.projectName, todo.projectColor)
                     // 2026-08-06 — same "badge left, deadline right" spec as
                     // deadlineRow above.
                     HStack {
