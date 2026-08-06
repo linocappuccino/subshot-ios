@@ -92,9 +92,14 @@ struct TodoSidebarSheet: View {
                 Text("\(deadline.projectName) · \(deadline.sectionName)")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                PipelineBadge(stage: deadline.pipelineStage)
-                    .padding(.top, 1)
-                HStack {
+                // 2026-08-06, Lino: "habe ich nicht gesagt es soll direkt
+                // über der deadline angezeigt werden?" — was its own full-
+                // width line above this whole row (which also has the
+                // status on the left), so it sat above the LEFT side, not
+                // stacked with the date on the right. Grouped into the same
+                // trailing VStack as the date instead — badge directly
+                // above it now, not just "somewhere above the row".
+                HStack(alignment: .bottom) {
                     if let status = deadline.postproductionStatus {
                         HStack(spacing: 5) {
                             Circle().fill(status.glowColor).frame(width: 7, height: 7)
@@ -104,9 +109,12 @@ struct TodoSidebarSheet: View {
                         }
                     }
                     Spacer()
-                    Text(Self.formatDateTime(deadline.postproductionDeadline))
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(deadline.postproductionDeadline < Date() ? .red : .secondary)
+                    VStack(alignment: .trailing, spacing: 3) {
+                        PipelineBadge(stage: deadline.pipelineStage)
+                        Text(Self.formatDateTime(deadline.postproductionDeadline))
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(deadline.postproductionDeadline < Date() ? .red : .secondary)
+                    }
                 }
                 .padding(.top, 1)
             }
@@ -134,17 +142,20 @@ struct TodoSidebarSheet: View {
                         .font(.body)
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
-                    PipelineBadge(stage: todo.pipelineStage)
-                        .padding(.top, 1)
-                    HStack {
+                    // 2026-08-06 — same "group with the date, not a separate
+                    // full-width line" fix as deadlineRow above.
+                    HStack(alignment: .bottom) {
                         Text(todo.projectName)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                         Spacer()
-                        if let dueAt = todo.dueAt {
-                            Text(Self.formatDateTime(dueAt))
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(dueAt < Date() ? .red : .secondary)
+                        VStack(alignment: .trailing, spacing: 3) {
+                            PipelineBadge(stage: todo.pipelineStage)
+                            if let dueAt = todo.dueAt {
+                                Text(Self.formatDateTime(dueAt))
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(dueAt < Date() ? .red : .secondary)
+                            }
                         }
                     }
                 }
