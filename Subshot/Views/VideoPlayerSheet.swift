@@ -311,7 +311,7 @@ struct VideoPlayerSheet: View {
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.6))
                 } else {
-                    ForEach(comments.sorted(by: { $0.timestampSeconds < $1.timestampSeconds })) { comment in
+                    ForEach(comments.sorted(by: { ($0.timestampSeconds ?? -1) < ($1.timestampSeconds ?? -1) })) { comment in
                         HStack(alignment: .top, spacing: 8) {
                             // 2026-07-21, #284 — resolved/open checkbox
                             // (mirrors web's VideoReviewModal.
@@ -328,13 +328,33 @@ struct VideoPlayerSheet: View {
                             .buttonStyle(.plain)
                             .padding(.top, 1)
 
-                            Button {
-                                player?.seek(to: CMTime(seconds: comment.timestampSeconds, preferredTimescale: 600))
-                            } label: {
+                            if let ts = comment.timestampSeconds {
+                                Button {
+                                    player?.seek(to: CMTime(seconds: ts, preferredTimescale: 600))
+                                } label: {
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Text(timeLabel(ts))
+                                            .font(.caption.monospacedDigit().weight(.semibold))
+                                            .foregroundStyle(.blue)
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            Text(comment.authorName).font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
+                                            Text(comment.comment)
+                                                .font(.caption)
+                                                .foregroundStyle(comment.resolved ? .white.opacity(0.5) : .white)
+                                                .strikethrough(comment.resolved)
+                                        }
+                                    }
+                                }
+                            } else {
+                                // 2026-08-07 — a system notice (e.g. the
+                                // subtitle-correction "Info" comment) has no
+                                // timestamp to seek to (nil server-side, not
+                                // pinned to a moment) — plain text instead of
+                                // the seek Button above, same shape otherwise.
                                 HStack(alignment: .top, spacing: 8) {
-                                    Text(timeLabel(comment.timestampSeconds))
-                                        .font(.caption.monospacedDigit().weight(.semibold))
-                                        .foregroundStyle(.blue)
+                                    Image(systemName: "info.circle")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.white.opacity(0.5))
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(comment.authorName).font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
                                         Text(comment.comment)

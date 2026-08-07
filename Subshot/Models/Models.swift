@@ -892,7 +892,17 @@ struct VideoVersion: Codable, Identifiable, Hashable {
 struct VideoComment: Codable, Identifiable, Hashable {
     let id: String
     let versionId: String
-    var timestampSeconds: Double
+    /// 2026-08-07, real bug found live: this was non-optional `Double`,
+    /// but the backend has allowed NULL here since 2026-07-29 (a
+    /// `system_kind` notice — e.g. "subtitles were corrected" — isn't
+    /// pinned to any one moment in the video, see VideoComment.
+    /// timestamp_seconds's own doc comment in models.py). A single such
+    /// row anywhere in a section's videos made the WHOLE `[Video]` decode
+    /// for that section throw (JSONDecoder decodes an array atomically —
+    /// one bad element fails everything), which is why videos visible on
+    /// web could be completely invisible in the app: `listVideos` was
+    /// silently failing to decode for any section containing one of these.
+    var timestampSeconds: Double?
     var authorName: String
     var comment: String
     let createdAt: Date
@@ -900,6 +910,15 @@ struct VideoComment: Codable, Identifiable, Hashable {
     /// same two values as web's VideoReviewModal.toggleResolved), the
     /// checkbox on a comment in VideoPlayerSheet's comment list.
     var status: String = "open"
+    /// 2026-08-07 — set only on an auto-generated system notice (see
+    /// timestampSeconds's own doc comment above); nil for every real,
+    /// human-authored comment. Not yet localized/rendered specially on
+    /// iOS (see VideoPlayerSheet's comment list, which just falls back to
+    /// plain text for a nil-timestamp row) — added here mainly so the
+    /// field exists for a future pass, and so Codable has somewhere to
+    /// put it rather than silently dropping it.
+    var systemKind: String?
+    var systemKindLang: String?
 
     var resolved: Bool { status == "resolved" }
 
@@ -909,6 +928,8 @@ struct VideoComment: Codable, Identifiable, Hashable {
         case timestampSeconds = "timestamp_seconds"
         case authorName = "author_name"
         case createdAt = "created_at"
+        case systemKind = "system_kind"
+        case systemKindLang = "system_kind_lang"
     }
 }
 
