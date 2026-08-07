@@ -78,6 +78,10 @@ struct PostproductionListView: View {
     /// at once without clobbering each other.
     @State private var uploadingTileIds: Set<String> = []
     @State private var creatingUnplanned = false
+    /// 2026-08-08 — guards the initialVideoId auto-open (see the
+    /// `.task(id:)` below) so it only ever fires once, even though that
+    /// task can legitimately re-run more than once now.
+    @State private var didAutoOpenInitialVideo = false
 
     private func tileKey(for target: PickerTarget) -> String {
         target.videoId ?? "empty-\(target.sectionId)"
@@ -251,10 +255,38 @@ struct PostproductionListView: View {
             if let me = try? await APIClient.shared.me() {
                 myRole = viewModel.members.first(where: { $0.userId == me.id })?.role
             }
+        }
+        // 2026-08-08, real bug found live (Lino: "es sind bei Dentalhygiene
+        // - Oral B immer noch keine Videos zu sehen, man sieht nur die
+        // leeren 'Ungeplantes Video' Kacheln") — this used to be part of
+        // the plain `.task` above, which only ever runs ONCE right when
+        // this view first appears. For a Postproduction-only project
+        // (module_concept AND module_scripting both off — exactly
+        // "Dentalhygiene - Oral B"'s real config), ShotListView's
+        // `initialSection` picks `.postproduction` as the very FIRST
+        // screen shown, so THIS view can mount and its `.task` can fire
+        // before `viewModel.sections` (loaded asynchronously by the
+        // PARENT view's own `viewModel.load()`) has finished — `sections`
+        // here was reliably still empty at that exact moment.
+        // `loadAllVideos()` then looped over zero sections (nothing to
+        // fetch, so no error either — matches the reported "no alert, just
+        // empty tiles"), and since the old plain `.task` never re-ran,
+        // `sectionVideos` stayed empty forever even once `viewModel.
+        // sections` finished loading moments later — every tile rendered
+        // as the empty placeholder from then on. `.task(id:)` re-runs
+        // automatically whenever the section id list actually changes
+        // (e.g. the instant sections finish loading), fixing this without
+        // a manual "is data ready yet" check. `didAutoOpenInitialVideo`
+        // guards the deep-link auto-open so it still only ever fires once,
+        // even though this task can legitimately re-run more than once now
+        // (e.g. a section genuinely added/removed later).
+        .task(id: sections.map(\.id)) {
+            guard !sections.isEmpty else { return }
             await loadAllVideos()
-            if let initialVideoId,
+            if !didAutoOpenInitialVideo, let initialVideoId,
                let video = sectionVideos.values.flatMap({ $0 }).first(where: { $0.id == initialVideoId }),
                let version = video.versions.last(where: { $0.status == "ready" }) {
+                didAutoOpenInitialVideo = true
                 playing = (video, version)
             }
         }
