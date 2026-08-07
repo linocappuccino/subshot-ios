@@ -843,12 +843,18 @@ struct Video: Codable, Identifiable, Hashable {
     var sortOrder: Int
     let createdAt: Date
     var versions: [VideoVersion] = []
+    /// 2026-08-08 — "auf den kacheln muss man auch auswählen können wer
+    /// verantwortlich ist" (web's VideoTileEditorPicker, #427/#428, ported
+    /// here). Single person, not a list (unlike Scene.assigneeIds) — see
+    /// VideoPatch's own doc comment in schemas.py.
+    var assigneeId: String?
 
     enum CodingKeys: String, CodingKey {
         case id, title, versions
         case sectionId = "section_id"
         case sortOrder = "sort_order"
         case createdAt = "created_at"
+        case assigneeId = "assignee_id"
     }
 }
 

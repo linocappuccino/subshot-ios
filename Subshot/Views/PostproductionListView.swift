@@ -173,6 +173,7 @@ struct PostproductionListView: View {
                         PostproductionVideoTile(
                             section: tile.section,
                             video: tile.video,
+                            members: viewModel.members,
                             canEditStatus: canEditStatus,
                             canEditTitleAndDeadline: canEditTitleAndDeadline,
                             uploading: uploadingTileIds.contains(tile.id),
@@ -201,6 +202,10 @@ struct PostproductionListView: View {
                                 if let video = tile.video {
                                     Task { await deleteVideo(video) }
                                 }
+                            },
+                            onChangeAssignee: { userId in
+                                guard let video = tile.video else { return }
+                                Task { await updateVideoAssignee(video, sectionId: tile.section.id, userId: userId) }
                             }
                         )
                     }
@@ -251,7 +256,17 @@ struct PostproductionListView: View {
                 addUnplannedVideoButton
             }
         }
-        .task {
+        // 2026-08-08 — same async-timing race class as the sections fix
+        // right below (`viewModel.members` is loaded independently of
+        // `viewModel.sections`, see ShotListViewModel.load()'s own
+        // membersTask): a plain one-shot `.task` reading `viewModel.
+        // members` here could resolve `me()` before `members` actually
+        // populated, leaving `myRole` (and everything gated on it —
+        // canEditStatus/canEditTitleAndDeadline, now also this file's new
+        // Editor-picker) permanently nil/false. `.task(id:)` re-runs
+        // whenever the member id list changes, so it self-corrects the
+        // moment `members` actually arrives.
+        .task(id: viewModel.members.map(\.userId)) {
             if let me = try? await APIClient.shared.me() {
                 myRole = viewModel.members.first(where: { $0.userId == me.id })?.role
             }
@@ -525,6 +540,23 @@ struct PostproductionListView: View {
         }
     }
 
+    /// 2026-08-08 — "kann der admin / projektleiter in der ios app den
+    /// editor auf den videos ändern? (wie in der webb app)", ported from
+    /// web's own updateVideoAssignee (postproduction/page.tsx). `userId ==
+    /// nil` means "unassign", translated to `clearAssignee: true` — a plain
+    /// nil `assigneeId` alone means "don't touch it" on the backend (see
+    /// VideoPatch's own doc comment in schemas.py).
+    private func updateVideoAssignee(_ video: Video, sectionId: String, userId: String?) async {
+        do {
+            let updated = try await APIClient.shared.patchVideo(video.id, assigneeId: userId, clearAssignee: userId == nil)
+            if let index = sectionVideos[sectionId]?.firstIndex(where: { $0.id == updated.id }) {
+                sectionVideos[sectionId]?[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     private func updateVersion(_ updated: VideoVersion, videoId: String) {
         for (sectionId, videos) in sectionVideos {
             if let vIndex = videos.firstIndex(where: { $0.id == videoId }),
@@ -550,6 +582,7 @@ private struct PostproductionVideoTile: View {
     @ObservedObject private var language = AppLanguage.shared
     let section: SceneSection
     let video: Video?
+    let members: [Member]
     let canEditStatus: Bool
     let canEditTitleAndDeadline: Bool
     let uploading: Bool
@@ -559,6 +592,14 @@ private struct PostproductionVideoTile: View {
     let onStatusChange: (PostproductionStatus) -> Void
     let onDeadlineChange: (Date?) -> Void
     let onDeleteVideo: () -> Void
+    /// 2026-08-08 — "kann der admin / projektleiter in der ios app den
+    /// editor auf den videos ändern? (wie in der webb app)". Mirrors web's
+    /// VideoTileEditorPicker exactly, including its permission gate: reuses
+    /// `canEditStatus` (any editor/Projektleiter/owner), NOT admin/PL-only
+    /// — confirmed against postproduction/page.tsx's own
+    /// `editable={canEditStatus}` rather than assuming from the question's
+    /// wording alone.
+    let onChangeAssignee: (String?) -> Void
 
     @State private var deadline: Date
     /// 2026-08-06, Lino: "wenn man feste oder lange auf ein video ... drückt,
@@ -570,13 +611,14 @@ private struct PostproductionVideoTile: View {
     @State private var showingDeleteConfirm = false
 
     init(
-        section: SceneSection, video: Video?, canEditStatus: Bool, canEditTitleAndDeadline: Bool, uploading: Bool,
+        section: SceneSection, video: Video?, members: [Member], canEditStatus: Bool, canEditTitleAndDeadline: Bool, uploading: Bool,
         onTapUpload: @escaping () -> Void, onPlay: @escaping (Video, VideoVersion) -> Void, onEditTitle: @escaping () -> Void,
         onStatusChange: @escaping (PostproductionStatus) -> Void, onDeadlineChange: @escaping (Date?) -> Void,
-        onDeleteVideo: @escaping () -> Void
+        onDeleteVideo: @escaping () -> Void, onChangeAssignee: @escaping (String?) -> Void
     ) {
         self.section = section
         self.video = video
+        self.members = members
         self.canEditStatus = canEditStatus
         self.canEditTitleAndDeadline = canEditTitleAndDeadline
         self.uploading = uploading
@@ -586,7 +628,14 @@ private struct PostproductionVideoTile: View {
         self.onStatusChange = onStatusChange
         self.onDeadlineChange = onDeadlineChange
         self.onDeleteVideo = onDeleteVideo
+        self.onChangeAssignee = onChangeAssignee
         _deadline = State(initialValue: section.postproductionDeadline ?? .now)
+    }
+
+    private var assignedEditor: Member? { members.first(where: { $0.userId == video?.assigneeId }) }
+    private var editorLabel: String {
+        if let assignedEditor { return assignedEditor.name?.isEmpty == false ? assignedEditor.name! : assignedEditor.email }
+        return language.t("videoTile.editorUnassigned")
     }
 
     private var readyVersion: VideoVersion? { video?.versions.last(where: { $0.status == "ready" }) }
@@ -634,6 +683,39 @@ private struct PostproductionVideoTile: View {
                         .font(.subheadline)
                     } else {
                         Text(PostproductionListView.statusLabel(section.postproductionStatus ?? .wartend, language: language))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                HStack(spacing: 4) {
+                    Text(language.t("videoTile.editorLabel") + ":")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                    if canEditStatus {
+                        // 2026-08-08 — same permission gate as the status
+                        // Picker above (canEditStatus), matching web's own
+                        // VideoTileEditorPicker `editable={canEditStatus}`
+                        // exactly rather than admin/Projektleiter-only.
+                        Menu {
+                            Button {
+                                onChangeAssignee(nil)
+                            } label: {
+                                Text(language.t("videoTile.editorUnassigned"))
+                            }
+                            ForEach(members) { member in
+                                Button {
+                                    onChangeAssignee(member.userId)
+                                } label: {
+                                    Text(member.name?.isEmpty == false ? member.name! : member.email)
+                                }
+                            }
+                        } label: {
+                            Text(editorLabel)
+                                .font(.subheadline)
+                                .lineLimit(1)
+                        }
+                    } else {
+                        Text(editorLabel)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }

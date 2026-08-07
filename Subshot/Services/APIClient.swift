@@ -1220,11 +1220,19 @@ final class APIClient {
     /// Section's name/postproduction status/deadline, which stay on
     /// patchSectionPostproduction above). Matches backend's
     /// `PATCH /videos/{id}` (VideoPatch: title, sort_order).
-    func patchVideo(_ id: String, title: String? = nil, sortOrder: Int? = nil) async throws -> Video {
+    /// 2026-08-08 — `assigneeId`/`clearAssignee` added (web's #427/#428,
+    /// ported): same clear-vs-untouched escape hatch as
+    /// TodoItemPatch/ScenePatch's own assignee fields — a plain nil
+    /// `assigneeId` means "don't touch it", `clearAssignee: true` means
+    /// "unassign", a non-nil `assigneeId` means "assign to this person".
+    func patchVideo(
+        _ id: String, title: String? = nil, sortOrder: Int? = nil,
+        assigneeId: String? = nil, clearAssignee: Bool = false
+    ) async throws -> Video {
         var req = try await authorizedRequest("videos/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        struct Body: Encodable { let title: String?; let sort_order: Int? }
-        req.httpBody = try encoder.encode(Body(title: title, sort_order: sortOrder))
+        struct Body: Encodable { let title: String?; let sort_order: Int?; let assignee_id: String?; let clear_assignee: Bool }
+        req.httpBody = try encoder.encode(Body(title: title, sort_order: sortOrder, assignee_id: assigneeId, clear_assignee: clearAssignee))
         return try await send(req)
     }
 
