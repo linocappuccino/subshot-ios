@@ -644,6 +644,99 @@ private struct PostproductionVideoTile: View {
     /// uses, see PostproductionStatus.glowColor's own doc comment.
     private var statusColor: Color { (section.postproductionStatus ?? .wartend).glowColor }
 
+    /// Trailing hint that a pill opens a menu — same glyph
+    /// `.pickerStyle(.menu)` draws itself, reused here since these two rows
+    /// are now hand-built `Menu`s rather than an actual `Picker`.
+    private var menuChevron: some View {
+        Image(systemName: "chevron.up.chevron.down")
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder
+    private var statusPill: some View {
+        let status = section.postproductionStatus ?? .wartend
+        let label = HStack(spacing: 5) {
+            Circle().fill(statusColor).frame(width: 7, height: 7)
+            Text(PostproductionListView.statusLabel(status, language: language))
+                .font(.subheadline.weight(.medium))
+            if canEditStatus { menuChevron }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(statusColor.opacity(0.16), in: Capsule())
+
+        if canEditStatus {
+            Menu {
+                ForEach(PostproductionStatus.allCases, id: \.self) { candidate in
+                    Button {
+                        onStatusChange(candidate)
+                    } label: {
+                        if candidate == status {
+                            Label(PostproductionListView.statusLabel(candidate, language: language), systemImage: "checkmark")
+                        } else {
+                            Text(PostproductionListView.statusLabel(candidate, language: language))
+                        }
+                    }
+                }
+            } label: {
+                label
+            }
+        } else {
+            label
+        }
+    }
+
+    @ViewBuilder
+    private var editorPill: some View {
+        let label = HStack(spacing: 5) {
+            Image(systemName: "person.crop.circle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(editorLabel)
+                .font(.subheadline.weight(.medium))
+                .lineLimit(1)
+                .frame(maxWidth: 100, alignment: .leading)
+            if canEditStatus { menuChevron }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color(.tertiarySystemFill), in: Capsule())
+
+        // Same permission gate as the status pill above (canEditStatus),
+        // matching web's own VideoTileEditorPicker `editable={canEditStatus}`
+        // exactly rather than admin/Projektleiter-only.
+        if canEditStatus {
+            Menu {
+                Button {
+                    onChangeAssignee(nil)
+                } label: {
+                    if assignedEditor == nil {
+                        Label(language.t("videoTile.editorUnassigned"), systemImage: "checkmark")
+                    } else {
+                        Text(language.t("videoTile.editorUnassigned"))
+                    }
+                }
+                ForEach(members) { member in
+                    Button {
+                        onChangeAssignee(member.userId)
+                    } label: {
+                        let name = member.name?.isEmpty == false ? member.name! : member.email
+                        if member.userId == assignedEditor?.userId {
+                            Label(name, systemImage: "checkmark")
+                        } else {
+                            Text(name)
+                        }
+                    }
+                }
+            } label: {
+                label
+            }
+        } else {
+            label
+        }
+    }
+
     var body: some View {
         // 2026-08-05, Lino: single-column full-width tile now has real
         // room to breathe — every footer text bumped one step up from the
@@ -666,59 +759,21 @@ private struct PostproductionVideoTile: View {
                         }
                     }
                 }
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 9, height: 9)
-                    if canEditStatus {
-                        Picker(language.t("postproductionListView.statusLabel"), selection: Binding(
-                            get: { section.postproductionStatus ?? .wartend },
-                            set: { onStatusChange($0) }
-                        )) {
-                            ForEach(PostproductionStatus.allCases, id: \.self) { status in
-                                Text(PostproductionListView.statusLabel(status, language: language)).tag(status)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .font(.subheadline)
-                    } else {
-                        Text(PostproductionListView.statusLabel(section.postproductionStatus ?? .wartend, language: language))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                HStack(spacing: 4) {
-                    Text(language.t("videoTile.editorLabel") + ":")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                    if canEditStatus {
-                        // 2026-08-08 — same permission gate as the status
-                        // Picker above (canEditStatus), matching web's own
-                        // VideoTileEditorPicker `editable={canEditStatus}`
-                        // exactly rather than admin/Projektleiter-only.
-                        Menu {
-                            Button {
-                                onChangeAssignee(nil)
-                            } label: {
-                                Text(language.t("videoTile.editorUnassigned"))
-                            }
-                            ForEach(members) { member in
-                                Button {
-                                    onChangeAssignee(member.userId)
-                                } label: {
-                                    Text(member.name?.isEmpty == false ? member.name! : member.email)
-                                }
-                            }
-                        } label: {
-                            Text(editorLabel)
-                                .font(.subheadline)
-                                .lineLimit(1)
-                        }
-                    } else {
-                        Text(editorLabel)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
+                // 2026-08-08, Lino: "können wir die statusauswahl und
+                // editor auswahl noch schöner und typisch apple machen?" —
+                // replaced the bare Picker/Menu-with-plain-text rows (which
+                // read as loose, unstyled text next to the real title/
+                // buttons) with a row of proper capsule pills: colored
+                // dot/icon + label + a chevron.up.chevron.down affordance
+                // (the standard system hint that a control opens a menu,
+                // same glyph SwiftUI's own .pickerStyle(.menu) draws) inside
+                // a tinted rounded background — the native "filter pill"
+                // pattern iOS apps like Photos/Files/Reminders use, and the
+                // same silhouette web's own Pill/VideoTileEditorPicker
+                // capsules converged on independently.
+                HStack(spacing: 8) {
+                    statusPill
+                    editorPill
                 }
                 if canEditTitleAndDeadline {
                     Toggle(language.t("postproductionListView.deadlineLabel"), isOn: Binding(
