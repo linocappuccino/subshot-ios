@@ -465,6 +465,10 @@ struct Idea: Codable, Identifiable, Hashable {
     /// backend IdeaOut.feedback_count's own doc comment), always present in
     /// every response regardless.
     var feedbackCount: Int = 0
+    /// 2026-08-09 — sent AND unresolved only, mirrors Video's own open-
+    /// comment count (see PostproductionVideoTile.versionAndCommentBadge).
+    /// Drives IdeaTileView's top-right "💬 {n}" badge.
+    var openFeedbackCount: Int = 0
 
     enum CodingKeys: String, CodingKey {
         case id, title, text, status, images
@@ -478,6 +482,7 @@ struct Idea: Codable, Identifiable, Hashable {
         case internalReviewedAt = "internal_reviewed_at"
         case internalReviewedByName = "internal_reviewed_by_name"
         case feedbackCount = "feedback_count"
+        case openFeedbackCount = "open_feedback_count"
     }
 
     /// 2026-07-21, #277 — `<br>`/`<div>` line boundaries are converted to
@@ -619,6 +624,27 @@ struct Member: Codable, Identifiable, Hashable {
     }
 }
 
+/// One person shown in the Projektinfo box (2026-08-09, #27) — separate
+/// from Member above (the full editor/projektleiter/owner roster); being
+/// an info member has no role, purely who's shown as the point of
+/// contact. The owner is always included (isOwner true), everyone else is
+/// someone explicitly added via POST /projects/{id}/info-members.
+struct InfoMember: Codable, Identifiable, Hashable {
+    var id: String { userId }
+    let userId: String
+    let email: String
+    let name: String?
+    let avatarUrl: String?
+    var isOwner: Bool = false
+
+    enum CodingKeys: String, CodingKey {
+        case email, name
+        case userId = "user_id"
+        case avatarUrl = "avatar_url"
+        case isOwner = "is_owner"
+    }
+}
+
 struct Invite: Codable {
     let id: String
     let email: String
@@ -748,13 +774,49 @@ struct PostproductionVideoDeadline: Codable, Identifiable, Hashable {
     }
 }
 
+/// One still-open client comment (plain IdeaFeedback, or a highlight/
+/// comment-kind Annotation on an idea, or a scene Annotation) — mirrors
+/// web's OpenCommentTodo (2026-08-09). No assignee to filter on like
+/// MyTodo/PostproductionVideoDeadline above — the backend scopes this to
+/// projects the caller is at least "projektleiter" on instead.
+struct OpenCommentTodo: Codable, Identifiable, Hashable {
+    let id: String
+    let kind: String
+    let entityId: String
+    let entityTitle: String
+    let authorName: String
+    let commentPreview: String
+    let createdAt: Date
+    let projectId: String
+    let projectName: String
+    let projectClientName: String?
+    var projectColor: String = "8e8e93"
+    var pipelineStage: ProjectPipelineStage = .idea
+
+    enum CodingKeys: String, CodingKey {
+        case id, kind
+        case entityId = "entity_id"
+        case entityTitle = "entity_title"
+        case authorName = "author_name"
+        case commentPreview = "comment_preview"
+        case createdAt = "created_at"
+        case projectId = "project_id"
+        case projectName = "project_name"
+        case projectClientName = "project_client_name"
+        case projectColor = "project_color"
+        case pipelineStage = "pipeline_stage"
+    }
+}
+
 struct TodoSidebarData: Codable, Hashable {
     var todos: [MyTodo]
     var postproductionDeadlines: [PostproductionVideoDeadline]
+    var openComments: [OpenCommentTodo] = []
 
     enum CodingKeys: String, CodingKey {
         case todos
         case postproductionDeadlines = "postproduction_deadlines"
+        case openComments = "open_comments"
     }
 }
 

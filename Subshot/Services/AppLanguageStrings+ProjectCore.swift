@@ -124,6 +124,7 @@ extension AppLanguage {
             "sceneEditSheet.prioritySection": "Priorität",
             "sceneEditSheet.descriptionSection": "Beschreibung",
             "sceneEditSheet.descriptionPlaceholder": "z.B. Handlung, Notizen",
+            "sceneEditSheet.slashHint": "Tippe „/“ für Beschreibung/Titel/Dialog. Zweimal Enter schliesst den Block ab.",
             "sceneEditSheet.newDialoguePlaceholder": "Neuer Dialog",
             "sceneEditSheet.doubleEnterHint": "Zweimal Enter schliesst den Dialog ab.",
             "sceneEditSheet.dialogueButtonLabel": "Dialog",
@@ -223,13 +224,16 @@ extension AppLanguage {
             "shareLinkSheet.titleIdeas": "Ideen-Link teilen",
             "shareLinkSheet.titleVideo": "Video-Feedback-Link teilen",
             "shareLinkSheet.titleDefault": "Link teilen",
-            // 2026-07-27, Todoist #356 — shown instead of the raw server
-            // error when kind=="ideas" and not every open idea has gone
-            // through the internal PL/Admin review gate yet. Own alert
-            // title (not the generic "Fehler") since Lino doesn't consider
-            // this an error state, just a blocking precondition.
+            // 2026-07-27, Todoist #356, text updated 2026-08-09 (#389's
+            // gate change, see ShareLinkSheet.swift's own doc comment) to
+            // match web's current shareLinkModal.noneInternallyReviewed
+            // copy exactly — was "not every idea reviewed", the real gate
+            // is now "not a SINGLE idea reviewed yet". Own alert title (not
+            // the generic "Fehler") since Lino doesn't consider this an
+            // error state, just a blocking precondition.
             "shareLinkSheet.notAllInternallyReviewedTitle": "Interne Abnahme notwendig:",
-            "shareLinkSheet.notAllInternallyReviewed": "Es sind noch nicht alle Ideen intern abgenommen worden. Bitte zuerst jede offene Idee intern abnehmen oder ablehnen, bevor der Preview-Link erstellt werden kann.",
+            "shareLinkSheet.notAllInternallyReviewed": "Es wurde noch keine Idee intern abgenommen. Bitte zuerst mindestens eine Idee intern abnehmen, bevor der Preview-Link erstellt werden kann.",
+            "shareLinkSheet.openCommentsExist": "Es sind noch offene Kommentare vorhanden. Bitte zuerst jeden offenen Kommentar abhaken oder löschen, bevor der Preview-Link wieder erstellt/geteilt werden kann.",
 
             // ProjectInfoBox.swift (also covers SectionInfoBox / SceneProjectInfoTile,
             // defined in the same file)
@@ -239,6 +243,7 @@ extension AppLanguage {
             "projectInfoBox.deleteConfirmTitle": "Projektinfo löschen?",
             "projectInfoBox.deleteConfirmMessage": "Datum, Ort und Todo-Listen dieser Projektinfo werden entfernt.",
             "projectInfoBox.peopleLabel": "Personen",
+            "projectInfoBox.noOtherMembers": "Keine weiteren Personen im Projekt.",
             "projectInfoBox.shootDateLabel": "Drehdatum",
             "projectInfoBox.setDateToggle": "Datum festlegen",
             "projectInfoBox.startLabel": "Start",
@@ -360,6 +365,7 @@ extension AppLanguage {
             "sceneEditSheet.prioritySection": "Priority",
             "sceneEditSheet.descriptionSection": "Description",
             "sceneEditSheet.descriptionPlaceholder": "e.g. action, notes",
+            "sceneEditSheet.slashHint": "Type “/” for description/title/dialogue. Press Enter twice to close the block.",
             "sceneEditSheet.newDialoguePlaceholder": "New dialogue line",
             "sceneEditSheet.doubleEnterHint": "Press Enter twice to close the dialogue.",
             "sceneEditSheet.dialogueButtonLabel": "Dialogue",
@@ -460,7 +466,8 @@ extension AppLanguage {
             "shareLinkSheet.titleVideo": "Share video feedback link",
             "shareLinkSheet.titleDefault": "Share link",
             "shareLinkSheet.notAllInternallyReviewedTitle": "Internal review required:",
-            "shareLinkSheet.notAllInternallyReviewed": "Not every idea has been internally approved yet. Please internally approve or reject each open idea before the preview link can be created.",
+            "shareLinkSheet.notAllInternallyReviewed": "No idea has been internally approved yet. Please internally approve at least one idea before the preview link can be created.",
+            "shareLinkSheet.openCommentsExist": "Some comments are still open. Please resolve or delete every open comment before the preview link can be created/shared again.",
 
             // ProjectInfoBox.swift (also covers SectionInfoBox / SceneProjectInfoTile,
             // defined in the same file)
@@ -470,6 +477,7 @@ extension AppLanguage {
             "projectInfoBox.deleteConfirmTitle": "Delete project info?",
             "projectInfoBox.deleteConfirmMessage": "Date, location, and todo lists for this project info will be removed.",
             "projectInfoBox.peopleLabel": "People",
+            "projectInfoBox.noOtherMembers": "No other people on this project.",
             "projectInfoBox.shootDateLabel": "Shoot date",
             "projectInfoBox.setDateToggle": "Set date",
             "projectInfoBox.startLabel": "Start",

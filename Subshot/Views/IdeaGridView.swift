@@ -57,6 +57,13 @@ struct IdeaGridView: View {
     }
 
     var body: some View {
+        // 2026-08-09, Lino: "hier müssen die abschnitte und kacheln ein
+        // wenig abstand vom display rand haben" — this view's root VStack
+        // had no horizontal padding at all (the enclosing ScrollView in
+        // ShotListView only applies `.padding(.vertical, 16)` at that
+        // level), so section headers/tiles ran edge-to-edge; 16pt matches
+        // the horizontal padding convention used throughout the rest of
+        // ShotListView's own content (sectionGroup etc.).
         VStack(alignment: .leading, spacing: 14) {
             // 2026-07-21, #276 — the top-right "+ Idee" button that used to
             // sit here is gone; creating a new idea now only happens via
@@ -105,6 +112,7 @@ struct IdeaGridView: View {
                 }
             }
         }
+        .padding(.horizontal, 16)
         .sheet(item: $editingIdea) { idea in
             IdeaEditSheet(idea: idea, viewModel: viewModel)
         }
@@ -129,6 +137,19 @@ private struct IdeaTileView: View {
     }
 
     private var approved: Bool { idea.status == .approved }
+
+    /// See the dot's own call site above — mirrors backend `internal_status`
+    /// values ("approved"/"rejected"/nil, see internal_approve_idea/
+    /// internal_reject_idea in main.py) to a color: green once internally
+    /// abgenommen, red once abgelehnt, the original amber while still
+    /// unreviewed.
+    private var internalReviewDotColor: Color {
+        switch idea.internalStatus {
+        case "approved": return .green
+        case "rejected": return .red
+        default: return .orange.opacity(0.8)
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -169,17 +190,42 @@ private struct IdeaTileView: View {
             }
             .aspectRatio(16.0 / 9.0, contentMode: .fit)
             .frame(maxWidth: .infinity)
+            // 2026-08-09, Lino: "wurden kommentare in einer ideenkachel
+            // gemacht, soll dies wie bei der videokachel oben rechts
+            // dargestellt werden" — mirrors PostproductionVideoTile's own
+            // "💬 {n}" badge (open comments only) exactly, no 3-dot menu
+            // occupies this corner on iOS (that's a long-press contextMenu
+            // instead), so no offset needed unlike the web version.
+            .overlay(alignment: .topTrailing) {
+                if idea.openFeedbackCount > 0 {
+                    Text("💬 \(idea.openFeedbackCount)")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.8))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(.black.opacity(0.5), in: Capsule())
+                        .padding(6)
+                }
+            }
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 4) {
                     Text(idea.title)
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
-                    // 2026-07-27, Todoist #356 — same amber "intern noch
-                    // nicht abgenommen" indicator as web's IdeaTile.tsx.
-                    if idea.status == .open && idea.internalStatus == nil {
+                    // 2026-08-09, Lino: "die ideen kacheln (der punkt)
+                    // müssen die farbe wechseln wenn die idee intern
+                    // abgenommen oder abgelehnt wurde oder noch offen ist"
+                    // — was ONLY ever the amber "not yet internally
+                    // reviewed" dot (#356); now reflects all three
+                    // internal-review states while the idea itself is
+                    // still `.open` (once `.status == .approved` the
+                    // separate green checkmark below already covers the
+                    // full client-facing approval, so this dot is scoped
+                    // out at that point exactly as before).
+                    if idea.status == .open {
                         Circle()
-                            .fill(Color.orange.opacity(0.8))
+                            .fill(internalReviewDotColor)
                             .frame(width: 6, height: 6)
                     }
                     if approved {

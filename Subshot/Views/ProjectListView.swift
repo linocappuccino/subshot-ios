@@ -669,8 +669,16 @@ private struct GridSheets: ViewModifier {
                 }
             }
             .sheet(isPresented: $showingTodoSidebar) {
-                TodoSidebarSheet(viewModel: viewModel) { project in
-                    path.append(project)
+                // 2026-08-09 (#34) — same entityKind/entityId deep-link
+                // shape as NotificationsSheet's callback right above; an
+                // open-comment row passes both, deadline/todo rows keep
+                // passing nil/nil (plain project navigation, unchanged).
+                TodoSidebarSheet(viewModel: viewModel) { project, entityKind, entityId in
+                    if let entityKind, let entityId {
+                        path.append(NotificationDeepLink(project: project, entityKind: entityKind, entityId: entityId))
+                    } else {
+                        path.append(project)
+                    }
                 }
             }
     }

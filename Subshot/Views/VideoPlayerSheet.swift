@@ -67,6 +67,16 @@ struct VideoPlayerSheet: View {
     // above instead of a literal port of anything web-specific).
     @State private var savingFrame = false
     @State private var frameJustSaved = false
+    /// 2026-08-09 — download the whole video (not just the current frame)
+    /// to Photos, same permission/flow shape as saveFrameButton.
+    @State private var downloadingVideo = false
+    @State private var videoJustSaved = false
+    /// 2026-08-09, Lino: "können wir hier einfach den avatar neben dem
+    /// kommentareingabefeld anzeigen anstatt den namen" — the signed-in
+    /// user's own profile, fetched once in the .task below (authorName
+    /// itself is still derived from it and still sent to the API
+    /// unchanged, just no longer shown as an editable text field).
+    @State private var me: Me?
 
     init(video: Video, version: VideoVersion, projectId: String? = nil, onVersionUpdated: @escaping (VideoVersion) -> Void) {
         self.video = video
@@ -184,8 +194,9 @@ struct VideoPlayerSheet: View {
             // already uses for a known collaborator.
             // Guard against clobbering a name the user already started typing
             // while this (network-dependent) fetch was still in flight.
-            if authorName.isEmpty, let me = try? await APIClient.shared.me() {
-                authorName = me.name ?? me.email
+            if let fetchedMe = try? await APIClient.shared.me() {
+                me = fetchedMe
+                if authorName.isEmpty { authorName = fetchedMe.name ?? fetchedMe.email }
             }
         }
         .onDisappear { player?.pause() }
@@ -197,7 +208,12 @@ struct VideoPlayerSheet: View {
             closeButton
             Spacer()
         }
-        .padding()
+        .padding(.horizontal)
+        .padding(.bottom)
+        // 2026-08-09, Lino: "den X Button ein wenig weiter runter nehmen" —
+        // was the default symmetric `.padding()` (~16pt), sitting right
+        // under the handlebar; nudged down a bit further.
+        .padding(.top, 22)
     }
 
     /// 2026-08-06, Lino: "können wir da den x button schöner machen um das
@@ -227,6 +243,7 @@ struct VideoPlayerSheet: View {
     private var controlCluster: some View {
         HStack(spacing: 14) {
             saveFrameButton
+            videoDownloadButton
             commentButton
         }
     }
@@ -237,32 +254,74 @@ struct VideoPlayerSheet: View {
     /// via Photos instead of a browser download. Also pauses on tap itself
     /// (same as commentButton above) so the frame can't drift mid-capture
     /// if the user taps while still playing.
+    /// 2026-08-09, Lino: "das symbol für den thumbnail download button ist
+    /// nicht klar genug... muss selbsterklärend sein" — a bare
+    /// "square.and.arrow.down" (generic "download something") is
+    /// indistinguishable at a glance from videoDownloadButton right next
+    /// to it. Rather than guessing at an unverifiable exotic SF Symbol name
+    /// with no compiler to check it (this button's own prior doc comment
+    /// already flagged that exact risk), the fix is a small caption label
+    /// under the icon — "photo"/"video" are both long-stable, definitely-
+    /// real SF Symbols, and the text removes any remaining ambiguity
+    /// regardless of icon recognition.
     private var saveFrameButton: some View {
         Button {
             Task { await saveCurrentFrame() }
         } label: {
-            Group {
+            VStack(spacing: 2) {
                 if savingFrame {
                     ProgressView().tint(.white)
                 } else if frameJustSaved {
                     Image(systemName: "checkmark")
+                        .font(.system(size: 16, weight: .semibold))
                 } else {
-                    // "square.and.arrow.down" — long-stable SF Symbol (iOS
-                    // 13+), deliberately not "photo.badge.arrow.down"
-                    // (unverifiable whether that exact symbol name exists,
-                    // no compiler here to check — see this file's own
-                    // doc comment about not guessing at unverifiable stuff).
-                    Image(systemName: "square.and.arrow.down")
+                    Image(systemName: "photo")
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                if !savingFrame {
+                    Text(language.t("videoPlayerSheet.saveFrameShort"))
+                        .font(.system(size: 9, weight: .semibold))
                 }
             }
-            .font(.system(size: 16, weight: .semibold))
             .foregroundStyle(.white)
-            .frame(width: 44, height: 44)
+            .frame(width: 52, height: 52)
             .background(.black.opacity(0.45))
-            .clipShape(Circle())
+            .clipShape(RoundedRectangle(cornerRadius: 16))
         }
         .disabled(savingFrame)
         .accessibilityLabel(language.t("videoPlayerSheet.saveFrame"))
+    }
+
+    /// 2026-08-09, Lino: "es braucht noch einen video download button" —
+    /// downloads the full video (not just the current frame) to Photos,
+    /// same permission/flow shape as saveFrameButton, backed by
+    /// downloadVideo() below.
+    private var videoDownloadButton: some View {
+        Button {
+            Task { await downloadVideo() }
+        } label: {
+            VStack(spacing: 2) {
+                if downloadingVideo {
+                    ProgressView().tint(.white)
+                } else if videoJustSaved {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 16, weight: .semibold))
+                } else {
+                    Image(systemName: "video")
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                if !downloadingVideo {
+                    Text(language.t("videoPlayerSheet.saveVideoShort"))
+                        .font(.system(size: 9, weight: .semibold))
+                }
+            }
+            .foregroundStyle(.white)
+            .frame(width: 52, height: 52)
+            .background(.black.opacity(0.45))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .disabled(downloadingVideo)
+        .accessibilityLabel(language.t("videoPlayerSheet.saveVideo"))
     }
 
     /// 2026-07-26 — replaces the old broken long-press: an always-tappable
@@ -275,7 +334,11 @@ struct VideoPlayerSheet: View {
             withAnimation { showCommentPanel.toggle() }
             if showCommentPanel { commentFieldFocused = true }
         } label: {
-            Label("\(comments.count)", systemImage: "bubble.left.fill")
+            // 2026-08-09, Lino: "abgeschlossene kommentare sollen nicht auf
+            // dem Player gezählt werden (nur offene kommentare sollen als
+            // zahl gezeigt/gezählt werden)" — was comments.count (every
+            // comment regardless of resolved status).
+            Label("\(comments.filter { !$0.resolved }.count)", systemImage: "bubble.left.fill")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 12)
@@ -376,21 +439,19 @@ struct VideoPlayerSheet: View {
         .padding(.horizontal)
     }
 
-    // 2026-07-26, Lino: "Das momentane Kommentarfeld... soll fast
-    // bildschirmbreit sein" — was constrained by a fixed 100pt name field
-    // PLUS padding applied twice (once around the HStack, again around the
-    // whole bar), eating ~64pt of horizontal space on top of that on a
-    // ~390pt-wide phone. authorName is already auto-filled from the
-    // signed-in account (see the .task above) — shrunk to a small,
-    // still-editable 64pt field instead of dropping it outright, single
-    // outer padding, so the comment TextField itself gets the vast
-    // majority of the screen width.
+    /// 2026-08-09, Lino: "können wir hier einfach den avatar neben dem
+    /// kommentareingabefeld anzeigen anstatt den namen" — replaces the
+    /// small editable name TextField with the signed-in user's own
+    /// MemberAvatar (same component TeamSheet/PostproductionListView use
+    /// elsewhere). `authorName` itself is unchanged underneath (still
+    /// auto-filled from `me` in the .task above, still what postComment()
+    /// actually sends) — this is purely a visual swap, not a behavior
+    /// change, so there's no longer a way to override the name inline here.
     private var commentBar: some View {
-        HStack(spacing: 6) {
-            TextField(language.t("videoPlayerSheet.yourName"), text: $authorName)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 64)
-                .font(.caption)
+        HStack(spacing: 8) {
+            if let me {
+                MemberAvatar(name: me.name, email: me.email, userId: me.id, avatarUrl: me.avatarUrl, size: 34)
+            }
             TextField(language.t("videoPlayerSheet.commentPlaceholder"), text: $commentText)
                 .textFieldStyle(.roundedBorder)
                 .focused($commentFieldFocused)
@@ -502,6 +563,39 @@ struct VideoPlayerSheet: View {
             frameJustSaved = false
         } catch {
             errorMessage = language.t("videoPlayerSheet.frameSaveFailed")
+        }
+    }
+
+    /// 2026-08-09, Lino: "es braucht noch einen video download button" —
+    /// downloads the full video file (not just the current frame, see
+    /// saveCurrentFrame above) to Photos. Same permission gate/flow shape
+    /// as saveCurrentFrame; `creationRequestForAssetFromVideo(atFileURL:)`
+    /// is the video counterpart of that function's own
+    /// `creationRequestForAsset(from: UIImage)` — both real, long-stable
+    /// Photos APIs (iOS 9+). Downloads to a plain temp file first (Photos
+    /// needs a real file URL, not a stream) and cleans it up either way.
+    private func downloadVideo() async {
+        guard let urlString = version.playbackUrl, let remoteURL = URL(string: urlString), !downloadingVideo else { return }
+        downloadingVideo = true
+        defer { downloadingVideo = false }
+        let tmpURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("mp4")
+        defer { try? FileManager.default.removeItem(at: tmpURL) }
+        do {
+            let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            guard status == .authorized || status == .limited else {
+                errorMessage = language.t("videoPlayerSheet.photoLibraryDenied")
+                return
+            }
+            let (downloadedURL, _) = try await URLSession.shared.download(from: remoteURL)
+            try FileManager.default.moveItem(at: downloadedURL, to: tmpURL)
+            try await PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: tmpURL)
+            }
+            videoJustSaved = true
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            videoJustSaved = false
+        } catch {
+            errorMessage = language.t("videoPlayerSheet.videoSaveFailed")
         }
     }
 

@@ -63,6 +63,8 @@ extension AppLanguage {
             "todoSidebar.deadlinesTitle": "Postproduction-Deadlines",
             "todoSidebar.deadlinesEmpty": "Keine anstehenden Deadlines.",
             "todoSidebar.markDone": "Als erledigt markieren",
+            "todoSidebar.openCommentsTitle": "Offene Kommentare",
+            "todoSidebar.openCommentsEmpty": "Keine offenen Kommentare.",
         ],
         "en": [
             "emojiPickerField.searchPlaceholder": "Search…",
@@ -97,6 +99,8 @@ extension AppLanguage {
             "todoSidebar.deadlinesTitle": "Postproduction Deadlines",
             "todoSidebar.deadlinesEmpty": "No upcoming deadlines.",
             "todoSidebar.markDone": "Mark as done",
+            "todoSidebar.openCommentsTitle": "Open comments",
+            "todoSidebar.openCommentsEmpty": "No open comments.",
         ],
     ]
 }

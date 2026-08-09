@@ -22,7 +22,13 @@ import SwiftUI
 /// drops it from the list once the brief checked-flourish below finishes).
 struct TodoSidebarSheet: View {
     @ObservedObject var viewModel: ProjectListViewModel
-    var onSelectProject: (Project) -> Void
+    /// 2026-08-09 (#34) — widened from a plain `(Project) -> Void` to also
+    /// carry an optional entityKind/entityId, same shape NotificationsSheet's
+    /// own selection callback already uses, so tapping an open-comment row
+    /// (see openCommentRow below) can deep-link straight to that idea/scene
+    /// instead of just landing on the project's default view. Existing
+    /// deadline/todo rows keep passing nil/nil, unchanged behavior.
+    var onSelectProject: (Project, String?, String?) -> Void
     @ObservedObject private var language = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
     /// 2026-08-06, Lino: "wenn man in der todoliste was abhackt, soll es mit
@@ -40,10 +46,10 @@ struct TodoSidebarSheet: View {
     /// project is also present in the ALREADY-LOADED root projects list
     /// (cross-project data can point at a project filed in a folder that
     /// hasn't been fetched here), same conservative behavior as the bell.
-    private func selectProject(id: String) {
+    private func selectProject(id: String, entityKind: String? = nil, entityId: String? = nil) {
         if let project = viewModel.projects.first(where: { $0.id == id }) {
             dismiss()
-            onSelectProject(project)
+            onSelectProject(project, entityKind, entityId)
         }
     }
 
@@ -67,6 +73,21 @@ struct TodoSidebarSheet: View {
                         }
                     } else {
                         Text(language.t("todoSidebar.myTodosEmpty"))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                // 2026-08-09 (#34), Lino: "Kommentare die in der Ideenseite
+                // gemacht wurden und noch offen sind, sollen auch in der
+                // Todoliste... angezeigt werden, das gleiche bei offenen
+                // Kommentaren auf der Szenenseite" — third, independent
+                // feed, same shape as web's TodoSidebar.tsx.
+                Section(language.t("todoSidebar.openCommentsTitle")) {
+                    if let comments = viewModel.todoSidebarData?.openComments, !comments.isEmpty {
+                        ForEach(comments) { comment in
+                            openCommentRow(comment)
+                        }
+                    } else {
+                        Text(language.t("todoSidebar.openCommentsEmpty"))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -193,6 +214,33 @@ struct TodoSidebarSheet: View {
         .padding(.vertical, 3)
         .animation(.easeInOut(duration: 0.2), value: isChecking)
         .listRowBackground(Self.urgencyBackground(urgency))
+    }
+
+    /// 2026-08-09 (#34) — mirrors web's open-comment row in TodoSidebar.tsx:
+    /// entity title, client/project line, author+preview, pipeline badge.
+    /// No urgency background (a comment has no due date to be urgent about).
+    @ViewBuilder
+    private func openCommentRow(_ comment: OpenCommentTodo) -> some View {
+        Button {
+            selectProject(id: comment.projectId, entityKind: comment.kind, entityId: comment.entityId)
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(comment.entityTitle)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                Self.clientProjectLine(comment.projectClientName, comment.projectName, comment.projectColor)
+                (Text(comment.authorName).font(.footnote.weight(.semibold)) + Text(": \(comment.commentPreview)").font(.footnote))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                HStack {
+                    PipelineBadge(stage: comment.pipelineStage)
+                    Spacer()
+                }
+                .padding(.top, 1)
+            }
+            .padding(.vertical, 3)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Urgency (ported from TodoSidebar.tsx's dueUrgency/urgencyRowClass)

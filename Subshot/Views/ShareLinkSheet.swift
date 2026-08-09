@@ -157,16 +157,35 @@ struct ShareLinkSheet: View {
             hasPassword = result.has_password
             isProtecting = result.has_password
         } catch {
-            // 2026-07-27, Todoist #356 — get_or_create_share_link returns a
-            // structured {"error":"ideas_not_internally_reviewed"} 409 when
-            // kind=="ideas" and not every open idea has gone through the
-            // internal PL/Admin review gate yet. This client (unlike the
-            // web app's api.ts) doesn't parse the JSON body anywhere, so
-            // matching the raw substring here is the minimal fix rather
-            // than reworking APIError's shared error-handling.
-            if case APIError.server(status: 409, message: let raw) = error, raw.contains("ideas_not_internally_reviewed") {
+            // 2026-07-30, Todoist #389 — get_or_create_share_link returns a
+            // structured {"error":"no_ideas_internally_reviewed"} 409 when
+            // kind=="ideas" and NOT A SINGLE idea has been internally
+            // approved yet (narrower than the original #356 gate this used
+            // to match against, "ideas_not_internally_reviewed" — that
+            // string was renamed backend-side on 2026-07-30 and iOS never
+            // followed, so this substring check silently stopped matching
+            // and fell through to the generic branch below, showing the
+            // raw `{"error":"no_ideas_internally_reviewed",...}` JSON as
+            // the alert text instead of a formatted message — exactly what
+            // Lino reported 2026-08-09, "diese meldung ist in der ios app
+            // noch ein fehler code"). This client (unlike the web app's
+            // api.ts) doesn't parse the JSON body anywhere, so matching the
+            // raw substring here is still the minimal fix rather than
+            // reworking APIError's shared error-handling.
+            if case APIError.server(status: 409, message: let raw) = error, raw.contains("no_ideas_internally_reviewed") {
                 isInternalReviewGateError = true
                 errorMessage = language.t("shareLinkSheet.notAllInternallyReviewed")
+            } else if case APIError.server(status: 409, message: let raw) = error, raw.contains("open_idea_comments_exist") {
+                // 2026-08-09, Lino: "sind hier noch kommentare offen und
+                // will man preview link teilen, ist dies nicht möglich...
+                // erst wenn alle kommentare abgehackt oder gelöscht wurden
+                // kann man wieder teilen (der normale feedback runden
+                // ablauf)" — new backend gate, SEPARATE from the internal-
+                // review one above (see get_or_create_share_link's own doc
+                // comment), same isInternalReviewGateError alert-title
+                // treatment (a blocking precondition, not a real error).
+                isInternalReviewGateError = true
+                errorMessage = language.t("shareLinkSheet.openCommentsExist")
             } else {
                 isInternalReviewGateError = false
                 errorMessage = error.localizedDescription

@@ -93,6 +93,18 @@ enum IdeaSlashOption: Identifiable, CaseIterable {
 final class IdeaSlashEditorController: ObservableObject {
     @Published var text: String
     @Published var pendingSlashOptions: [IdeaSlashOption]?
+    /// 2026-08-09, Lino: "der / dialog muss direkt immer über dem gerade
+    /// getippten / kommen" — the caret's own rect at the moment "/" was
+    /// typed, converted to WINDOW coordinates (`convert(_:to: nil)`), set
+    /// alongside `pendingSlashOptions` in shouldChange below. IdeaEditSheet
+    /// anchors a real SwiftUI `.popover` to this point instead of the old
+    /// screen-bottom `.confirmationDialog` (see this file's own top-of-file
+    /// doc comment for why a floating popup was originally avoided — still
+    /// true that this is more surface area than the plain sheet, kept as
+    /// small as possible by only computing ONE rect via a UIKit API that
+    /// already exists for exactly this, `caretRect(for:)`, rather than any
+    /// hand-rolled glyph-position math).
+    @Published var slashAnchorPoint: CGPoint?
     weak var textView: UITextView?
     /// Fires after every committed change (typed characters AND this
     /// controller's own marker/end-marker insertions) — IdeaEditSheet
@@ -300,6 +312,17 @@ final class IdeaSlashEditorController: ObservableObject {
             // mirrors web's own "delete the triggering / immediately
             // before the caret" step in confirmSlash.
             slashTriggerRange = NSRange(location: range.location, length: 1)
+            // Caret rect for the position the "/" is ABOUT to be inserted
+            // at (range.location, still valid pre-insertion) — exactly
+            // where the character will appear, converted from the
+            // UITextView's own coordinate space to window coordinates so
+            // it survives being read from a totally different SwiftUI view
+            // (IdeaEditSheet's popover anchor) later.
+            if let uiPos = textView.position(from: textView.beginningOfDocument, offset: range.location) {
+                let caretRect = textView.caretRect(for: uiPos)
+                let windowRect = textView.convert(caretRect, to: nil)
+                slashAnchorPoint = CGPoint(x: windowRect.midX, y: windowRect.minY)
+            }
             pendingSlashOptions = options
             return true
         }
@@ -353,6 +376,7 @@ final class IdeaSlashEditorController: ObservableObject {
         guard let textView, let triggerRange = slashTriggerRange else { return }
         pendingSlashOptions = nil
         slashTriggerRange = nil
+        slashAnchorPoint = nil
         switch option {
         case .scene, .intermediate:
             let insertion = "\(option.markerLine)\n"
@@ -375,6 +399,7 @@ final class IdeaSlashEditorController: ObservableObject {
     func cancelSlash() {
         pendingSlashOptions = nil
         slashTriggerRange = nil
+        slashAnchorPoint = nil
     }
 
     // MARK: - close/continuation mutation helpers

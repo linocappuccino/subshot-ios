@@ -37,6 +37,11 @@ struct SceneEditSheet: View {
     @State private var name: String
     @State private var color: String
     @State private var description: String
+    /// 2026-08-09 (#36) — owns the description text's slash-command state
+    /// machine (see SceneSlashTextEditor.swift); `description` above stays
+    /// the source of truth `onSave` reads from, kept in sync via
+    /// descriptionSlashController.onTextChanged (set in .onAppear below).
+    @StateObject private var descriptionSlashController: SceneSlashEditorController
     @State private var hasDate: Bool
     @State private var scheduledDate: Date
     @State private var durationMinutes: Int?
@@ -118,6 +123,7 @@ struct SceneEditSheet: View {
         _name = State(initialValue: existing?.name ?? "")
         _color = State(initialValue: existing?.color ?? Color.subshotPalette[0])
         _description = State(initialValue: existing?.description ?? "")
+        _descriptionSlashController = StateObject(wrappedValue: SceneSlashEditorController(initialText: existing?.description ?? ""))
         _displayedImageUrl = State(initialValue: existing?.imageUrl)
         _hasDate = State(initialValue: existing?.scheduledAt != nil)
         // A brand-new scene defaults its start time to right when the
@@ -417,9 +423,17 @@ struct SceneEditSheet: View {
                     }
                 }
                 Section(language.t("sceneEditSheet.descriptionSection")) {
-                    TextField(language.t("sceneEditSheet.descriptionPlaceholder"), text: $description, axis: .vertical)
-                        .lineLimit(3...6)
-                        .onChange(of: description) { _, _ in scheduleAutosave() }
+                    // 2026-08-09 (#36) — was a plain TextField; "/" now
+                    // offers the same Dialog/Titel/Beschreibung slash-menu
+                    // the Ideen-Kachel already has (see
+                    // SceneSlashTextEditor.swift's own doc comment for why
+                    // this is a separate, simpler controller rather than
+                    // reusing IdeaSlashEditorController directly).
+                    SceneSlashTextEditor(controller: descriptionSlashController, isEditable: true)
+                        .frame(minHeight: 100, maxHeight: 180)
+                    Text(language.t("sceneEditSheet.slashHint"))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
 
                 if !isIntermediateStep {
@@ -641,6 +655,50 @@ struct SceneEditSheet: View {
             }
         }
         .preferredColorScheme(.dark)
+        .onAppear {
+            descriptionSlashController.onTextChanged = {
+                description = descriptionSlashController.text
+                scheduleAutosave()
+            }
+        }
+        // 2026-08-09 (#36) — same caret-anchored `.popover` technique as
+        // IdeaEditSheet's own slash-menu (see that file's doc comment for
+        // why a floating popup, not a screen-bottom .confirmationDialog).
+        .overlay {
+            GeometryReader { proxy in
+                let globalOrigin = proxy.frame(in: .global).origin
+                let anchor = descriptionSlashController.slashAnchorPoint ?? CGPoint(x: globalOrigin.x, y: globalOrigin.y)
+                Color.clear
+                    .frame(width: 1, height: 1)
+                    .position(x: anchor.x - globalOrigin.x, y: anchor.y - globalOrigin.y)
+                    .popover(
+                        isPresented: Binding(
+                            get: { descriptionSlashController.pendingSlashOptions != nil },
+                            set: { if !$0 { descriptionSlashController.cancelSlash() } }
+                        ),
+                        arrowEdge: .top
+                    ) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(descriptionSlashController.pendingSlashOptions ?? []) { option in
+                                Button {
+                                    descriptionSlashController.confirm(option)
+                                } label: {
+                                    Text("\(option.icon) \(option.label)")
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                                if option.id != descriptionSlashController.pendingSlashOptions?.last?.id {
+                                    Divider()
+                                }
+                            }
+                        }
+                        .frame(minWidth: 200)
+                        .presentationCompactAdaptation(.popover)
+                    }
+            }
+            .allowsHitTesting(false)
+        }
         .sheet(item: $editingShot) { shot in
             ShotDetailSheet(shot: shot, viewModel: viewModel)
         }

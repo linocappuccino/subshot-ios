@@ -151,6 +151,14 @@ extension AppLanguage {
             "videoPlayerSheet.frameSaved": "Frame gespeichert",
             "videoPlayerSheet.frameSaveFailed": "Frame konnte nicht gespeichert werden.",
             "videoPlayerSheet.photoLibraryDenied": "Kein Zugriff auf Fotos — in den Einstellungen erlauben.",
+            // 2026-08-09 — short caption under the frame/video download
+            // buttons (see saveFrameButton/videoDownloadButton's own doc
+            // comments for why a text label, not just an icon).
+            "videoPlayerSheet.saveFrameShort": "Bild",
+            "videoPlayerSheet.saveVideo": "Video herunterladen",
+            "videoPlayerSheet.saveVideoShort": "Video",
+            "videoPlayerSheet.videoSaved": "Video gespeichert",
+            "videoPlayerSheet.videoSaveFailed": "Video konnte nicht gespeichert werden.",
 
             // NotificationsSheet.swift
             "notificationsSheet.empty": "Keine neuen Benachrichtigungen",
@@ -302,6 +310,11 @@ extension AppLanguage {
             "videoPlayerSheet.frameSaved": "Frame saved",
             "videoPlayerSheet.frameSaveFailed": "Could not save frame.",
             "videoPlayerSheet.photoLibraryDenied": "No access to Photos — allow it in Settings.",
+            "videoPlayerSheet.saveFrameShort": "Photo",
+            "videoPlayerSheet.saveVideo": "Download video",
+            "videoPlayerSheet.saveVideoShort": "Video",
+            "videoPlayerSheet.videoSaved": "Video saved",
+            "videoPlayerSheet.videoSaveFailed": "Could not save video.",
 
             // NotificationsSheet.swift
             "notificationsSheet.empty": "No new notifications",

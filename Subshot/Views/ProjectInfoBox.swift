@@ -20,6 +20,9 @@ struct SectionInfoBox: View {
     @State private var isExpanded = false
     @State private var showingTeamSheet = false
     @State private var showingDeleteConfirm = false
+    /// 2026-08-09 (#27) — see peopleSection's own doc comment below.
+    @State private var infoMembers: [InfoMember] = []
+    @State private var showingInfoMemberPicker = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -67,6 +70,12 @@ struct SectionInfoBox: View {
         }) {
             TeamSheet(projectId: projectId)
         }
+        .sheet(isPresented: $showingInfoMemberPicker) {
+            InfoMemberPickerSheet(projectId: projectId, members: viewModel.members, infoMembers: $infoMembers)
+        }
+        .task(id: projectId) {
+            infoMembers = (try? await APIClient.shared.infoMembers(projectId: projectId)) ?? []
+        }
         .confirmationDialog(language.t("projectInfoBox.deleteConfirmTitle"), isPresented: $showingDeleteConfirm, titleVisibility: .visible) {
             Button(language.t("common.delete"), role: .destructive) {
                 Task { await viewModel.removeSectionProjectInfo(section) }
@@ -110,22 +119,26 @@ struct SectionInfoBox: View {
         }
     }
 
-    /// Same as ProjectInfoBox.peopleSection — reuses the project's member
-    /// list (Team/membership is project-wide, not per shoot day) rather than
-    /// duplicating the exact same list from the viewModel; only the
-    /// invite-someone entry point (Team sheet) is shared too.
+    /// 2026-08-09 (#27), Lino: "soll in den Projektinfos nur immer der
+    /// Ersteller drin sein, hier kann man dann als Info mehrere Personen
+    /// hinzufügen" — was every ProjectMember (viewModel.members); now only
+    /// the creator + explicitly added info members (infoMembers, fetched in
+    /// .task above) render here. "+" opens InfoMemberPickerSheet (a
+    /// checklist built from viewModel.members) instead of jumping straight
+    /// to TeamSheet — that invite flow is still reachable, just not from
+    /// this "+" anymore (same as web's separate "Verwalten" button).
     private var peopleSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(language.t("projectInfoBox.peopleLabel"), systemImage: "person.2")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
             HStack(spacing: -8) {
-                ForEach(viewModel.members) { member in
-                    MemberAvatar(member: member, size: 44)
+                ForEach(infoMembers) { member in
+                    MemberAvatar(name: member.name, email: member.email, userId: member.userId, avatarUrl: member.avatarUrl, size: 44)
                         .overlay(Circle().stroke(Color(.secondarySystemGroupedBackground), lineWidth: 2))
                 }
                 Button {
-                    showingTeamSheet = true
+                    showingInfoMemberPicker = true
                 } label: {
                     Image(systemName: "plus")
                         .font(.title3.weight(.bold))
@@ -167,6 +180,9 @@ struct SceneProjectInfoTile: View {
 
     @State private var isExpanded = false
     @State private var showingTeamSheet = false
+    /// 2026-08-09 (#27) — see peopleSection's own doc comment below.
+    @State private var infoMembers: [InfoMember] = []
+    @State private var showingInfoMemberPicker = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -216,6 +232,12 @@ struct SceneProjectInfoTile: View {
         }) {
             TeamSheet(projectId: projectId)
         }
+        .sheet(isPresented: $showingInfoMemberPicker) {
+            InfoMemberPickerSheet(projectId: projectId, members: viewModel.members, infoMembers: $infoMembers)
+        }
+        .task(id: projectId) {
+            infoMembers = (try? await APIClient.shared.infoMembers(projectId: projectId)) ?? []
+        }
     }
 
     private var header: some View {
@@ -240,20 +262,20 @@ struct SceneProjectInfoTile: View {
         .buttonStyle(.plain)
     }
 
-    /// Same as SectionInfoBox.peopleSection — reuses the project's member
-    /// list rather than duplicating it.
+    /// 2026-08-09 (#27) — see SectionInfoBox.peopleSection's own doc
+    /// comment (same change, same shape).
     private var peopleSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(language.t("projectInfoBox.peopleLabel"), systemImage: "person.2")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
             HStack(spacing: -8) {
-                ForEach(viewModel.members) { member in
-                    MemberAvatar(member: member, size: 44)
+                ForEach(infoMembers) { member in
+                    MemberAvatar(name: member.name, email: member.email, userId: member.userId, avatarUrl: member.avatarUrl, size: 44)
                         .overlay(Circle().stroke(Color(.secondarySystemGroupedBackground), lineWidth: 2))
                 }
                 Button {
-                    showingTeamSheet = true
+                    showingInfoMemberPicker = true
                 } label: {
                     Image(systemName: "plus")
                         .font(.title3.weight(.bold))
@@ -282,6 +304,9 @@ struct ProjectInfoBox: View {
 
     @State private var isExpanded = false
     @State private var showingTeamSheet = false
+    /// 2026-08-09 (#27) — see peopleSection's own doc comment below.
+    @State private var infoMembers: [InfoMember] = []
+    @State private var showingInfoMemberPicker = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -328,6 +353,12 @@ struct ProjectInfoBox: View {
         }) {
             TeamSheet(projectId: projectId)
         }
+        .sheet(isPresented: $showingInfoMemberPicker) {
+            InfoMemberPickerSheet(projectId: projectId, members: viewModel.members, infoMembers: $infoMembers)
+        }
+        .task(id: projectId) {
+            infoMembers = (try? await APIClient.shared.infoMembers(projectId: projectId)) ?? []
+        }
     }
 
     private var header: some View {
@@ -352,17 +383,24 @@ struct ProjectInfoBox: View {
         .buttonStyle(.plain)
     }
 
+    /// 2026-08-09 (#27) — see SectionInfoBox.peopleSection's own doc
+    /// comment (same change, same shape). Uses MemberAvatar directly
+    /// instead of the initialsCircle(Member) helper below, since
+    /// InfoMember isn't a Member (no role) — initialsCircle stays in place
+    /// unused-here, other call sites of THIS struct don't exist, but
+    /// keeping it doesn't hurt and avoids an unrelated diff.
     private var peopleSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(language.t("projectInfoBox.peopleLabel"), systemImage: "person.2")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
             HStack(spacing: -8) {
-                ForEach(viewModel.members) { member in
-                    initialsCircle(member)
+                ForEach(infoMembers) { member in
+                    MemberAvatar(name: member.name, email: member.email, userId: member.userId, avatarUrl: member.avatarUrl, size: 44)
+                        .overlay(Circle().stroke(Color(.secondarySystemGroupedBackground), lineWidth: 2))
                 }
                 Button {
-                    showingTeamSheet = true
+                    showingInfoMemberPicker = true
                 } label: {
                     Image(systemName: "plus")
                         .font(.title3.weight(.bold))
@@ -898,5 +936,86 @@ private struct TodoItemRow: View {
         MemberAvatar(member: member, size: 32)
             .frame(width: 44, height: 44)
             .contentShape(Rectangle())
+    }
+}
+
+/// 2026-08-09 (#27), Lino: "soll in den Projektinfos nur immer der
+/// Ersteller drin sein, hier kann man dann als Info mehrere Personen
+/// hinzufügen" — shared checklist sheet used by all three Projektinfo
+/// variants above (ProjectInfoBox/SectionInfoBox/SceneProjectInfoTile all
+/// show the SAME project-wide info-member roster, Team-Mitgliedschaft ist
+/// projektweit not per-shoot-day, same reasoning their existing
+/// peopleSection doc comments already give for sharing `viewModel.members`).
+/// Picks from `members` (the project's full editor/projektleiter/owner
+/// roster, already loaded by the caller) — no separate email-invite flow
+/// needed for this, mirrors the backend's own "who can be added" trust
+/// level (see add_project_info_member's doc comment in main.py).
+struct InfoMemberPickerSheet: View {
+    let projectId: String
+    let members: [Member]
+    @Binding var infoMembers: [InfoMember]
+    @ObservedObject private var language = AppLanguage.shared
+    @Environment(\.dismiss) private var dismiss
+    @State private var errorMessage: String?
+
+    private var infoMemberIds: Set<String> { Set(infoMembers.map(\.userId)) }
+    private var pickableMembers: [Member] { members.filter { $0.role != "owner" } }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if pickableMembers.isEmpty {
+                    Text(language.t("projectInfoBox.noOtherMembers"))
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(pickableMembers) { member in
+                        Button {
+                            Task { await toggle(member) }
+                        } label: {
+                            HStack {
+                                MemberAvatar(member: member, size: 32)
+                                Text(member.name?.isEmpty == false ? member.name! : member.email)
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                if infoMemberIds.contains(member.userId) {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(Color.accentColor)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle(language.t("projectInfoBox.peopleLabel"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(language.t("common.done")) { dismiss() }
+                }
+            }
+            .alert(language.t("common.error"), isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(errorMessage ?? "")
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private func toggle(_ member: Member) async {
+        do {
+            if infoMemberIds.contains(member.userId) {
+                try await APIClient.shared.removeInfoMember(projectId: projectId, userId: member.userId)
+                infoMembers.removeAll { $0.userId == member.userId }
+            } else {
+                let added = try await APIClient.shared.addInfoMember(projectId: projectId, userId: member.userId)
+                infoMembers.append(added)
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }

@@ -1045,6 +1045,25 @@ final class APIClient {
         try await sendNoContent(req)
     }
 
+    // 2026-08-09 (#27) — separate roster from members() above, see
+    // InfoMember's own doc comment in Models.swift.
+    func infoMembers(projectId: String) async throws -> [InfoMember] {
+        let req = try await authorizedRequest("projects/\(projectId)/info-members")
+        return try await send(req)
+    }
+
+    func addInfoMember(projectId: String, userId: String) async throws -> InfoMember {
+        var req = try await authorizedRequest("projects/\(projectId)/info-members", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try encoder.encode(["user_id": userId])
+        return try await send(req)
+    }
+
+    func removeInfoMember(projectId: String, userId: String) async throws {
+        let req = try await authorizedRequest("projects/\(projectId)/info-members/\(userId)", method: "DELETE")
+        try await sendNoContent(req)
+    }
+
     // MARK: - Todo lists
 
     func createTodoList(projectId: String, name: String, sortOrder: Int) async throws -> TodoList {

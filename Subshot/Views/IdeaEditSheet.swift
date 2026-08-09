@@ -347,34 +347,66 @@ struct IdeaEditSheet: View {
             .sheet(isPresented: $showGeneratePopup) {
                 ideaGeneratePopup
             }
-            // 2026-07-21, #277 — the slash-menu itself: a plain
-            // .confirmationDialog rather than a floating popup positioned
-            // at the caret (see IdeaSlashTextEditor's own top-of-file doc
-            // comment for why). Dismissing without picking an option
-            // (swipe-down/tap-outside) also routes through
-            // slashController.cancelSlash() via the isPresented setter,
-            // same as tapping "Abbrechen" — matches web's Escape behavior
-            // of just closing the menu, the already-typed "/" stays put.
-            // 2026-07-22 — option.label/option.icon are the marker text
-            // itself (IdeaSlashOption.markerLine embeds them verbatim, must
-            // match the backend's regex constants exactly, see
-            // IdeaSlashTextEditor.swift's top-of-file doc comment) —
-            // deliberately left untranslated, same reasoning as web's
-            // RichTextEditor slash-menu marker labels.
-            .confirmationDialog(
-                language.t("ideaEditSheet.insertDialogTitle"),
-                isPresented: Binding(
-                    get: { slashController.pendingSlashOptions != nil },
-                    set: { if !$0 { slashController.cancelSlash() } }
-                ),
-                titleVisibility: .visible
-            ) {
-                ForEach(slashController.pendingSlashOptions ?? []) { option in
-                    Button("\(option.icon) \(option.label)") {
-                        slashController.confirm(option)
-                    }
+            // 2026-08-09, Lino: "der / dialog muss direkt immer über dem
+            // gerade getippten / kommen" — replaces the old screen-bottom
+            // `.confirmationDialog` (see IdeaSlashTextEditor's own
+            // top-of-file doc comment for why that was the original,
+            // deliberately-simpler choice) with a real `.popover` anchored
+            // to a 1pt marker positioned at `slashController.slashAnchorPoint`
+            // (window coordinates, set the instant "/" is typed — see that
+            // property's own doc comment). `arrowEdge: .top` makes SwiftUI
+            // place the popover ABOVE the anchor with its arrow pointing
+            // down at it; `.presentationCompactAdaptation(.popover)` forces
+            // true popover behavior on iPhone (same technique
+            // EmojiPickerField already uses) instead of iOS's default
+            // "popover on compact width becomes a full sheet" adaptation,
+            // which would put it right back to a screen-bottom sheet.
+            // Dismissing without picking an option (tap-outside) still
+            // routes through slashController.cancelSlash() via the
+            // isPresented setter, matching web's Escape behavior of just
+            // closing the menu with the already-typed "/" left in place.
+            .overlay {
+                GeometryReader { proxy in
+                    let globalOrigin = proxy.frame(in: .global).origin
+                    let anchor = slashController.slashAnchorPoint ?? CGPoint(x: globalOrigin.x, y: globalOrigin.y)
+                    Color.clear
+                        .frame(width: 1, height: 1)
+                        .position(x: anchor.x - globalOrigin.x, y: anchor.y - globalOrigin.y)
+                        .popover(
+                            isPresented: Binding(
+                                get: { slashController.pendingSlashOptions != nil },
+                                set: { if !$0 { slashController.cancelSlash() } }
+                            ),
+                            arrowEdge: .top
+                        ) {
+                            // 2026-07-22 — option.label/option.icon are the
+                            // marker text itself (IdeaSlashOption.markerLine
+                            // embeds them verbatim, must match the backend's
+                            // regex constants exactly, see
+                            // IdeaSlashTextEditor.swift's top-of-file doc
+                            // comment) — deliberately left untranslated,
+                            // same reasoning as web's RichTextEditor
+                            // slash-menu marker labels.
+                            VStack(alignment: .leading, spacing: 0) {
+                                ForEach(slashController.pendingSlashOptions ?? []) { option in
+                                    Button {
+                                        slashController.confirm(option)
+                                    } label: {
+                                        Text("\(option.icon) \(option.label)")
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                    if option.id != slashController.pendingSlashOptions?.last?.id {
+                                        Divider()
+                                    }
+                                }
+                            }
+                            .frame(minWidth: 200)
+                            .presentationCompactAdaptation(.popover)
+                        }
                 }
-                Button(language.t("ideaEditSheet.cancelButton"), role: .cancel) { slashController.cancelSlash() }
+                .allowsHitTesting(false)
             }
         }
         .fullScreenCover(item: $enlargedImage) { image in

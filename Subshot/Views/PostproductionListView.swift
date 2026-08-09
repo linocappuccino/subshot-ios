@@ -742,7 +742,9 @@ private struct PostproductionVideoTile: View {
         // room to breathe — every footer text bumped one step up from the
         // 2-column sizes above (subheadline->headline, caption->subheadline,
         // caption2->caption), padding 8->12, status dot 7->9.
-        VStack(alignment: .leading, spacing: 8) {
+        // 2026-08-09, Lino: "gib allen elementen ein wenig mehr platz
+        // vertikal" — 8 -> 12 between rows, outer padding 12 -> 14.
+        VStack(alignment: .leading, spacing: 12) {
             thumbnail
             if let video {
                 HStack(spacing: 6) {
@@ -771,9 +773,16 @@ private struct PostproductionVideoTile: View {
                 // pattern iOS apps like Photos/Files/Reminders use, and the
                 // same silhouette web's own Pill/VideoTileEditorPicker
                 // capsules converged on independently.
+                // 2026-08-09, Lino: "status rechtsbündig auf der rechten
+                // Seite" + "editor auf die linke Seite und links bündig" —
+                // was a plain leading HStack with both pills bunched
+                // together; editorPill now anchors the row's leading edge,
+                // a Spacer pushes statusPill all the way to the trailing
+                // edge.
                 HStack(spacing: 8) {
-                    statusPill
                     editorPill
+                    Spacer(minLength: 8)
+                    statusPill
                 }
                 if canEditTitleAndDeadline {
                     Toggle(language.t("postproductionListView.deadlineLabel"), isOn: Binding(
@@ -803,15 +812,18 @@ private struct PostproductionVideoTile: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(12)
+        .padding(14)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
         // 2026-08-05, Lino: "den glow nehmen wir hier ganz weg" — removes
         // the #321 per-status shadow glow entirely (the small status dot
         // above, statusColor's other use, stays).
-        .confirmationDialog(
+        // 2026-08-09, Lino: "dieser [Lösch-Dialog] muss immer in der Mitte
+        // des Screens auftauchen" — `.confirmationDialog` renders as a
+        // bottom action sheet on iPhone, not centered; `.alert` is SwiftUI's
+        // centered-on-screen dialog style, same button/role shape otherwise.
+        .alert(
             language.t("postproductionListView.deleteVideo"),
-            isPresented: $showingDeleteConfirm,
-            titleVisibility: .visible
+            isPresented: $showingDeleteConfirm
         ) {
             Button(language.t("common.delete"), role: .destructive) {
                 onDeleteVideo()

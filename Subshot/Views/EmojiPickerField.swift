@@ -155,8 +155,18 @@ struct EmojiPickerField: View {
     /// height-starved the same way since it scrolls vertically instead.
     private var emojiPopover: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // 2026-08-09, Lino: "das suchen textfeld muss auch abgerundete
+            // kanten haben wie die emojikachel darum" — the default
+            // `.roundedBorder` style draws only a thin, barely-rounded
+            // system border; swapped for an explicit filled RoundedRectangle
+            // (same cornerRadius as this popover's own tile-style surfaces
+            // elsewhere in the app, e.g. AsyncShotThumbnail's 10pt) so the
+            // search field visually matches the picker chrome around it.
             TextField(language.t("emojiPickerField.searchPlaceholder"), text: $query)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 10))
                 .autocorrectionDisabled()
 
             ScrollView(.vertical, showsIndicators: true) {
