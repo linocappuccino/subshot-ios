@@ -182,6 +182,14 @@ struct ShotListView: View {
     /// SceneMarker's own doc comment in Models.swift). `isSendingMarker`
     /// guards against a double-tap firing two POSTs; `markerFeedback` is a
     /// brief self-clearing confirmation flash, same shape as a toast.
+    /// 2026-08-29, Lino: "Bevor man die Funktion nutzen kann muss man oben
+    /// zuerst die Framerate eingeben/auswählen, erst dann ist die Funktion
+    /// verfügbar" — nil until picked via the "Set Framerate" menu button;
+    /// gates both the running timecode display AND markClipBar (see body's
+    /// `.overlay(alignment: .bottom)`). Not persisted across app launches
+    /// on purpose — a fresh shoot day should re-confirm the fps rather than
+    /// silently reuse a stale one.
+    @State private var selectedFPS: Int?
     @State private var isSendingMarker = false
     @State private var markerFeedback: String?
     @State private var isExportingEDL = false
@@ -644,7 +652,12 @@ struct ShotListView: View {
         // (top, via safeAreaInset below). See timecodeBar/markClipBar's own
         // doc comments.
         .overlay(alignment: .bottom) {
-            if activeWorkflowSection == .scripting {
+            // Set-Marker is gated on selectedFPS being chosen first (Lino:
+            // "Bevor man die Funktion nutzen kann muss man oben zuerst die
+            // Framerate eingeben/auswählen, erst dann ist die Funktion
+            // verfügbar") — timecodeBar's own "Set Framerate" menu is what
+            // sets it.
+            if activeWorkflowSection == .scripting, selectedFPS != nil {
                 markClipBar
             }
         }
@@ -1110,20 +1123,20 @@ struct ShotListView: View {
         .presentationCompactAdaptation(.popover)
     }
 
-    /// 2026-08-29 — fixed to 25 (EU/CH standard) rather than a per-project
-    /// setting; see SceneMarker's own doc comment in Models.swift for why
-    /// this must match whatever fps the EASY_DAVINCI "Timeline aus Markern"
-    /// button creates its new timeline at.
-    private static let markerFPS = 25
+    /// 2026-08-29 — common integer frame rates only (no drop-frame
+    /// 23.976/29.97/59.94 fractional rates) — this is an on-set logging
+    /// tool, not a precision NLE timecode reader, and integer fps keeps
+    /// formatTimecode's frame math trivial/verifiable without a compiler.
+    private static let fpsPresets = [24, 25, 30, 50, 60]
 
     /// Time-of-Day, HH:MM:SS:FF — always the device's own clock, never
     /// "seconds since something started" (see SceneMarker's doc comment).
-    private func formatTimecode(_ date: Date) -> String {
+    /// `fps` is now Lino-chosen per session (see selectedFPS), not a fixed
+    /// constant — sent to the backend per-marker (SceneMarker.fps already
+    /// supported this from the start) so a mixed-fps history stays honest.
+    private func formatTimecode(_ date: Date, fps: Int) -> String {
         let comps = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
-        let frames = min(
-            Self.markerFPS - 1,
-            Int((Double(comps.nanosecond ?? 0) / 1_000_000_000.0) * Double(Self.markerFPS))
-        )
+        let frames = min(fps - 1, Int((Double(comps.nanosecond ?? 0) / 1_000_000_000.0) * Double(fps)))
         return String(format: "%02d:%02d:%02d:%02d", comps.hour ?? 0, comps.minute ?? 0, comps.second ?? 0, frames)
     }
 
@@ -1142,17 +1155,18 @@ struct ShotListView: View {
     }
 
     private func markClip() {
+        guard let fps = selectedFPS else { return }  // button is hidden until set, this is just a safety guard
         guard let section = markerTargetSection else {
             markerErrorMessage = language.t("shotListView.markClipNoSection")
             return
         }
         guard !isSendingMarker else { return }
         isSendingMarker = true
-        let timecode = formatTimecode(Date())
+        let timecode = formatTimecode(Date(), fps: fps)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         Task {
             do {
-                _ = try await APIClient.shared.createSceneMarker(sectionId: section.id, timecode: timecode, fps: Self.markerFPS)
+                _ = try await APIClient.shared.createSceneMarker(sectionId: section.id, timecode: timecode, fps: fps)
                 withAnimation { markerFeedback = "\(language.t("shotListView.markClipSaved")) · \(timecode)" }
                 try? await Task.sleep(nanoseconds: 1_600_000_000)
                 if markerFeedback?.hasSuffix(timecode) == true { withAnimation { markerFeedback = nil } }
@@ -1185,30 +1199,66 @@ struct ShotListView: View {
 
     @ViewBuilder
     private var timecodeBar: some View {
-        TimelineView(.periodic(from: .now, by: 0.1)) { context in
-            HStack(spacing: 10) {
-                Text(formatTimecode(context.date))
-                    .font(.system(.title3, design: .monospaced).weight(.semibold))
-                    .foregroundStyle(.white)
-                    .monospacedDigit()
-                if let section = markerTargetSection {
-                    Text(language.t("shotListView.markClipTarget").replacingOccurrences(of: "{section}", with: section.name))
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.7))
-                        .lineLimit(1)
-                }
-                Spacer()
-                Button {
-                    exportEDL()
-                } label: {
-                    if isExportingEDL {
-                        ProgressView().tint(.white)
-                    } else {
-                        Image(systemName: "square.and.arrow.up")
-                            .foregroundStyle(.white)
+        if let fps = selectedFPS {
+            TimelineView(.periodic(from: .now, by: 0.1)) { context in
+                HStack(spacing: 10) {
+                    Text(formatTimecode(context.date, fps: fps))
+                        .font(.system(.title3, design: .monospaced).weight(.semibold))
+                        .foregroundStyle(.white)
+                        .monospacedDigit()
+                    if let section = markerTargetSection {
+                        Text(language.t("shotListView.markClipTarget").replacingOccurrences(of: "{section}", with: section.name))
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.7))
+                            .lineLimit(1)
                     }
+                    Spacer()
+                    Menu {
+                        ForEach(Self.fpsPresets, id: \.self) { preset in
+                            Button("\(preset) fps") { selectedFPS = preset }
+                        }
+                    } label: {
+                        Text("\(fps) fps")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                    Button {
+                        exportEDL()
+                    } label: {
+                        if isExportingEDL {
+                            ProgressView().tint(.white)
+                        } else {
+                            Image(systemName: "square.and.arrow.up")
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .disabled(isExportingEDL || markerTargetSection == nil)
                 }
-                .disabled(isExportingEDL || markerTargetSection == nil)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.black.opacity(0.75))
+            }
+        } else {
+            HStack(spacing: 10) {
+                Text(language.t("shotListView.setFramerateHint"))
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.7))
+                Spacer()
+                Menu {
+                    ForEach(Self.fpsPresets, id: \.self) { preset in
+                        Button("\(preset) fps") { selectedFPS = preset }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "timer")
+                        Text(language.t("shotListView.setFramerate"))
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(Color.accentColor))
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -1235,7 +1285,7 @@ struct ShotListView: View {
                     if isSendingMarker {
                         ProgressView().tint(.white)
                     } else {
-                        Image(systemName: "film.fill")
+                        Image(systemName: "flag.fill")
                     }
                     Text(language.t("shotListView.markClip"))
                         .font(.headline)
@@ -1243,7 +1293,7 @@ struct ShotListView: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 22)
                 .padding(.vertical, 14)
-                .background(Capsule().fill(Color.accentColor))
+                .background(Capsule().fill(Color.red))
                 .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
             }
             .disabled(isSendingMarker || markerTargetSection == nil)
