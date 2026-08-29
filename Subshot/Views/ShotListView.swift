@@ -178,6 +178,16 @@ struct ShotListView: View {
     /// comment.
     @State private var creatingIntermediateStep = false
     @State private var editingSection: SceneSection??  // same nesting convention as editingScene
+    /// Mark-Clip feature (2026-08-29, on-set timecode markers — see
+    /// SceneMarker's own doc comment in Models.swift). `isSendingMarker`
+    /// guards against a double-tap firing two POSTs; `markerFeedback` is a
+    /// brief self-clearing confirmation flash, same shape as a toast.
+    @State private var isSendingMarker = false
+    @State private var markerFeedback: String?
+    @State private var isExportingEDL = false
+    @State private var edlExportURL: URL?
+    @State private var isPresentingEDLShare = false
+    @State private var markerErrorMessage: String?
     @State private var sectionToDelete: SceneSection?
     /// #11 Schritt 5 — "Alle Szenen im Kasten? Ab in die Postproduction?"
     @State private var sectionToSendToPostproduction: SceneSection?
@@ -629,6 +639,31 @@ struct ShotListView: View {
                 addIdeaButton
             }
         }
+        // 2026-08-29 — Mark Clip (bottom-center, scripting-only, alongside
+        // addSceneButton's bottom-trailing FAB) + the live timecode bar
+        // (top, via safeAreaInset below). See timecodeBar/markClipBar's own
+        // doc comments.
+        .overlay(alignment: .bottom) {
+            if activeWorkflowSection == .scripting {
+                markClipBar
+            }
+        }
+        .safeAreaInset(edge: .top) {
+            if activeWorkflowSection == .scripting {
+                timecodeBar
+            }
+        }
+        .sheet(isPresented: $isPresentingEDLShare) {
+            if let edlExportURL {
+                ActivityView(activityItems: [edlExportURL])
+            }
+        }
+        .alert(isPresented: Binding(
+            get: { markerErrorMessage != nil },
+            set: { if !$0 { markerErrorMessage = nil } }
+        )) {
+            Alert(title: Text(markerErrorMessage ?? ""))
+        }
         .navigationTitle(projectName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -1073,6 +1108,147 @@ struct ShotListView: View {
         }
         .padding()
         .presentationCompactAdaptation(.popover)
+    }
+
+    /// 2026-08-29 — fixed to 25 (EU/CH standard) rather than a per-project
+    /// setting; see SceneMarker's own doc comment in Models.swift for why
+    /// this must match whatever fps the EASY_DAVINCI "Timeline aus Markern"
+    /// button creates its new timeline at.
+    private static let markerFPS = 25
+
+    /// Time-of-Day, HH:MM:SS:FF — always the device's own clock, never
+    /// "seconds since something started" (see SceneMarker's doc comment).
+    private func formatTimecode(_ date: Date) -> String {
+        let comps = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
+        let frames = min(
+            Self.markerFPS - 1,
+            Int((Double(comps.nanosecond ?? 0) / 1_000_000_000.0) * Double(Self.markerFPS))
+        )
+        return String(format: "%02d:%02d:%02d:%02d", comps.hour ?? 0, comps.minute ?? 0, comps.second ?? 0, frames)
+    }
+
+    /// Reuses the same "last opened section" concept new-scene creation
+    /// already relies on (targetSectionIdForNewScene) — a shoot day almost
+    /// always means one open section at a time, so Mark Clip attaches to
+    /// whichever one is currently in view without asking on every tap.
+    /// Falls back to the first section if none's been opened yet this
+    /// session, and to nil (button disabled) only once the project truly
+    /// has no section at all.
+    private var markerTargetSection: SceneSection? {
+        if let key = targetSectionIdForNewScene, let match = viewModel.sections.first(where: { $0.id == key }) {
+            return match
+        }
+        return viewModel.sections.first
+    }
+
+    private func markClip() {
+        guard let section = markerTargetSection else {
+            markerErrorMessage = language.t("shotListView.markClipNoSection")
+            return
+        }
+        guard !isSendingMarker else { return }
+        isSendingMarker = true
+        let timecode = formatTimecode(Date())
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        Task {
+            do {
+                _ = try await APIClient.shared.createSceneMarker(sectionId: section.id, timecode: timecode, fps: Self.markerFPS)
+                withAnimation { markerFeedback = "\(language.t("shotListView.markClipSaved")) · \(timecode)" }
+                try? await Task.sleep(nanoseconds: 1_600_000_000)
+                if markerFeedback?.hasSuffix(timecode) == true { withAnimation { markerFeedback = nil } }
+            } catch {
+                markerErrorMessage = error.localizedDescription
+            }
+            isSendingMarker = false
+        }
+    }
+
+    private func exportEDL() {
+        guard let section = markerTargetSection, !isExportingEDL else { return }
+        isExportingEDL = true
+        Task {
+            do {
+                let edlText = try await APIClient.shared.downloadSceneMarkersEDL(sectionId: section.id)
+                let safeName = section.name.replacingOccurrences(of: "/", with: "-")
+                let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeName).edl")
+                try edlText.write(to: tempURL, atomically: true, encoding: .utf8)
+                edlExportURL = tempURL
+                isPresentingEDLShare = true
+            } catch APIError.server(let status, _) where status == 404 {
+                markerErrorMessage = language.t("shotListView.exportEDLNoMarkers")
+            } catch {
+                markerErrorMessage = language.t("shotListView.exportEDLError")
+            }
+            isExportingEDL = false
+        }
+    }
+
+    @ViewBuilder
+    private var timecodeBar: some View {
+        TimelineView(.periodic(from: .now, by: 0.1)) { context in
+            HStack(spacing: 10) {
+                Text(formatTimecode(context.date))
+                    .font(.system(.title3, design: .monospaced).weight(.semibold))
+                    .foregroundStyle(.white)
+                    .monospacedDigit()
+                if let section = markerTargetSection {
+                    Text(language.t("shotListView.markClipTarget").replacingOccurrences(of: "{section}", with: section.name))
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.7))
+                        .lineLimit(1)
+                }
+                Spacer()
+                Button {
+                    exportEDL()
+                } label: {
+                    if isExportingEDL {
+                        ProgressView().tint(.white)
+                    } else {
+                        Image(systemName: "square.and.arrow.up")
+                            .foregroundStyle(.white)
+                    }
+                }
+                .disabled(isExportingEDL || markerTargetSection == nil)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(.black.opacity(0.75))
+        }
+    }
+
+    @ViewBuilder
+    private var markClipBar: some View {
+        VStack(spacing: 6) {
+            if let markerFeedback {
+                Text(markerFeedback)
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(Color.green.opacity(0.85)))
+                    .foregroundStyle(.white)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+            Button {
+                markClip()
+            } label: {
+                HStack(spacing: 8) {
+                    if isSendingMarker {
+                        ProgressView().tint(.white)
+                    } else {
+                        Image(systemName: "film.fill")
+                    }
+                    Text(language.t("shotListView.markClip"))
+                        .font(.headline)
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 22)
+                .padding(.vertical, 14)
+                .background(Capsule().fill(Color.accentColor))
+                .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
+            }
+            .disabled(isSendingMarker || markerTargetSection == nil)
+        }
+        .padding(.bottom, 20)
     }
 
     private var addSceneButton: some View {

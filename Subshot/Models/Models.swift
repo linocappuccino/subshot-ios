@@ -920,6 +920,28 @@ struct Video: Codable, Identifiable, Hashable {
     }
 }
 
+/// On-set take marker (2026-08-29 — "Mark Clip" button in the scene
+/// overview, see ShotListView.swift). Not tied to a Scene — same as the
+/// backend's SceneMarker doc comment explains, this is a free-floating
+/// on-set log against the day's Section, like a physical clapperboard mark.
+struct SceneMarker: Codable, Identifiable, Hashable {
+    let id: String
+    let sectionId: String
+    let timecode: String
+    let fps: Int
+    var label: String?
+    var color: String?
+    let createdAt: Date
+    let createdByUserId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, timecode, fps, label, color
+        case sectionId = "section_id"
+        case createdAt = "created_at"
+        case createdByUserId = "created_by_user_id"
+    }
+}
+
 struct VideoVersion: Codable, Identifiable, Hashable {
     let id: String
     let videoId: String

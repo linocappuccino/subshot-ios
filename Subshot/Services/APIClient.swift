@@ -1142,6 +1142,47 @@ final class APIClient {
         try await sendNoContent(req)
     }
 
+    // MARK: - Scene Markers
+
+    /// "Mark Clip" (2026-08-29) — logs the current Time-of-Day timecode
+    /// (formatted client-side, see ShotListView's timecode formatter)
+    /// against a Section, no Scene attribution needed.
+    func createSceneMarker(sectionId: String, timecode: String, fps: Int, label: String? = nil, color: String? = nil) async throws -> SceneMarker {
+        var req = try await authorizedRequest("sections/\(sectionId)/markers", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let timecode: String; let fps: Int; let label: String?; let color: String? }
+        req.httpBody = try encoder.encode(Body(timecode: timecode, fps: fps, label: label, color: color))
+        return try await send(req)
+    }
+
+    func listSceneMarkers(sectionId: String) async throws -> [SceneMarker] {
+        let req = try await authorizedRequest("sections/\(sectionId)/markers")
+        return try await send(req)
+    }
+
+    func deleteSceneMarker(sectionId: String, markerId: String) async throws {
+        let req = try await authorizedRequest("sections/\(sectionId)/markers/\(markerId)", method: "DELETE")
+        try await sendNoContent(req)
+    }
+
+    /// Raw CMX3600 EDL text (not JSON — mirrors `perform`'s status check
+    /// instead of going through `send`'s JSON `decoder`), for AirDrop-
+    /// sharing as a real `.edl` file — see `edlFile(sectionId:)` in
+    /// ShotListView.swift, which writes this to a temp file before handing
+    /// it to `ActivityView`.
+    func downloadSceneMarkersEDL(sectionId: String) async throws -> String {
+        let req = try await authorizedRequest("sections/\(sectionId)/edl")
+        let (data, response) = try await perform(req)
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.network(URLError(.badServerResponse))
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let message = String(data: data, encoding: .utf8) ?? ""
+            throw APIError.server(status: http.statusCode, message: message)
+        }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
     // MARK: - Sections
 
     /// `startInPostproduction` (2026-07-21, #284): mirrors the web app's
