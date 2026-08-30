@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Combine
 
 /// ShotCard's own priority dot — must=red, should=orange, optional=gray.
 private func priorityColor(_ priority: ShotPriority) -> Color {
@@ -189,7 +190,22 @@ struct ShotListView: View {
     /// `.overlay(alignment: .bottom)`). Not persisted across app launches
     /// on purpose — a fresh shoot day should re-confirm the fps rather than
     /// silently reuse a stale one.
+    /// 2026-08-30 correction — Lino REVERSED the earlier "not persisted"
+    /// decision: "schliesst man die app... stoppt der timecode, aber wird
+    /// gespeichert! man kann dann weitermachen... dort muss dann der
+    /// Button 'weiter tracken' heissen". `selectedFPS` itself stays
+    /// transient (nil = "not currently running"), but `savedFPS` mirrors
+    /// the last fps chosen for `openSectionId` specifically, loaded from
+    /// UserDefaults on every section switch (see `loadTimecodeState`/
+    /// `saveTimecodeState`) — drives "Weiter tracken" instead of "Set
+    /// Framerate" once non-nil, and auto-resumes the live clock if the
+    /// last activity was under an hour ago.
     @State private var selectedFPS: Double?
+    @State private var savedFPS: Double?
+    // 2026-08-30 — mirrors web's unmount-effect: leaving the app while a
+    // session is running still needs to persist "last active now" so a
+    // resume within the hour picks it back up correctly.
+    @Environment(\.scenePhase) private var scenePhase
     @State private var isSendingMarker = false
     @State private var markerFeedback: String?
     @State private var isExportingEDL = false
@@ -203,6 +219,11 @@ struct ShotListView: View {
     /// dialog like the existing section/scene delete flows.
     @State private var isResettingMarkers = false
     @State private var showResetMarkersConfirm = false
+    /// 2026-08-30, Lino: "resetten muss man per dialog bestaetigen. (es
+    /// werden xx marker geloescht)" — fetched fresh right before showing
+    /// the confirm dialog, not cached, so the count is always accurate.
+    @State private var resetMarkerCount: Int?
+    @State private var isCountingForReset = false
     @State private var sectionToDelete: SceneSection?
     /// #11 Schritt 5 — "Alle Szenen im Kasten? Ab in die Postproduction?"
     @State private var sectionToSendToPostproduction: SceneSection?
@@ -667,6 +688,39 @@ struct ShotListView: View {
         .onChange(of: activeWorkflowSection) { _, newValue in
             if newValue != .scripting { openSectionId = nil }
         }
+        // 2026-08-30, Lino: "sind alle clips als im kasten markiert in
+        // einer shotlist, stopt der timecode marker (und speichert
+        // natuerlich)" — ending the session just clears selectedFPS back
+        // to the "Set Framerate" gate; every marker was already persisted
+        // via the API the moment it was tapped, no data loss here.
+        .onChange(of: allScenesInOpenSectionDone) { _, isDone in
+            if isDone { selectedFPS = nil }
+        }
+        // 2026-08-30 — "jedes video/projekt braucht ja seinen eigenen
+        // timecode": persist the OLD section's activity on the way out (so
+        // a resume within the hour still works even without a marker tap
+        // right before switching away), then load whatever state belongs
+        // to the section just opened.
+        .onChange(of: openSectionId) { oldValue, _ in
+            if let oldValue, let fps = selectedFPS {
+                Self.saveTimecodeState(sectionId: oldValue, fps: fps)
+            }
+            loadTimecodeStateForOpenSection()
+        }
+        // Backgrounding/closing the app while tracking: persist "now" as
+        // last-active so re-opening within the hour resumes automatically,
+        // matching web's unmount-time save.
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase != .active, let section = markerTargetSection, let fps = selectedFPS {
+                Self.saveTimecodeState(sectionId: section.id, fps: fps)
+            }
+        }
+        // Lino: "auch wenn man mindestens 1h nicht mehr im projekt war
+        // wird der timecode timer automatisch gestoppt" — checked every
+        // minute even if the app just sits open without a single tap.
+        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+            checkTimecodeIdleTimeout()
+        }
         .scrollTargetBehaviorIf(wantsScrollSnap && activeWorkflowSection == .scripting && scrollSnapTargetCount > 1)
         // 2026-07-23 (#320) — the Postproduction branch above already had
         // its own .transition(.opacity), but this branch (Ideas/Scripting)
@@ -700,14 +754,24 @@ struct ShotListView: View {
             // "Bevor man die Funktion nutzen kann muss man oben zuerst die
             // Framerate eingeben/auswählen, erst dann ist die Funktion
             // verfügbar") — timecodeBar's own "Set Framerate" menu is what
-            // sets it.
-            if activeWorkflowSection == .scripting, selectedFPS != nil {
+            // sets it. 2026-08-30 — ALSO gated on openSectionId != nil now
+            // (see timecodeBar's own doc comment for why).
+            if activeWorkflowSection == .scripting, openSectionId != nil, selectedFPS != nil {
                 markClipBar
             }
         }
         .safeAreaInset(edge: .top) {
-            if activeWorkflowSection == .scripting {
+            // 2026-08-30, Lino: "der timecode muss immer in der shotlist
+            // selber laufen! NICHT in der uebersicht!! jedes video/projekt
+            // braucht ja seinen eigenen timecode!" — was shown for the
+            // whole Skript-Tab including the section-selection overview;
+            // now only inside one opened section's actual shot-planning
+            // view. `.id(openSectionId)` forces a fresh `selectedFPS`/
+            // timer state on every section switch, mirroring web's
+            // `key={section.id}`.
+            if activeWorkflowSection == .scripting, openSectionId != nil {
                 timecodeBar
+                    .id(openSectionId)
             }
         }
         .sheet(isPresented: $isPresentingEDLShare) {
@@ -724,13 +788,17 @@ struct ShotListView: View {
         .confirmationDialog(
             markerTargetSection.map { language.t("shotListView.resetMarkersConfirmTitle").replacingOccurrences(of: "{section}", with: $0.name) } ?? "",
             isPresented: $showResetMarkersConfirm,
-            titleVisibility: .visible
-        ) {
-            Button(language.t("shotListView.resetMarkersConfirmButton"), role: .destructive) {
-                resetMarkers()
+            titleVisibility: .visible,
+            actions: {
+                Button(language.t("shotListView.resetMarkersConfirmButton"), role: .destructive) {
+                    resetMarkers()
+                }
+                Button(language.t("common.cancel"), role: .cancel) {}
+            },
+            message: {
+                Text(language.t("shotListView.resetMarkersConfirmMessage").replacingOccurrences(of: "{count}", with: String(resetMarkerCount ?? 0)))
             }
-            Button(language.t("common.cancel"), role: .cancel) {}
-        }
+        )
         .navigationTitle(projectName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -1193,6 +1261,28 @@ struct ShotListView: View {
         fps.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", fps) : String(fps)
     }
 
+    /// 2026-08-30 — per-section timecode persistence (Lino: "weiter
+    /// tracken" instead of re-picking a framerate; auto-stop after 1h
+    /// idle). UserDefaults, not the backend — this is a local "where was I"
+    /// convenience, not data that needs to sync across devices.
+    private static let idleTimeoutSeconds: TimeInterval = 60 * 60
+
+    private static func timecodeStateKey(_ sectionId: String) -> String { "subshot.timecode.\(sectionId)" }
+
+    private static func loadTimecodeState(sectionId: String) -> (fps: Double, lastActiveAt: Date)? {
+        guard let dict = UserDefaults.standard.dictionary(forKey: timecodeStateKey(sectionId)),
+              let fps = dict["fps"] as? Double,
+              let lastActiveAt = dict["lastActiveAt"] as? Double else { return nil }
+        return (fps, Date(timeIntervalSince1970: lastActiveAt))
+    }
+
+    private static func saveTimecodeState(sectionId: String, fps: Double) {
+        UserDefaults.standard.set(
+            ["fps": fps, "lastActiveAt": Date().timeIntervalSince1970],
+            forKey: timecodeStateKey(sectionId)
+        )
+    }
+
     /// Time-of-Day, HH:MM:SS:FF — always the device's own clock, never
     /// "seconds since something started" (see SceneMarker's doc comment).
     /// `fps` is Lino-chosen per session (see selectedFPS), sent to the
@@ -1217,11 +1307,26 @@ struct ShotListView: View {
     /// Falls back to the first section if none's been opened yet this
     /// session, and to nil (button disabled) only once the project truly
     /// has no section at all.
+    /// 2026-08-30 — now resolves to `openSectionId` (the explicit Skript-
+    /// Auswahlübersicht selection, web-parity) instead of the old implicit
+    /// "last section opened via the scene-edit sheet" heuristic — the
+    /// timecode bar/markClipBar are only ever shown once a section is
+    /// explicitly open now, so there's no more ambiguity to guess around.
     private var markerTargetSection: SceneSection? {
-        if let key = targetSectionIdForNewScene, let match = viewModel.sections.first(where: { $0.id == key }) {
-            return match
-        }
-        return viewModel.sections.first
+        guard let key = openSectionId else { return nil }
+        return viewModel.sections.first(where: { $0.id == key })
+    }
+
+    /// 2026-08-30, Lino: "sind alle clips als im kasten markiert in einer
+    /// shotlist, stopt der timecode marker (und speichert natuerlich)" —
+    /// ending the session just means clearing selectedFPS back to the "Set
+    /// Framerate" gate; every marker was already persisted via the API the
+    /// moment it was tapped, so there's no data loss, only ending the
+    /// running clock.
+    private var allScenesInOpenSectionDone: Bool {
+        guard let section = markerTargetSection else { return false }
+        let scenes = viewModel.scenes(in: section)
+        return !scenes.isEmpty && scenes.allSatisfy { $0.completed }
     }
 
     private func markClip() {
@@ -1237,6 +1342,7 @@ struct ShotListView: View {
         Task {
             do {
                 _ = try await APIClient.shared.createSceneMarker(sectionId: section.id, timecode: timecode, fps: fps)
+                Self.saveTimecodeState(sectionId: section.id, fps: fps)
                 withAnimation { markerFeedback = "\(language.t("shotListView.markClipSaved")) · \(timecode)" }
                 try? await Task.sleep(nanoseconds: 1_600_000_000)
                 if markerFeedback?.hasSuffix(timecode) == true { withAnimation { markerFeedback = nil } }
@@ -1244,6 +1350,69 @@ struct ShotListView: View {
                 markerErrorMessage = error.localizedDescription
             }
             isSendingMarker = false
+        }
+    }
+
+    /// 2026-08-30 — starts (or resumes, via "Weiter tracken") a timecode
+    /// session for `openSectionId`, persisting immediately so a resume
+    /// within the next hour picks the same fps back up automatically.
+    private func startTracking(fps: Double) {
+        selectedFPS = fps
+        savedFPS = fps
+        if let section = markerTargetSection {
+            Self.saveTimecodeState(sectionId: section.id, fps: fps)
+        }
+    }
+
+    /// Loads persisted per-section state whenever a DIFFERENT section is
+    /// opened (or the overview is returned to) — `selectedFPS`/`savedFPS`
+    /// are plain `@State` on this whole view, shared across every section,
+    /// so without this they'd otherwise leak between sections instead of
+    /// each one getting "seinen eigenen timecode" as Lino asked.
+    private func loadTimecodeStateForOpenSection() {
+        guard let sectionId = openSectionId else {
+            selectedFPS = nil
+            savedFPS = nil
+            return
+        }
+        guard let stored = Self.loadTimecodeState(sectionId: sectionId) else {
+            selectedFPS = nil
+            savedFPS = nil
+            return
+        }
+        savedFPS = stored.fps
+        if Date().timeIntervalSince(stored.lastActiveAt) < Self.idleTimeoutSeconds {
+            selectedFPS = stored.fps
+            Self.saveTimecodeState(sectionId: sectionId, fps: stored.fps)
+        } else {
+            selectedFPS = nil
+        }
+    }
+
+    /// 2026-08-30, Lino: "auch wenn man mindestens 1h nicht mehr im
+    /// projekt war wird der timecode timer automatisch gestoppt" —
+    /// checked periodically while a session is running, even if the app
+    /// just sits open in the background without a single Set-Marker tap.
+    private func checkTimecodeIdleTimeout() {
+        guard selectedFPS != nil, let sectionId = openSectionId,
+              let stored = Self.loadTimecodeState(sectionId: sectionId) else { return }
+        if Date().timeIntervalSince(stored.lastActiveAt) >= Self.idleTimeoutSeconds {
+            selectedFPS = nil
+        }
+    }
+
+    private func startResetMarkers() {
+        guard let section = markerTargetSection, !isCountingForReset else { return }
+        isCountingForReset = true
+        Task {
+            do {
+                let markers = try await APIClient.shared.listSceneMarkers(sectionId: section.id)
+                resetMarkerCount = markers.count
+                showResetMarkersConfirm = true
+            } catch {
+                markerErrorMessage = error.localizedDescription
+            }
+            isCountingForReset = false
         }
     }
 
@@ -1301,7 +1470,7 @@ struct ShotListView: View {
                     Spacer()
                     Menu {
                         ForEach(Self.fpsPresets, id: \.self) { preset in
-                            Button("\(Self.fpsLabel(preset)) fps") { selectedFPS = preset }
+                            Button("\(Self.fpsLabel(preset)) fps") { startTracking(fps: preset) }
                         }
                     } label: {
                         Text("\(Self.fpsLabel(fps)) fps")
@@ -1309,16 +1478,21 @@ struct ShotListView: View {
                             .foregroundStyle(.white.opacity(0.7))
                     }
                     Button {
-                        showResetMarkersConfirm = true
+                        startResetMarkers()
                     } label: {
-                        if isResettingMarkers {
+                        if isResettingMarkers || isCountingForReset {
                             ProgressView().tint(.white)
                         } else {
                             Image(systemName: "arrow.counterclockwise")
                                 .foregroundStyle(.white)
                         }
                     }
-                    .disabled(isResettingMarkers || markerTargetSection == nil)
+                    .disabled(isResettingMarkers || isCountingForReset || markerTargetSection == nil)
+                    // 2026-08-30, Lino: "reset und senden button sind zu nahe
+                    // aneinander" — Reset is destructive, a visible divider
+                    // (not just the row's own 10pt gap) makes it harder to
+                    // mis-tap right after it.
+                    Divider().frame(height: 16).overlay(Color.white.opacity(0.2))
                     Button {
                         exportEDL()
                     } label: {
@@ -1335,6 +1509,34 @@ struct ShotListView: View {
                 .padding(.vertical, 10)
                 .background(.black.opacity(0.75))
             }
+        } else if let savedFPS {
+            // 2026-08-30, Lino: "dort muss dann der Button 'weiter tracken'
+            // heissen und nicht mehr Frameraute auswählen, weil diese für
+            // das projekt ja schon ausgewählt wurde" — the fps for this
+            // section is already known, so resume it with one tap instead
+            // of re-prompting.
+            HStack(spacing: 10) {
+                Text(language.t("shotListView.continueTrackingHint"))
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.7))
+                Spacer()
+                Button {
+                    startTracking(fps: savedFPS)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "play.fill")
+                        Text(language.t("shotListView.continueTracking"))
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(Color.green))
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(.black.opacity(0.75))
         } else {
             HStack(spacing: 10) {
                 Text(language.t("shotListView.setFramerateHint"))
@@ -1343,7 +1545,7 @@ struct ShotListView: View {
                 Spacer()
                 Menu {
                     ForEach(Self.fpsPresets, id: \.self) { preset in
-                        Button("\(Self.fpsLabel(preset)) fps") { selectedFPS = preset }
+                        Button("\(Self.fpsLabel(preset)) fps") { startTracking(fps: preset) }
                     }
                 } label: {
                     HStack(spacing: 6) {

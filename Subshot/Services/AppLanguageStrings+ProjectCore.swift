@@ -109,7 +109,12 @@ extension AppLanguage {
             // zurücksetzen") — löscht alle Marker NUR des aktuell geöffneten Abschnitts.
             "shotListView.resetMarkersConfirmTitle": "Alle Marker in \"{section}\" löschen?",
             "shotListView.resetMarkersConfirmButton": "Zurücksetzen",
+            "shotListView.resetMarkersConfirmMessage": "Es werden {count} Marker gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
             "shotListView.resetMarkersDone": "Marker zurückgesetzt",
+            // 2026-08-30 — "weiter tracken" (Persistenz der Framerate-Wahl pro
+            // Abschnitt, siehe timecodeBar's eigener Kommentar).
+            "shotListView.continueTrackingHint": "Timecode-Tracking pausiert für diesen Abschnitt.",
+            "shotListView.continueTracking": "Weiter tracken",
             // 2026-08-30 — Skript-Auswahlübersicht (web-parity).
             "scriptOverview.sceneCount": "Szenen",
             "scriptOverview.backToOverview": "Zur Übersicht",
@@ -367,7 +372,10 @@ extension AppLanguage {
             // 2026-08-30 — Reset button, scoped to only the currently-open section.
             "shotListView.resetMarkersConfirmTitle": "Delete all markers in \"{section}\"?",
             "shotListView.resetMarkersConfirmButton": "Reset",
+            "shotListView.resetMarkersConfirmMessage": "{count} markers will be deleted. This action cannot be undone.",
             "shotListView.resetMarkersDone": "Markers reset",
+            "shotListView.continueTrackingHint": "Timecode tracking paused for this section.",
+            "shotListView.continueTracking": "Continue tracking",
             // 2026-08-30 — Script selection overview (web-parity).
             "scriptOverview.sceneCount": "scenes",
             "scriptOverview.backToOverview": "Back to overview",
