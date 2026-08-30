@@ -1165,6 +1165,14 @@ final class APIClient {
         try await sendNoContent(req)
     }
 
+    /// "Reset" (2026-08-30) — deletes ALL markers for ONE Section (never
+    /// project-wide, Lino was explicit about this scope). Bulk endpoint,
+    /// not a client-side loop over `deleteSceneMarker`.
+    func resetSceneMarkers(sectionId: String) async throws {
+        let req = try await authorizedRequest("sections/\(sectionId)/markers", method: "DELETE")
+        try await sendNoContent(req)
+    }
+
     /// Raw CMX3600 EDL text (not JSON — mirrors `perform`'s status check
     /// instead of going through `send`'s JSON `decoder`), for AirDrop-
     /// sharing as a real `.edl` file — see `edlFile(sectionId:)` in

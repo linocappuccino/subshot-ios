@@ -105,6 +105,11 @@ extension AppLanguage {
             "shotListView.exportEDL": "EDL teilen",
             "shotListView.exportEDLNoMarkers": "Noch keine Marker für diesen Abschnitt gesetzt.",
             "shotListView.exportEDLError": "EDL konnte nicht geladen werden.",
+            // 2026-08-30 — Reset-Button (Lino: "darf NUR das aktuell geöffnete Skript
+            // zurücksetzen") — löscht alle Marker NUR des aktuell geöffneten Abschnitts.
+            "shotListView.resetMarkersConfirmTitle": "Alle Marker in \"{section}\" löschen?",
+            "shotListView.resetMarkersConfirmButton": "Zurücksetzen",
+            "shotListView.resetMarkersDone": "Marker zurückgesetzt",
             "shotListView.allSceneDoneTitle": "Alle Szenen im Kasten?",
             "shotListView.sendToPostproductionMessage": "\"{name}\" wandert in die Postproduction-Tracking-Liste.",
             "shotListView.goodTakeWithFilename": "Good Take: {filename}",
@@ -356,6 +361,10 @@ extension AppLanguage {
             "shotListView.exportEDL": "Share EDL",
             "shotListView.exportEDLNoMarkers": "No markers set for this section yet.",
             "shotListView.exportEDLError": "Could not load the EDL.",
+            // 2026-08-30 — Reset button, scoped to only the currently-open section.
+            "shotListView.resetMarkersConfirmTitle": "Delete all markers in \"{section}\"?",
+            "shotListView.resetMarkersConfirmButton": "Reset",
+            "shotListView.resetMarkersDone": "Markers reset",
             "shotListView.allSceneDoneTitle": "All scenes in the can?",
             "shotListView.sendToPostproductionMessage": "\"{name}\" moves to the postproduction tracking list.",
             "shotListView.goodTakeWithFilename": "Good take: {filename}",

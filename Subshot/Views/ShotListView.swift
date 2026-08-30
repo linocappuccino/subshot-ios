@@ -196,6 +196,13 @@ struct ShotListView: View {
     @State private var edlExportURL: URL?
     @State private var isPresentingEDLShare = false
     @State private var markerErrorMessage: String?
+    /// "Reset" (2026-08-30, Lino: "darf NUR das aktuell geoeffnete Skript
+    /// zuruecksetzen") — scoped to `markerTargetSection`, same "currently
+    /// open section" concept everything else in this feature already uses.
+    /// Destructive (deletes real data), so gated behind a confirmation
+    /// dialog like the existing section/scene delete flows.
+    @State private var isResettingMarkers = false
+    @State private var showResetMarkersConfirm = false
     @State private var sectionToDelete: SceneSection?
     /// #11 Schritt 5 — "Alle Szenen im Kasten? Ab in die Postproduction?"
     @State private var sectionToSendToPostproduction: SceneSection?
@@ -676,6 +683,16 @@ struct ShotListView: View {
             set: { if !$0 { markerErrorMessage = nil } }
         )) {
             Alert(title: Text(markerErrorMessage ?? ""))
+        }
+        .confirmationDialog(
+            markerTargetSection.map { language.t("shotListView.resetMarkersConfirmTitle").replacingOccurrences(of: "{section}", with: $0.name) } ?? "",
+            isPresented: $showResetMarkersConfirm,
+            titleVisibility: .visible
+        ) {
+            Button(language.t("shotListView.resetMarkersConfirmButton"), role: .destructive) {
+                resetMarkers()
+            }
+            Button(language.t("common.cancel"), role: .cancel) {}
         }
         .navigationTitle(projectName)
         .navigationBarTitleDisplayMode(.inline)
@@ -1193,6 +1210,22 @@ struct ShotListView: View {
         }
     }
 
+    private func resetMarkers() {
+        guard let section = markerTargetSection, !isResettingMarkers else { return }
+        isResettingMarkers = true
+        Task {
+            do {
+                try await APIClient.shared.resetSceneMarkers(sectionId: section.id)
+                withAnimation { markerFeedback = language.t("shotListView.resetMarkersDone") }
+                try? await Task.sleep(nanoseconds: 1_600_000_000)
+                if markerFeedback == language.t("shotListView.resetMarkersDone") { withAnimation { markerFeedback = nil } }
+            } catch {
+                markerErrorMessage = error.localizedDescription
+            }
+            isResettingMarkers = false
+        }
+    }
+
     private func exportEDL() {
         guard let section = markerTargetSection, !isExportingEDL else { return }
         isExportingEDL = true
@@ -1238,6 +1271,17 @@ struct ShotListView: View {
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.white.opacity(0.7))
                     }
+                    Button {
+                        showResetMarkersConfirm = true
+                    } label: {
+                        if isResettingMarkers {
+                            ProgressView().tint(.white)
+                        } else {
+                            Image(systemName: "arrow.counterclockwise")
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .disabled(isResettingMarkers || markerTargetSection == nil)
                     Button {
                         exportEDL()
                     } label: {
