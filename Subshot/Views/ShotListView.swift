@@ -426,6 +426,12 @@ struct ShotListView: View {
     // value (e.g. modules changed by someone else since this tile was
     // fetched).
     @State private var activeWorkflowSection: WorkflowSection
+    /// 2026-08-30 — Skript-Auswahlübersicht (web-parity, siehe project
+    /// memory): die Skript-Seite zeigt erst eine Kachel-Übersicht der
+    /// Abschnitte (jeder Abschnitt = eine abgenommene Idee), Tap öffnet
+    /// NUR diesen einen Abschnitt in der bestehenden Shot-Planungsansicht.
+    /// nil = Übersicht.
+    @State private var openSectionId: String?
     /// 2026-07-23 (#323, Lino: swiping to another section still worked even
     /// when a project only has Postproduction active) — module_concept/
     /// module_scripting/module_postproduction (see ShotListViewModel.load)
@@ -582,8 +588,28 @@ struct ShotListView: View {
                         initialSelectedIdeaId: pendingDeepLinkKind == "idea" ? pendingDeepLinkId : nil
                     )
                         .transition(.opacity)
+                } else if !viewModel.sections.isEmpty && openSectionId == nil {
+                    // 2026-08-30 — Skript-Auswahlübersicht (web-parity, siehe
+                    // project memory): erst eine Kachel-Übersicht der
+                    // Abschnitte (jeder Abschnitt = eine abgenommene Idee),
+                    // Tap öffnet NUR diesen einen Abschnitt unten in der
+                    // bestehenden, unveränderten LazyVStack-Ansicht.
+                    scriptOverviewGrid()
+                        .transition(.opacity)
                 } else {
                     LazyVStack(alignment: .leading, spacing: 16) {
+                        // 2026-08-30 — zurück zur Übersicht, sichtbar nur
+                        // wenn gerade ein bestimmter Abschnitt geöffnet ist.
+                        if openSectionId != nil {
+                            Button {
+                                withAnimation { openSectionId = nil }
+                            } label: {
+                                Label(language.t("scriptOverview.backToOverview"), systemImage: "chevron.left")
+                                    .font(.subheadline.weight(.medium))
+                            }
+                            .padding(.horizontal, 16)
+                        }
+
                         // 2026-07-14: was unconditional — with zero unassigned
                         // shots (the common case) this still rendered an empty,
                         // near-invisible ~32pt VStack (just its own vertical
@@ -599,7 +625,11 @@ struct ShotListView: View {
                         // it the same way sectionGroup(section: nil) already
                         // guards its own empty case (below) removes that phantom
                         // target entirely when there's nothing to show.
-                        if !viewModel.shots(in: nil).isEmpty {
+                        // 2026-08-30 — hidden entirely once a specific section is
+                        // open (openSectionId != nil): unassigned shots belong to
+                        // no idea, showing them inside one idea's focused view
+                        // would be confusing, matches web's same decision.
+                        if openSectionId == nil, !viewModel.shots(in: nil).isEmpty {
                             unassignedSection()
                         }
 
@@ -614,12 +644,12 @@ struct ShotListView: View {
                             // just without its own header.
                             sceneGrid(viewModel.scenes(in: nil))
                         } else {
-                            ForEach(viewModel.sections) { section in
+                            // 2026-08-30 — gefiltert auf NUR den geöffneten
+                            // Abschnitt (openSectionId), matched web's
+                            // identische Filterung. "Ohne Abschnitt" wird in
+                            // diesem fokussierten Modus nie gezeigt (s.o.).
+                            ForEach(viewModel.sections.filter { $0.id == openSectionId }) { section in
                                 sectionGroup(section: section)
-                            }
-                            let unassigned = viewModel.scenes(in: nil)
-                            if !unassigned.isEmpty {
-                                sectionGroup(section: nil)
                             }
                         }
                     }
@@ -629,6 +659,13 @@ struct ShotListView: View {
             }
             .padding(.vertical, 16)
             .animation(.easeInOut(duration: 0.25), value: activeWorkflowSection)
+        }
+        // 2026-08-30 — leaving the Skript-Tab always resets back to the
+        // selection overview (web-parity: goToIdeas() does the same) so a
+        // future visit never silently reopens whatever section was last
+        // viewed.
+        .onChange(of: activeWorkflowSection) { _, newValue in
+            if newValue != .scripting { openSectionId = nil }
         }
         .scrollTargetBehaviorIf(wantsScrollSnap && activeWorkflowSection == .scripting && scrollSnapTargetCount > 1)
         // 2026-07-23 (#320) — the Postproduction branch above already had
@@ -1497,6 +1534,37 @@ struct ShotListView: View {
                 sceneCard(scene: scene, columnLayout: false)
             }
         }
+    }
+
+    /// 2026-08-30 — Skript-Auswahlübersicht (web-parity, siehe project
+    /// memory): eine Kachel pro Abschnitt (= abgenommene Idee), Tap öffnet
+    /// nur diesen einen Abschnitt in der bestehenden `sectionGroup`-Ansicht.
+    @ViewBuilder
+    private func scriptOverviewGrid() -> some View {
+        let columns = [GridItem(.adaptive(minimum: 160), spacing: 12)]
+        LazyVGrid(columns: columns, spacing: 12) {
+            ForEach(viewModel.sections) { section in
+                Button {
+                    withAnimation { openSectionId = section.id }
+                } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(section.name)
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                        Text("\(viewModel.scenes(in: section).count) \(language.t("scriptOverview.sceneCount"))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                    .background(RoundedRectangle(cornerRadius: 16).fill(Color(.secondarySystemBackground)))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 16)
     }
 
     /// `section == nil` renders the "Ohne Abschnitt" bucket — only shown at

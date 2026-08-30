@@ -110,6 +110,9 @@ extension AppLanguage {
             "shotListView.resetMarkersConfirmTitle": "Alle Marker in \"{section}\" löschen?",
             "shotListView.resetMarkersConfirmButton": "Zurücksetzen",
             "shotListView.resetMarkersDone": "Marker zurückgesetzt",
+            // 2026-08-30 — Skript-Auswahlübersicht (web-parity).
+            "scriptOverview.sceneCount": "Szenen",
+            "scriptOverview.backToOverview": "Zur Übersicht",
             "shotListView.allSceneDoneTitle": "Alle Szenen im Kasten?",
             "shotListView.sendToPostproductionMessage": "\"{name}\" wandert in die Postproduction-Tracking-Liste.",
             "shotListView.goodTakeWithFilename": "Good Take: {filename}",
@@ -365,6 +368,9 @@ extension AppLanguage {
             "shotListView.resetMarkersConfirmTitle": "Delete all markers in \"{section}\"?",
             "shotListView.resetMarkersConfirmButton": "Reset",
             "shotListView.resetMarkersDone": "Markers reset",
+            // 2026-08-30 — Script selection overview (web-parity).
+            "scriptOverview.sceneCount": "scenes",
+            "scriptOverview.backToOverview": "Back to overview",
             "shotListView.allSceneDoneTitle": "All scenes in the can?",
             "shotListView.sendToPostproductionMessage": "\"{name}\" moves to the postproduction tracking list.",
             "shotListView.goodTakeWithFilename": "Good take: {filename}",
