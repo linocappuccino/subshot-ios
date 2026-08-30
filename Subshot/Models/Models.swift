@@ -928,7 +928,11 @@ struct SceneMarker: Codable, Identifiable, Hashable {
     let id: String
     let sectionId: String
     let timecode: String
-    let fps: Int
+    /// 2026-08-30 — real camera rates (Nikon ZR's 23.976/29.97/59.94/
+    /// 119.88/239.76) aren't whole numbers, hence Double not Int — see
+    /// ShotListView.swift's fpsPresets and the backend's matching Float
+    /// column.
+    let fps: Double
     var label: String?
     var color: String?
     let createdAt: Date

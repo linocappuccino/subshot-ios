@@ -1147,10 +1147,10 @@ final class APIClient {
     /// "Mark Clip" (2026-08-29) — logs the current Time-of-Day timecode
     /// (formatted client-side, see ShotListView's timecode formatter)
     /// against a Section, no Scene attribution needed.
-    func createSceneMarker(sectionId: String, timecode: String, fps: Int, label: String? = nil, color: String? = nil) async throws -> SceneMarker {
+    func createSceneMarker(sectionId: String, timecode: String, fps: Double, label: String? = nil, color: String? = nil) async throws -> SceneMarker {
         var req = try await authorizedRequest("sections/\(sectionId)/markers", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        struct Body: Encodable { let timecode: String; let fps: Int; let label: String?; let color: String? }
+        struct Body: Encodable { let timecode: String; let fps: Double; let label: String?; let color: String? }
         req.httpBody = try encoder.encode(Body(timecode: timecode, fps: fps, label: label, color: color))
         return try await send(req)
     }

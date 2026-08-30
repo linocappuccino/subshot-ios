@@ -189,7 +189,7 @@ struct ShotListView: View {
     /// `.overlay(alignment: .bottom)`). Not persisted across app launches
     /// on purpose — a fresh shoot day should re-confirm the fps rather than
     /// silently reuse a stale one.
-    @State private var selectedFPS: Int?
+    @State private var selectedFPS: Double?
     @State private var isSendingMarker = false
     @State private var markerFeedback: String?
     @State private var isExportingEDL = false
@@ -1123,20 +1123,36 @@ struct ShotListView: View {
         .presentationCompactAdaptation(.popover)
     }
 
-    /// 2026-08-29 — common integer frame rates only (no drop-frame
-    /// 23.976/29.97/59.94 fractional rates) — this is an on-set logging
-    /// tool, not a precision NLE timecode reader, and integer fps keeps
-    /// formatTimecode's frame math trivial/verifiable without a compiler.
-    private static let fpsPresets = [24, 25, 30, 50, 60]
+    /// 2026-08-30 — Lino: "alle framerates die die nikon zr momentan zur
+    /// verfügung stellt" — replaces the earlier integer-only preset list
+    /// (24/25/30/50/60) with the Nikon ZR's actual current video frame
+    /// rates, confirmed against Nikon's own online manual
+    /// (onlinemanual.nikonimglib.com/zr/en/19-02.html): every N-RAW/R3D
+    /// NE/ProRes RAW/ProRes 422 HQ/H.265/H.264 mode across every
+    /// resolution the ZR offers uses one of exactly these 9 rates.
+    private static let fpsPresets: [Double] = [23.976, 25, 29.97, 50, 59.94, 100, 119.88, 200, 239.76]
+
+    /// Trims a trailing ".0" for the plain rates (25/50/100/200) while
+    /// keeping the real decimals (23.976/29.97/...) as typed — plain
+    /// Double string interpolation would otherwise show "25.0 fps".
+    private static func fpsLabel(_ fps: Double) -> String {
+        fps.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", fps) : String(fps)
+    }
 
     /// Time-of-Day, HH:MM:SS:FF — always the device's own clock, never
     /// "seconds since something started" (see SceneMarker's doc comment).
-    /// `fps` is now Lino-chosen per session (see selectedFPS), not a fixed
-    /// constant — sent to the backend per-marker (SceneMarker.fps already
-    /// supported this from the start) so a mixed-fps history stays honest.
-    private func formatTimecode(_ date: Date, fps: Int) -> String {
+    /// `fps` is Lino-chosen per session (see selectedFPS), sent to the
+    /// backend per-marker (SceneMarker.fps) so a mixed-fps history stays
+    /// honest. 2026-08-30 — fps can now be a real NTSC-style camera rate
+    /// (23.976/29.97/59.94/119.88/239.76, not just round numbers); the FF
+    /// field still counts frames 0..(nominal-1) per standard SMPTE
+    /// convention (23.976p labels frames 0-23, same as a plain 24p would),
+    /// so rounding fps to its nominal frame count is exactly right here —
+    /// same convention app/edl.py's generate_edl uses server-side.
+    private func formatTimecode(_ date: Date, fps: Double) -> String {
         let comps = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
-        let frames = min(fps - 1, Int((Double(comps.nanosecond ?? 0) / 1_000_000_000.0) * Double(fps)))
+        let nominalFrames = Int(fps.rounded())
+        let frames = min(nominalFrames - 1, Int((Double(comps.nanosecond ?? 0) / 1_000_000_000.0) * Double(nominalFrames)))
         return String(format: "%02d:%02d:%02d:%02d", comps.hour ?? 0, comps.minute ?? 0, comps.second ?? 0, frames)
     }
 
@@ -1215,10 +1231,10 @@ struct ShotListView: View {
                     Spacer()
                     Menu {
                         ForEach(Self.fpsPresets, id: \.self) { preset in
-                            Button("\(preset) fps") { selectedFPS = preset }
+                            Button("\(Self.fpsLabel(preset)) fps") { selectedFPS = preset }
                         }
                     } label: {
-                        Text("\(fps) fps")
+                        Text("\(Self.fpsLabel(fps)) fps")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.white.opacity(0.7))
                     }
@@ -1246,7 +1262,7 @@ struct ShotListView: View {
                 Spacer()
                 Menu {
                     ForEach(Self.fpsPresets, id: \.self) { preset in
-                        Button("\(preset) fps") { selectedFPS = preset }
+                        Button("\(Self.fpsLabel(preset)) fps") { selectedFPS = preset }
                     }
                 } label: {
                     HStack(spacing: 6) {
