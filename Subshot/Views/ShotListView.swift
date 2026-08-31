@@ -1556,26 +1556,7 @@ struct ShotListView: View {
                         .foregroundStyle(.white.opacity(0.7))
                         .lineLimit(1)
                     Spacer()
-                    Menu {
-                        // 2026-08-31, Lino: "kann man machen, muss man aber
-                        // nicht" — re-syncing an ALREADY-running session via
-                        // the camera is always available here, just never
-                        // required (continueTimecodeTracking/"Weiter
-                        // tracken" below is the no-camera default resume).
-                        Button {
-                            showingRecMarkersSync = true
-                        } label: {
-                            Label(language.t("shotListView.recMarkersResync"), systemImage: "camera.viewfinder")
-                        }
-                        Divider()
-                        ForEach(Self.fpsPresets, id: \.self) { preset in
-                            Button("\(Self.fpsLabel(preset)) fps") { startTracking(fps: preset) }
-                        }
-                    } label: {
-                        Text("\(Self.fpsLabel(fps)) fps")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.white.opacity(0.7))
-                    }
+                    timecodeFpsMenu(currentFps: fps)
                     Button {
                         startResetMarkers()
                     } label: {
@@ -1669,6 +1650,36 @@ struct ShotListView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
             .background(.black.opacity(0.75))
+        }
+    }
+
+    /// Extracted out of `timecodeBar`'s running-state branch — 2026-08-31:
+    /// with this Menu inlined directly in that branch's HStack, Xcode's
+    /// type-checker gave up ("unable to type-check this expression in
+    /// reasonable time"), same class of error this codebase has hit before
+    /// on ProjectListView's gridScreen. Splitting it into its own
+    /// @ViewBuilder function is the fix, not a logic change.
+    @ViewBuilder
+    private func timecodeFpsMenu(currentFps: Double) -> some View {
+        Menu {
+            // 2026-08-31, Lino: "kann man machen, muss man aber nicht" —
+            // re-syncing an ALREADY-running session via the camera is
+            // always available here, just never required
+            // (continueTimecodeTracking/"Weiter tracken" is the no-camera
+            // default resume).
+            Button {
+                showingRecMarkersSync = true
+            } label: {
+                Label(language.t("shotListView.recMarkersResync"), systemImage: "camera.viewfinder")
+            }
+            Divider()
+            ForEach(Self.fpsPresets, id: \.self) { preset in
+                Button("\(Self.fpsLabel(preset)) fps") { startTracking(fps: preset) }
+            }
+        } label: {
+            Text("\(Self.fpsLabel(currentFps)) fps")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.7))
         }
     }
 
@@ -3240,7 +3251,7 @@ struct ShotListView: View {
                     let section = scene.sectionId.flatMap { id in viewModel.sections.first(where: { $0.id == id }) }
                     if isSectionFullyDone(section) {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
-                            collapsedSections.insert(scene.sectionId ?? unassignedSectionKey)
+                            _ = collapsedSections.insert(scene.sectionId ?? unassignedSectionKey)
                         }
                     }
                 }
