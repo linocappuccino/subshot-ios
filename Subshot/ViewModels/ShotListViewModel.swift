@@ -575,6 +575,25 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
+    /// 2026-08-31, Lino: "übernimmt eine person den timecode mit der
+    /// kamera, ist er bei den anderen die das gleiche projekt geöffnet
+    /// haben direkt auch mit gesynced" — the shared Mark-Clip timecode
+    /// session (see SceneSection.timecodeFps's own doc comment). `fps:
+    /// nil` clears it (stop/reset); every other client picks up the
+    /// change on its own next poll since `sections` is part of the same
+    /// ProjectDetail this method already keeps in sync locally.
+    @discardableResult
+    func setSectionTimecode(_ section: SceneSection, fps: Double?, offsetSeconds: Double = 0) async -> SceneSection? {
+        do {
+            let updated = try await APIClient.shared.patchSectionTimecode(section.id, fps: fps, offsetSeconds: offsetSeconds)
+            if let index = sections.firstIndex(where: { $0.id == updated.id }) { sections[index] = updated }
+            return updated
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
     func reorderSection(_ sectionId: String, before targetId: String?) async {
         var list = sections
         guard let section = list.first(where: { $0.id == sectionId }) else { return }

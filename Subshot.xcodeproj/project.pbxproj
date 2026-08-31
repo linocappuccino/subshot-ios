@@ -560,7 +560,7 @@
 				DEVELOPMENT_TEAM = 8U22CFDKB8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Wird benötigt, um Fotos für Szenen und Einstellungen aufzunehmen";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Wird benötigt, um Fotos für Szenen/Einstellungen aufzunehmen und den Timecode einer Kamera per Visual Timecode Sync zu lesen";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Wird benötigt, um den aktuellen Video-Frame also Foto zu speichern.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -594,7 +594,7 @@
 				DEVELOPMENT_TEAM = 8U22CFDKB8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Wird benötigt, um Fotos für Szenen und Einstellungen aufzunehmen";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Wird benötigt, um Fotos für Szenen/Einstellungen aufzunehmen und den Timecode einer Kamera per Visual Timecode Sync zu lesen";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Wird benötigt, um den aktuellen Video-Frame also Foto zu speichern.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

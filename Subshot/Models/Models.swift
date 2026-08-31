@@ -885,6 +885,18 @@ struct SceneSection: Codable, Identifiable, Hashable {
     var inPostproduction: Bool = false
     var postproductionStatus: PostproductionStatus?
     var postproductionDeadline: Date?
+    /// 2026-08-31, Lino: "übernimmt eine person den timecode mit der
+    /// kamera, ist er bei den anderen die das gleiche projekt geöffnet
+    /// haben direkt auch mit gesynced" — the Mark-Clip timecode session
+    /// (fps + a wall-clock correction offset from the camera-based
+    /// "Start Rec-Markers" sync, or 0 for a plain manual pick) now lives
+    /// HERE, shared across every client via the same project poll/fetch
+    /// every device already does, instead of this device's own
+    /// UserDefaults — see the backend's Section.timecode_fps doc comment.
+    /// `nil` fps = no session currently running.
+    var timecodeFps: Double?
+    var timecodeOffsetSeconds: Double = 0
+    var timecodeSyncedAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case id, name
@@ -900,6 +912,9 @@ struct SceneSection: Codable, Identifiable, Hashable {
         case inPostproduction = "in_postproduction"
         case postproductionStatus = "postproduction_status"
         case postproductionDeadline = "postproduction_deadline"
+        case timecodeFps = "timecode_fps"
+        case timecodeOffsetSeconds = "timecode_offset_seconds"
+        case timecodeSyncedAt = "timecode_synced_at"
     }
 }
 

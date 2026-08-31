@@ -1312,6 +1312,19 @@ final class APIClient {
         return try await send(req)
     }
 
+    /// 2026-08-31 — shared Mark-Clip timecode session (fps + camera-sync
+    /// offset), see SceneSection.timecodeFps's own doc comment. `fps: nil`
+    /// clears it (stop/reset); `offsetSeconds` defaults to 0 for a plain
+    /// framerate pick, a real calibrated value only ever comes from the
+    /// camera-based "Start Rec-Markers" sync sheet.
+    func patchSectionTimecode(_ id: String, fps: Double?, offsetSeconds: Double = 0) async throws -> SceneSection {
+        var req = try await authorizedRequest("sections/\(id)/timecode", method: "PATCH")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let fps: Double?; let offset_seconds: Double }
+        req.httpBody = try encoder.encode(Body(fps: fps, offset_seconds: offsetSeconds))
+        return try await send(req)
+    }
+
     // MARK: - Videos (#11 Schritt 7)
 
     func listVideos(sectionId: String) async throws -> [Video] {

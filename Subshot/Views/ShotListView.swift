@@ -180,33 +180,31 @@ struct ShotListView: View {
     @State private var creatingIntermediateStep = false
     @State private var editingSection: SceneSection??  // same nesting convention as editingScene
     /// Mark-Clip feature (2026-08-29, on-set timecode markers — see
-    /// SceneMarker's own doc comment in Models.swift). `isSendingMarker`
-    /// guards against a double-tap firing two POSTs; `markerFeedback` is a
-    /// brief self-clearing confirmation flash, same shape as a toast.
-    /// 2026-08-29, Lino: "Bevor man die Funktion nutzen kann muss man oben
-    /// zuerst die Framerate eingeben/auswählen, erst dann ist die Funktion
-    /// verfügbar" — nil until picked via the "Set Framerate" menu button;
-    /// gates both the running timecode display AND markClipBar (see body's
-    /// `.overlay(alignment: .bottom)`). Not persisted across app launches
-    /// on purpose — a fresh shoot day should re-confirm the fps rather than
-    /// silently reuse a stale one.
-    /// 2026-08-30 correction — Lino REVERSED the earlier "not persisted"
-    /// decision: "schliesst man die app... stoppt der timecode, aber wird
-    /// gespeichert! man kann dann weitermachen... dort muss dann der
-    /// Button 'weiter tracken' heissen". `selectedFPS` itself stays
-    /// transient (nil = "not currently running"), but `savedFPS` mirrors
-    /// the last fps chosen for `openSectionId` specifically, loaded from
-    /// UserDefaults on every section switch (see `loadTimecodeState`/
-    /// `saveTimecodeState`) — drives "Weiter tracken" instead of "Set
-    /// Framerate" once non-nil, and auto-resumes the live clock if the
-    /// last activity was under an hour ago.
-    @State private var selectedFPS: Double?
-    @State private var savedFPS: Double?
-    // 2026-08-30 — mirrors web's unmount-effect: leaving the app while a
-    // session is running still needs to persist "last active now" so a
-    // resume within the hour picks it back up correctly.
-    @Environment(\.scenePhase) private var scenePhase
-    @State private var isSendingMarker = false
+    /// SceneMarker's own doc comment in Models.swift). `markerFeedback` is
+    /// a brief self-clearing confirmation flash, same shape as a toast.
+    /// 2026-08-31 — no longer a double-tap guard here (see markClip's own
+    /// doc comment): rapid repeated taps must each fire their own request
+    /// immediately, not queue behind an in-flight one.
+    /// 2026-08-31, Lino: "übernimmt eine person den timecode mit der
+    /// kamera, ist er bei den anderen die das gleiche projekt geöffnet
+    /// haben direkt auch mit gesynced" — the whole session (fps + a
+    /// wall-clock correction offset) moved from this view's own local
+    /// @State/UserDefaults to SceneSection.timecodeFps/
+    /// timecodeOffsetSeconds/timecodeSyncedAt (shared across every client
+    /// via the same project poll everyone already does) — see
+    /// markerTargetSection's own computed properties further down
+    /// (isTimecodeRunning/hasSavedTimecodeSession) instead of a separate
+    /// selectedFPS/savedFPS pair. `timecodeFreshnessTick` exists only to
+    /// force a re-render at the 60s idle-timeout boundary (see its own
+    /// .onReceive further down) — the freshness check itself is a pure
+    /// Date() comparison with no state of its own to bump otherwise.
+    @State private var timecodeFreshnessTick = 0
+    /// "Start Rec-Markers" (2026-08-31, Lino, see the reference screenshot
+    /// he shared) — opens the camera-based visual-timecode-sync sheet,
+    /// replacing the old plain "Set Framerate" menu as the way to START a
+    /// fresh session on iOS. "Weiter tracken" (an EXISTING, already-synced
+    /// session) still needs no camera at all, see continueTimecodeTracking.
+    @State private var showingRecMarkersSync = false
     @State private var markerFeedback: String?
     @State private var isExportingEDL = false
     @State private var edlExportURL: URL?
@@ -748,36 +746,32 @@ struct ShotListView: View {
         }
         // 2026-08-30, Lino: "sind alle clips als im kasten markiert in
         // einer shotlist, stopt der timecode marker (und speichert
-        // natuerlich)" — ending the session just clears selectedFPS back
-        // to the "Set Framerate" gate; every marker was already persisted
-        // via the API the moment it was tapped, no data loss here.
+        // natuerlich)" - 2026-08-31: now clears the SHARED backend
+        // session (not just local display) so it doesn't linger stale for
+        // the next shoot day on this section, same fix as the web app's
+        // identical effect.
         .onChange(of: allScenesInOpenSectionDone) { _, isDone in
-            if isDone { selectedFPS = nil }
-        }
-        // 2026-08-30 — "jedes video/projekt braucht ja seinen eigenen
-        // timecode": persist the OLD section's activity on the way out (so
-        // a resume within the hour still works even without a marker tap
-        // right before switching away), then load whatever state belongs
-        // to the section just opened.
-        .onChange(of: openSectionId) { oldValue, _ in
-            if let oldValue, let fps = selectedFPS {
-                Self.saveTimecodeState(sectionId: oldValue, fps: fps)
-            }
-            loadTimecodeStateForOpenSection()
-        }
-        // Backgrounding/closing the app while tracking: persist "now" as
-        // last-active so re-opening within the hour resumes automatically,
-        // matching web's unmount-time save.
-        .onChange(of: scenePhase) { _, newPhase in
-            if newPhase != .active, let section = markerTargetSection, let fps = selectedFPS {
-                Self.saveTimecodeState(sectionId: section.id, fps: fps)
+            if isDone, let section = markerTargetSection {
+                Task { await viewModel.setSectionTimecode(section, fps: nil) }
             }
         }
+        // 2026-08-31 - no more manual load/save on section switch, and no
+        // more scenePhase-backgrounding persistence: the timecode session
+        // now lives entirely on `markerTargetSection` itself (derived
+        // from `viewModel.sections`, which already refreshes via the
+        // normal polling/API-response flow) - switching sections just
+        // means `markerTargetSection` resolves to a DIFFERENT SceneSection
+        // with its own independent timecodeFps/timecodeSyncedAt, nothing
+        // to load/save by hand anymore.
+        //
         // Lino: "auch wenn man mindestens 1h nicht mehr im projekt war
-        // wird der timecode timer automatisch gestoppt" — checked every
-        // minute even if the app just sits open without a single tap.
+        // wird der timecode timer automatisch gestoppt" - isTimecodeRunning
+        // is a pure Date()-vs-timecodeSyncedAt comparison with no state of
+        // its own to update, so it needs an external nudge to actually
+        // re-render at the 1h boundary even if nothing else changes; this
+        // just bumps a dummy counter every minute to force that re-check.
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
-            checkTimecodeIdleTimeout()
+            timecodeFreshnessTick += 1
         }
         .scrollTargetBehaviorIf(wantsScrollSnap && activeWorkflowSection == .scripting && scrollSnapTargetCount > 1)
         // 2026-07-23 (#320) — the Postproduction branch above already had
@@ -808,13 +802,14 @@ struct ShotListView: View {
         // (top, via safeAreaInset below). See timecodeBar/markClipBar's own
         // doc comments.
         .overlay(alignment: .bottom) {
-            // Set-Marker is gated on selectedFPS being chosen first (Lino:
-            // "Bevor man die Funktion nutzen kann muss man oben zuerst die
-            // Framerate eingeben/auswählen, erst dann ist die Funktion
-            // verfügbar") — timecodeBar's own "Set Framerate" menu is what
-            // sets it. 2026-08-30 — ALSO gated on openSectionId != nil now
-            // (see timecodeBar's own doc comment for why).
-            if activeWorkflowSection == .scripting, openSectionId != nil, selectedFPS != nil {
+            // Set-Marker is gated on a running (fresh) shared timecode
+            // session first (Lino: "Bevor man die Funktion nutzen kann
+            // muss man oben zuerst die Framerate eingeben/auswählen, erst
+            // dann ist die Funktion verfügbar") — timecodeBar's own "Start
+            // Rec-Markers"/"Weiter tracken" is what sets it. Also gated on
+            // openSectionId != nil (see timecodeBar's own doc comment for
+            // why).
+            if activeWorkflowSection == .scripting, openSectionId != nil, isTimecodeRunning {
                 markClipBar
             }
         }
@@ -824,9 +819,11 @@ struct ShotListView: View {
             // braucht ja seinen eigenen timecode!" — was shown for the
             // whole Skript-Tab including the section-selection overview;
             // now only inside one opened section's actual shot-planning
-            // view. `.id(openSectionId)` forces a fresh `selectedFPS`/
-            // timer state on every section switch, mirroring web's
-            // `key={section.id}`.
+            // view. `.id(openSectionId)` forces a fresh TimelineView
+            // instance on every section switch — the session data itself
+            // just naturally resolves to the newly-opened section via
+            // markerTargetSection, nothing to reset by hand there —
+            // mirroring web's `key={section.id}`.
             if activeWorkflowSection == .scripting, openSectionId != nil {
                 timecodeBar
                     .id(openSectionId)
@@ -1098,6 +1095,11 @@ struct ShotListView: View {
         .sheet(item: $viewingSectionFeedback) { section in
             SectionFeedbackSheet(section: section, viewModel: viewModel)
         }
+        .sheet(isPresented: $showingRecMarkersSync) {
+            if let section = markerTargetSection {
+                RecMarkersSyncSheet(section: section, viewModel: viewModel)
+            }
+        }
         .sheet(isPresented: $showingTeamSheet) {
             TeamSheet(projectId: projectId)
         }
@@ -1350,46 +1352,33 @@ struct ShotListView: View {
     /// (onlinemanual.nikonimglib.com/zr/en/19-02.html): every N-RAW/R3D
     /// NE/ProRes RAW/ProRes 422 HQ/H.265/H.264 mode across every
     /// resolution the ZR offers uses one of exactly these 9 rates.
-    private static let fpsPresets: [Double] = [23.976, 25, 29.97, 50, 59.94, 100, 119.88, 200, 239.76]
+    // Not `private` — RecMarkersSyncSheet reuses the same preset list/
+    // label formatting for its own framerate picker.
+    static let fpsPresets: [Double] = [23.976, 25, 29.97, 50, 59.94, 100, 119.88, 200, 239.76]
 
     /// Trims a trailing ".0" for the plain rates (25/50/100/200) while
     /// keeping the real decimals (23.976/29.97/...) as typed — plain
     /// Double string interpolation would otherwise show "25.0 fps".
-    private static func fpsLabel(_ fps: Double) -> String {
+    static func fpsLabel(_ fps: Double) -> String {
         fps.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", fps) : String(fps)
     }
 
-    /// 2026-08-30 — per-section timecode persistence (Lino: "weiter
-    /// tracken" instead of re-picking a framerate; auto-stop after 1h
-    /// idle). UserDefaults, not the backend — this is a local "where was I"
-    /// convenience, not data that needs to sync across devices.
+    /// 2026-08-31 - shared timecode session (see the big doc comment on
+    /// timecodeFreshnessTick above for the full context). Idle-timeout is
+    /// still exactly 1h, just checked against the SHARED
+    /// timecodeSyncedAt now instead of a per-device UserDefaults value.
     private static let idleTimeoutSeconds: TimeInterval = 60 * 60
 
-    private static func timecodeStateKey(_ sectionId: String) -> String { "subshot.timecode.\(sectionId)" }
-
-    private static func loadTimecodeState(sectionId: String) -> (fps: Double, lastActiveAt: Date)? {
-        guard let dict = UserDefaults.standard.dictionary(forKey: timecodeStateKey(sectionId)),
-              let fps = dict["fps"] as? Double,
-              let lastActiveAt = dict["lastActiveAt"] as? Double else { return nil }
-        return (fps, Date(timeIntervalSince1970: lastActiveAt))
-    }
-
-    private static func saveTimecodeState(sectionId: String, fps: Double) {
-        UserDefaults.standard.set(
-            ["fps": fps, "lastActiveAt": Date().timeIntervalSince1970],
-            forKey: timecodeStateKey(sectionId)
-        )
-    }
-
-    /// Time-of-Day, HH:MM:SS:FF — always the device's own clock, never
-    /// "seconds since something started" (see SceneMarker's doc comment).
-    /// `fps` is Lino-chosen per session (see selectedFPS), sent to the
-    /// backend per-marker (SceneMarker.fps) so a mixed-fps history stays
-    /// honest. 2026-08-30 — fps can now be a real NTSC-style camera rate
+    /// Time-of-Day, HH:MM:SS:FF - always the device's own clock CORRECTED
+    /// by the shared timecodeOffsetSeconds (see SceneSection.timecodeFps's
+    /// own doc comment), never "seconds since something started" (see
+    /// SceneMarker's doc comment). `fps` is chosen per session, sent to
+    /// the backend per-marker (SceneMarker.fps) so a mixed-fps history
+    /// stays honest. fps can be a real NTSC-style camera rate
     /// (23.976/29.97/59.94/119.88/239.76, not just round numbers); the FF
     /// field still counts frames 0..(nominal-1) per standard SMPTE
     /// convention (23.976p labels frames 0-23, same as a plain 24p would),
-    /// so rounding fps to its nominal frame count is exactly right here —
+    /// so rounding fps to its nominal frame count is exactly right here -
     /// same convention app/edl.py's generate_edl uses server-side.
     private func formatTimecode(_ date: Date, fps: Double) -> String {
         let comps = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
@@ -1402,23 +1391,36 @@ struct ShotListView: View {
     /// already relies on (targetSectionIdForNewScene) — a shoot day almost
     /// always means one open section at a time, so Mark Clip attaches to
     /// whichever one is currently in view without asking on every tap.
-    /// Falls back to the first section if none's been opened yet this
-    /// session, and to nil (button disabled) only once the project truly
-    /// has no section at all.
-    /// 2026-08-30 — now resolves to `openSectionId` (the explicit Skript-
-    /// Auswahlübersicht selection, web-parity) instead of the old implicit
-    /// "last section opened via the scene-edit sheet" heuristic — the
-    /// timecode bar/markClipBar are only ever shown once a section is
-    /// explicitly open now, so there's no more ambiguity to guess around.
+    /// 2026-08-30 — resolves to `openSectionId` (the explicit Skript-
+    /// Auswahlübersicht selection, web-parity) — the timecode bar/
+    /// markClipBar are only ever shown once a section is explicitly open.
     private var markerTargetSection: SceneSection? {
         guard let key = openSectionId else { return nil }
         return viewModel.sections.first(where: { $0.id == key })
     }
 
+    /// 2026-08-31 — a shared session exists for the open section at all
+    /// (regardless of freshness) — drives "Weiter tracken" showing up
+    /// instead of "Start Rec-Markers".
+    private var hasSavedTimecodeSession: Bool {
+        markerTargetSection?.timecodeFps != nil
+    }
+
+    /// 2026-08-31 — the shared session is fresh enough to actually show
+    /// the live running clock (see idleTimeoutSeconds). References
+    /// `timecodeFreshnessTick` purely so SwiftUI's dependency tracking
+    /// re-evaluates this at the periodic 60s check even though nothing
+    /// else about `markerTargetSection` changed in the meantime.
+    private var isTimecodeRunning: Bool {
+        _ = timecodeFreshnessTick
+        guard let syncedAt = markerTargetSection?.timecodeSyncedAt else { return false }
+        return Date().timeIntervalSince(syncedAt) < Self.idleTimeoutSeconds
+    }
+
     /// 2026-08-30, Lino: "sind alle clips als im kasten markiert in einer
     /// shotlist, stopt der timecode marker (und speichert natuerlich)" —
-    /// ending the session just means clearing selectedFPS back to the "Set
-    /// Framerate" gate; every marker was already persisted via the API the
+    /// ending the session just means clearing the shared session back to
+    /// the gate; every marker was already persisted via the API the
     /// moment it was tapped, so there's no data loss, only ending the
     /// running clock.
     private var allScenesInOpenSectionDone: Bool {
@@ -1427,77 +1429,59 @@ struct ShotListView: View {
         return !scenes.isEmpty && scenes.allSatisfy { $0.completed }
     }
 
+    /// 2026-08-31, Lino: "das marker setzen... muss sofort passieren so
+    /// dass man auch marker direkt hintereinander setzen kann" — was
+    /// gated on `isSendingMarker`, disabling the button (and swapping its
+    /// icon for a spinner) for the full ~1s network round trip, so two
+    /// real on-set taps close together (exactly the case that matters
+    /// most — a fast sequence of takes) silently ate the second one.
+    /// Optimistic now: haptic + feedback flash happen INSTANTLY on tap,
+    /// each network call fires in its own independent Task the button
+    /// never waits on — a real failure still surfaces via
+    /// markerErrorMessage, just after the fact rather than blocking the
+    /// next tap. The backend itself refreshes the shared session's
+    /// timecodeSyncedAt on every created marker (see create_scene_marker's
+    /// own comment) — no separate "touch" call needed here anymore.
     private func markClip() {
-        guard let fps = selectedFPS else { return }  // button is hidden until set, this is just a safety guard
-        guard let section = markerTargetSection else {
-            markerErrorMessage = language.t("shotListView.markClipNoSection")
-            return
-        }
-        guard !isSendingMarker else { return }
-        isSendingMarker = true
-        let timecode = formatTimecode(Date(), fps: fps)
+        guard let section = markerTargetSection, let fps = section.timecodeFps else { return }  // button is hidden until running, this is just a safety guard
+        let offset = section.timecodeOffsetSeconds
+        let timecode = formatTimecode(Date().addingTimeInterval(offset), fps: fps)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        withAnimation { markerFeedback = "\(language.t("shotListView.markClipSaved")) · \(timecode)" }
+        Task {
+            try? await Task.sleep(nanoseconds: 1_600_000_000)
+            if markerFeedback?.hasSuffix(timecode) == true { withAnimation { markerFeedback = nil } }
+        }
         Task {
             do {
                 _ = try await APIClient.shared.createSceneMarker(sectionId: section.id, timecode: timecode, fps: fps)
-                Self.saveTimecodeState(sectionId: section.id, fps: fps)
-                withAnimation { markerFeedback = "\(language.t("shotListView.markClipSaved")) · \(timecode)" }
-                try? await Task.sleep(nanoseconds: 1_600_000_000)
-                if markerFeedback?.hasSuffix(timecode) == true { withAnimation { markerFeedback = nil } }
             } catch {
                 markerErrorMessage = error.localizedDescription
             }
-            isSendingMarker = false
         }
     }
 
-    /// 2026-08-30 — starts (or resumes, via "Weiter tracken") a timecode
-    /// session for `openSectionId`, persisting immediately so a resume
-    /// within the next hour picks the same fps back up automatically.
-    private func startTracking(fps: Double) {
-        selectedFPS = fps
-        savedFPS = fps
-        if let section = markerTargetSection {
-            Self.saveTimecodeState(sectionId: section.id, fps: fps)
-        }
+    /// Starts a BRAND NEW session (offset 0 - no camera calibration, a
+    /// plain framerate pick) - used by timecodeBar's fps-chip re-pick menu
+    /// while already running. The real entry point for a FRESH session on
+    /// iOS is the "Start Rec-Markers" camera-sync sheet now (see
+    /// showingRecMarkersSync/RecMarkersSyncSheet), not this function
+    /// directly.
+    private func startTracking(fps: Double, offsetSeconds: Double = 0) {
+        guard let section = markerTargetSection else { return }
+        Task { await viewModel.setSectionTimecode(section, fps: fps, offsetSeconds: offsetSeconds) }
     }
 
-    /// Loads persisted per-section state whenever a DIFFERENT section is
-    /// opened (or the overview is returned to) — `selectedFPS`/`savedFPS`
-    /// are plain `@State` on this whole view, shared across every section,
-    /// so without this they'd otherwise leak between sections instead of
-    /// each one getting "seinen eigenen timecode" as Lino asked.
-    private func loadTimecodeStateForOpenSection() {
-        guard let sectionId = openSectionId else {
-            selectedFPS = nil
-            savedFPS = nil
-            return
-        }
-        guard let stored = Self.loadTimecodeState(sectionId: sectionId) else {
-            selectedFPS = nil
-            savedFPS = nil
-            return
-        }
-        savedFPS = stored.fps
-        if Date().timeIntervalSince(stored.lastActiveAt) < Self.idleTimeoutSeconds {
-            selectedFPS = stored.fps
-            Self.saveTimecodeState(sectionId: sectionId, fps: stored.fps)
-        } else {
-            selectedFPS = nil
-        }
+    /// "Weiter tracken" (2026-08-30, Lino: a restart of an already-started
+    /// session needs no camera re-sync — "kann man machen, muss man aber
+    /// nicht") — reuses the EXISTING shared fps+offset (whoever set it, on
+    /// whichever platform) with a single tap; the PATCH itself just
+    /// refreshes timecodeSyncedAt server-side.
+    private func continueTimecodeTracking() {
+        guard let section = markerTargetSection, let fps = section.timecodeFps else { return }
+        Task { await viewModel.setSectionTimecode(section, fps: fps, offsetSeconds: section.timecodeOffsetSeconds) }
     }
 
-    /// 2026-08-30, Lino: "auch wenn man mindestens 1h nicht mehr im
-    /// projekt war wird der timecode timer automatisch gestoppt" —
-    /// checked periodically while a session is running, even if the app
-    /// just sits open in the background without a single Set-Marker tap.
-    private func checkTimecodeIdleTimeout() {
-        guard selectedFPS != nil, let sectionId = openSectionId,
-              let stored = Self.loadTimecodeState(sectionId: sectionId) else { return }
-        if Date().timeIntervalSince(stored.lastActiveAt) >= Self.idleTimeoutSeconds {
-            selectedFPS = nil
-        }
-    }
 
     private func startResetMarkers() {
         guard let section = markerTargetSection, !isCountingForReset else { return }
@@ -1520,6 +1504,13 @@ struct ShotListView: View {
         Task {
             do {
                 try await APIClient.shared.resetSceneMarkers(sectionId: section.id)
+                // 2026-08-31 — Reset now also clears the SHARED timecode
+                // session itself (fps/offset), not just the recorded
+                // markers, matching the web app's identical fix: a fresh
+                // start should mean a fresh "Start Rec-Markers"/"Set
+                // Framerate" gate for EVERYONE on this section, not
+                // silently resuming the just-reset session's old fps.
+                await viewModel.setSectionTimecode(section, fps: nil)
                 withAnimation { markerFeedback = language.t("shotListView.resetMarkersDone") }
                 try? await Task.sleep(nanoseconds: 1_600_000_000)
                 if markerFeedback == language.t("shotListView.resetMarkersDone") { withAnimation { markerFeedback = nil } }
@@ -1552,21 +1543,31 @@ struct ShotListView: View {
 
     @ViewBuilder
     private var timecodeBar: some View {
-        if let fps = selectedFPS {
+        if isTimecodeRunning, let section = markerTargetSection, let fps = section.timecodeFps {
+            let offset = section.timecodeOffsetSeconds
             TimelineView(.periodic(from: .now, by: 0.1)) { context in
                 HStack(spacing: 10) {
-                    Text(formatTimecode(context.date, fps: fps))
+                    Text(formatTimecode(context.date.addingTimeInterval(offset), fps: fps))
                         .font(.system(.title3, design: .monospaced).weight(.semibold))
                         .foregroundStyle(.white)
                         .monospacedDigit()
-                    if let section = markerTargetSection {
-                        Text(language.t("shotListView.markClipTarget").replacingOccurrences(of: "{section}", with: section.name))
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.7))
-                            .lineLimit(1)
-                    }
+                    Text(language.t("shotListView.markClipTarget").replacingOccurrences(of: "{section}", with: section.name))
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.7))
+                        .lineLimit(1)
                     Spacer()
                     Menu {
+                        // 2026-08-31, Lino: "kann man machen, muss man aber
+                        // nicht" — re-syncing an ALREADY-running session via
+                        // the camera is always available here, just never
+                        // required (continueTimecodeTracking/"Weiter
+                        // tracken" below is the no-camera default resume).
+                        Button {
+                            showingRecMarkersSync = true
+                        } label: {
+                            Label(language.t("shotListView.recMarkersResync"), systemImage: "camera.viewfinder")
+                        }
+                        Divider()
                         ForEach(Self.fpsPresets, id: \.self) { preset in
                             Button("\(Self.fpsLabel(preset)) fps") { startTracking(fps: preset) }
                         }
@@ -1585,7 +1586,7 @@ struct ShotListView: View {
                                 .foregroundStyle(.white)
                         }
                     }
-                    .disabled(isResettingMarkers || isCountingForReset || markerTargetSection == nil)
+                    .disabled(isResettingMarkers || isCountingForReset)
                     // 2026-08-30, Lino: "reset und senden button sind zu nahe
                     // aneinander" — Reset is destructive, a visible divider
                     // (not just the row's own 10pt gap) makes it harder to
@@ -1601,25 +1602,26 @@ struct ShotListView: View {
                                 .foregroundStyle(.white)
                         }
                     }
-                    .disabled(isExportingEDL || markerTargetSection == nil)
+                    .disabled(isExportingEDL)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .background(.black.opacity(0.75))
             }
-        } else if let savedFPS {
+        } else if hasSavedTimecodeSession {
             // 2026-08-30, Lino: "dort muss dann der Button 'weiter tracken'
             // heissen und nicht mehr Frameraute auswählen, weil diese für
-            // das projekt ja schon ausgewählt wurde" — the fps for this
-            // section is already known, so resume it with one tap instead
-            // of re-prompting.
+            // das projekt ja schon ausgewählt wurde" — 2026-08-31: also
+            // shown when a TEAMMATE (any platform) started this session,
+            // not just this same device — "Weiter tracken" reuses the
+            // shared fps+offset with one tap, no camera needed.
             HStack(spacing: 10) {
                 Text(language.t("shotListView.continueTrackingHint"))
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.7))
                 Spacer()
                 Button {
-                    startTracking(fps: savedFPS)
+                    continueTimecodeTracking()
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "play.fill")
@@ -1636,19 +1638,26 @@ struct ShotListView: View {
             .padding(.vertical, 10)
             .background(.black.opacity(0.75))
         } else {
+            // 2026-08-31, Lino: "beim Button oben rechts im einem offenen
+            // Skript soll 'Start Rec-Markers' stehen, dieser button öffnen
+            // ein kleines rechteckiges kamerafenster... damit man keine
+            // zeit differenz mehr hat vom Timecode auf der kamera und den
+            // markern von subshot" — replaces the old plain "Set
+            // Framerate" fps-only menu as the way to START a fresh
+            // session: opens RecMarkersSyncSheet (camera + live OCR +
+            // framerate, matching Lino's reference screenshot) instead of
+            // just picking a framerate blind.
             HStack(spacing: 10) {
                 Text(language.t("shotListView.setFramerateHint"))
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.7))
                 Spacer()
-                Menu {
-                    ForEach(Self.fpsPresets, id: \.self) { preset in
-                        Button("\(Self.fpsLabel(preset)) fps") { startTracking(fps: preset) }
-                    }
+                Button {
+                    showingRecMarkersSync = true
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: "timer")
-                        Text(language.t("shotListView.setFramerate"))
+                        Image(systemName: "camera.viewfinder")
+                        Text(language.t("shotListView.startRecMarkers"))
                     }
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
@@ -1675,15 +1684,15 @@ struct ShotListView: View {
                     .foregroundStyle(.white)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
+            // 2026-08-31 — no more isSendingMarker-driven spinner/disable
+            // here (see markClip's own doc comment): this button must stay
+            // instantly tappable, repeatedly, for a fast real on-set take
+            // sequence.
             Button {
                 markClip()
             } label: {
                 HStack(spacing: 8) {
-                    if isSendingMarker {
-                        ProgressView().tint(.white)
-                    } else {
-                        Image(systemName: "flag.fill")
-                    }
+                    Image(systemName: "flag.fill")
                     Text(language.t("shotListView.markClip"))
                         .font(.headline)
                 }
@@ -1693,7 +1702,7 @@ struct ShotListView: View {
                 .background(Capsule().fill(Color.red))
                 .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
             }
-            .disabled(isSendingMarker || markerTargetSection == nil)
+            .disabled(markerTargetSection == nil)
         }
         .padding(.bottom, 20)
     }
