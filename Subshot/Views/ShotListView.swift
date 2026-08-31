@@ -1255,26 +1255,41 @@ struct ShotListView: View {
         if isTimecodeRunning, let section = markerTargetSection, let fps = section.timecodeFps {
             let offset = section.timecodeOffsetSeconds
             let targetLabel: String = language.t("shotListView.markClipTarget").replacingOccurrences(of: "{section}", with: section.name)
+            // 2026-08-31, Lino: "der timecode soll gross über die ganze
+            // Bildschirmbreite direkt unter dem Ideentitel stehen... links
+            // gross: Titel, rechts daneben die Framerate" — picked via
+            // AskUserQuestion: 3 stacked rows instead of the old single
+            // cramped HStack. Row 1: just the timecode, big, full width.
+            // Row 2: target section label (left) + fps chip (right). Row
+            // 3: reset/export, right-aligned.
             TimelineView(.periodic(from: .now, by: 0.1)) { context in
                 let timecodeText = formatTimecode(context.date.addingTimeInterval(offset), fps: fps)
-                HStack(spacing: 10) {
+                VStack(spacing: 8) {
                     Text(timecodeText)
-                        .font(.system(.title3, design: .monospaced).weight(.semibold))
+                        .font(.system(.largeTitle, design: .monospaced).weight(.bold))
                         .foregroundStyle(.white)
                         .monospacedDigit()
-                    Text(targetLabel)
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.7))
                         .lineLimit(1)
-                    Spacer()
-                    timecodeFpsMenu(currentFps: fps)
-                    resetMarkersButton
-                    // 2026-08-30, Lino: "reset und senden button sind zu nahe
-                    // aneinander" — Reset is destructive, a visible divider
-                    // (not just the row's own 10pt gap) makes it harder to
-                    // mis-tap right after it.
-                    Divider().frame(height: 16).overlay(Color.white.opacity(0.2))
-                    exportEDLButton
+                        .minimumScaleFactor(0.6)
+                        .frame(maxWidth: .infinity)
+                    HStack(spacing: 10) {
+                        Text(targetLabel)
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.7))
+                            .lineLimit(1)
+                        Spacer()
+                        timecodeFpsMenu(currentFps: fps)
+                    }
+                    HStack(spacing: 10) {
+                        Spacer()
+                        resetMarkersButton
+                        // 2026-08-30, Lino: "reset und senden button sind zu
+                        // nahe aneinander" — Reset is destructive, a visible
+                        // divider (not just the row's own 10pt gap) makes it
+                        // harder to mis-tap right after it.
+                        Divider().frame(height: 16).overlay(Color.white.opacity(0.2))
+                        exportEDLButton
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
