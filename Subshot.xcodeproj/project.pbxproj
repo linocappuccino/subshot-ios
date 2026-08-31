@@ -10,6 +10,7 @@
 		9D65C43E3012BA7600D56768 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 9D65C43D3012BA7600D56768 /* Sentry */; };
 		9DEA06A42FFD72C400AB854B /* ClerkKit in Frameworks */ = {isa = PBXBuildFile; productRef = 9DEA06A32FFD72C400AB854B /* ClerkKit */; };
 		9DEA06A62FFD72C400AB854B /* ClerkKitUI in Frameworks */ = {isa = PBXBuildFile; productRef = 9DEA06A52FFD72C400AB854B /* ClerkKitUI */; };
+		C60210C42D27BE078BC9C336 /* Sentry in Embed Frameworks */ = {isa = PBXBuildFile; productRef = 9D65C43D3012BA7600D56768 /* Sentry */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -28,6 +29,20 @@
 			remoteInfo = Subshot;
 		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		56E71E88D591FA4DEA54A5C9 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				C60210C42D27BE078BC9C336 /* Sentry in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		9D3D27472FFF7B820006AD05 /* MemberAvatar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemberAvatar.swift; sourceTree = "<group>"; };
@@ -259,6 +274,7 @@
 				9DEA06562FFD70E900AB854B /* Sources */,
 				9DEA06572FFD70E900AB854B /* Frameworks */,
 				9DEA06582FFD70E900AB854B /* Resources */,
+				56E71E88D591FA4DEA54A5C9 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
