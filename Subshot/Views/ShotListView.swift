@@ -815,31 +815,15 @@ struct ShotListView: View {
                     .id(openSectionId)
             }
         }
-        .sheet(isPresented: $isPresentingEDLShare) {
-            if let edlExportURL {
-                ActivityView(activityItems: [edlExportURL])
-            }
-        }
-        .alert(isPresented: Binding(
-            get: { markerErrorMessage != nil },
-            set: { if !$0 { markerErrorMessage = nil } }
-        )) {
-            Alert(title: Text(markerErrorMessage ?? ""))
-        }
-        .confirmationDialog(
-            markerTargetSection.map { language.t("shotListView.resetMarkersConfirmTitle").replacingOccurrences(of: "{section}", with: $0.name) } ?? "",
-            isPresented: $showResetMarkersConfirm,
-            titleVisibility: .visible,
-            actions: {
-                Button(language.t("shotListView.resetMarkersConfirmButton"), role: .destructive) {
-                    resetMarkers()
-                }
-                Button(language.t("common.cancel"), role: .cancel) {}
-            },
-            message: {
-                Text(language.t("shotListView.resetMarkersConfirmMessage").replacingOccurrences(of: "{count}", with: String(resetMarkerCount ?? 0)))
-            }
-        )
+        .modifier(TimecodeAuxDialogs(
+            isPresentingEDLShare: $isPresentingEDLShare,
+            edlExportURL: edlExportURL,
+            markerErrorMessage: $markerErrorMessage,
+            showResetMarkersConfirm: $showResetMarkersConfirm,
+            resetMarkerCount: resetMarkerCount,
+            markerTargetSection: markerTargetSection,
+            onConfirmReset: resetMarkers
+        ))
         .navigationTitle(projectName)
         .navigationBarTitleDisplayMode(.inline)
         // 2026-08-31, Lino: "mit dem < button der ganz oben links schon
@@ -853,139 +837,7 @@ struct ShotListView: View {
         // Skript-Übersicht itself) keeps the real system back button
         // untouched.
         .navigationBarBackButtonHidden(openSectionId != nil)
-        .toolbar {
-            if openSectionId != nil {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        withAnimation { openSectionId = nil }
-                    } label: {
-                        Image(systemName: "chevron.backward")
-                    }
-                }
-            }
-            // 2026-07-29, Lino: "Auftraggeber und Projektname sollen dann
-            // IMMER im header auf den pipelines dargestellt werden" — a
-            // custom .principal item so the client name can render as a
-            // small line above the bold project name, mirroring the web
-            // app's header (projects/[id]/page.tsx). .navigationTitle above
-            // still carries the plain projectName for VoiceOver and the
-            // back-button label on whatever gets pushed next; this visually
-            // overrides it. Only shown when set — most existing real
-            // projects predate this field (see Project.clientName).
-            ToolbarItem(placement: .principal) {
-                VStack(spacing: 0) {
-                    if let projectClientName, !projectClientName.isEmpty {
-                        Text(projectClientName)
-                            .font(.caption2)
-                            .foregroundStyle(Color(hex: projectColor))
-                    }
-                    Text(projectName)
-                        .font(.headline)
-                }
-            }
-            // 2026-07-14, Lino: "momentan ist die icon bar oben ja immer
-            // offen, können wir diese schliessen? und wenn man drückt geht
-            // sie schnell auf mit einem überstrecht effect? ... das stretch
-            // menü oben soll sich nach 3 sekunden selber wieder schliessen."
-            // Every button that used to be its own always-visible
-            // ToolbarItem now lives inside ONE ExpandableToolbar, collapsed
-            // to a single icon by default — see its own doc comment for why
-            // this needs a custom view instead of native ToolbarItems (the
-            // overshoot animation has to be a plain SwiftUI view
-            // transition, not a UINavigationBar-managed item
-            // insertion/removal, which doesn't reliably animate at all).
-            ToolbarItem(placement: .navigationBarTrailing) {
-                ExpandableToolbar {
-                    // 2026-07-13, Lino: "können wir das oben zur Iconbar
-                    // hinzufügen? (so ein Rückgängig Pfeil?)" — same undo
-                    // the bottom toast already offers (undoToast below),
-                    // just also reachable from the toolbar. Extended
-                    // 2026-07-14 to also cover viewModel.undoStack, not
-                    // just the shot-delete toast — see performUndo()'s doc
-                    // comment for how the two mechanisms share this button.
-                    if viewModel.pendingUndoShot != nil || !viewModel.undoStack.isEmpty {
-                        Button {
-                            Task { await viewModel.performUndo() }
-                        } label: {
-                            Image(systemName: "arrow.uturn.backward")
-                        }
-                    }
-                    // Reduced-info 2-column tile overview vs. today's full-detail
-                    // cards — orthogonal to the iPad-only column controls below
-                    // (those change how many full cards fit per row; this changes
-                    // how much detail each tile shows at all), so it's offered on
-                    // every device including iPhone.
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) { isCompactTileMode.toggle() }
-                    } label: {
-                        Image(systemName: isCompactTileMode ? "checklist" : "square.grid.2x2")
-                    }
-                    // #335, 2026-07-26 — this whole ToolbarItem lives on the
-                    // outer Group (see body below), which also hosts the
-                    // Ideas and Postproduction panels, so without this gate
-                    // these iPad column controls showed up there too even
-                    // though ipadColumnCount/isGridMode only ever feed
-                    // sceneGrid(_:), which is exclusively rendered by the
-                    // .scripting (Scenes) branch. Scoped to just that section.
-                    if isPad && activeWorkflowSection == .scripting {
-                        if horizontalSizeClass == .regular {
-                            Button {
-                                showingColumnCountPopover = true
-                            } label: {
-                                Image(systemName: "slider.horizontal.3")
-                            }
-                            .popover(isPresented: $showingColumnCountPopover) {
-                                columnCountPopover
-                            }
-                        } else {
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.2)) { isGridMode.toggle() }
-                            } label: {
-                                Image(systemName: isGridMode ? "rectangle.grid.1x2" : "square.grid.2x2")
-                            }
-                        }
-                    }
-                    if let exportedPdfURL {
-                        ShareLink(item: exportedPdfURL) {
-                            Image(systemName: "square.and.arrow.up")
-                        }
-                    } else if isExportingPdf {
-                        ProgressView()
-                    } else {
-                        // 2026-07-13, Lino: "beim Klick auf PDF Export soll
-                        // zuerst gefragt werden, ob Kachelansicht oder
-                        // Tabellenansicht exportiert werden soll" — was a
-                        // single tap straight to the (card-only) export before.
-                        Menu {
-                            Button(language.t("shotListView.pdfCardView")) { Task { await exportPdf(view: "cards") } }
-                            Button(language.t("shotListView.pdfTableView")) { Task { await exportPdf(view: "table") } }
-                        } label: {
-                            Image(systemName: "square.and.arrow.up")
-                        }
-                    }
-                    // Opens the management sheet (link + optional password)
-                    // instead of sharing straight away — password protection
-                    // needs a place to live, and folding it into a quick-share
-                    // one-tap button would either bury it or turn every share
-                    // into a two-tap flow either way, so it's its own sheet now.
-                    Button {
-                        showingShareLinkSheet = true
-                    } label: {
-                        Image(systemName: "link")
-                    }
-                    Button { showingTeamSheet = true } label: {
-                        Image(systemName: "person.2")
-                    }
-                    // #11 Schritt 6 (Postproduction-Tracking) — nur sichtbar
-                    // wenn das Projekt dieses Modul nutzt (#96).
-                    if viewModel.modulePostproduction {
-                        Button { showingPostproductionList = true } label: {
-                            Image(systemName: "checklist.checked")
-                        }
-                    }
-                }
-            }
-        }
+        .toolbar { mainToolbar }
         .task {
             await viewModel.load()
             // Correct the hardcoded .ideas default once module flags are
@@ -1060,125 +912,30 @@ struct ShotListView: View {
                 await viewModel.load(resetGeneration: false, includeSecondary: tick % 5 == 0)
             }
         }
-        .sheet(item: $selectedShot) { shot in
-            ShotDetailSheet(shot: shot, viewModel: viewModel)
-        }
-        .sheet(item: $generatingImageScene) { scene in
-            SceneAIImageSheet(scene: scene, viewModel: viewModel)
-        }
-        .sheet(isPresented: $showingPostproductionList) {
-            PostproductionListView(viewModel: viewModel)
-        }
-        // #276 — the Ideas page's bottom-right FAB's own "just created,
-        // now open it" sheet; independent of IdeaGridView's own
-        // editingIdea (that one's for tapping an EXISTING tile).
-        .sheet(item: $ideaCreatedByFAB) { idea in
-            IdeaEditSheet(idea: idea, viewModel: viewModel)
-        }
-        .sheet(item: $assigneeSheetScene) { scene in
-            SceneAssigneeSheet(scene: scene, viewModel: viewModel)
-        }
-        .sheet(item: $viewingSectionFeedback) { section in
-            SectionFeedbackSheet(section: section, viewModel: viewModel)
-        }
-        .sheet(isPresented: $showingTeamSheet) {
-            TeamSheet(projectId: projectId)
-        }
-        .sheet(isPresented: $isPresentingShareSheet) {
-            if let shareLinkURL {
-                ActivityView(activityItems: [shareLinkURL])
-            }
-        }
-        .sheet(isPresented: $showingShareLinkSheet) {
-            // 2026-07-17, #122 — mirrors the web app's "der Teilen-Button
-            // soll immer die Seite teilen auf der man gerade ist" (its
-            // shareKind tracks activeView live): shares whichever
-            // Workflow-Bereich is currently on screen instead of always
-            // the Szenen/storyboard link. Extended 2026-07-21 (#283) for
-            // the new third Postproduction page — "video" matches the
-            // kind PostproductionListView's own (non-embedded) share
-            // button already uses.
-            ShareLinkSheet(projectId: projectId, kind: shareKindForActiveWorkflowSection) { url in
-                shareLinkURL = url
-                isPresentingShareSheet = true
-            }
-        }
-        // Every failed API call in this screen (including a scene/shot image
-        // upload that didn't make it — e.g. a dropped connection mid-upload)
-        // only ever set viewModel.errorMessage; nothing displayed it, so
-        // those failures were completely silent — "the image just doesn't
-        // show up" with no error at all. This is the single alert for all of
-        // them.
-        .alert(language.t("common.error"), isPresented: Binding(
-            get: { viewModel.errorMessage != nil },
-            set: { if !$0 { viewModel.errorMessage = nil } }
-        )) {
-            Button(language.t("common.ok"), role: .cancel) {}
-        } message: {
-            Text(viewModel.errorMessage ?? "")
-        }
-        .alert(language.t("shotListView.goodTakeAlertTitle"), isPresented: Binding(
-            get: { editingGoodTakeScene != nil },
-            set: { if !$0 { editingGoodTakeScene = nil } }
-        )) {
-            TextField(language.t("shotListView.goodTakePlaceholder"), text: $goodTakeText)
-            Button(language.t("common.cancel"), role: .cancel) {}
-            Button(language.t("common.save")) {
-                if let scene = editingGoodTakeScene {
-                    let trimmed = goodTakeText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    Task { await viewModel.setSceneGoodTake(scene, filename: trimmed.isEmpty ? nil : trimmed) }
-                }
-            }
-        } message: {
-            Text(language.t("shotListView.goodTakeAlertMessage"))
-        }
-        .alert(language.t("shotListView.editDialogueLineTitle"), isPresented: Binding(
-            get: { editingDialogue != nil },
-            set: { if !$0 { editingDialogue = nil } }
-        )) {
-            TextField(language.t("shotListView.dialogueTextPlaceholder"), text: $editingDialogueText)
-            Button(language.t("common.cancel"), role: .cancel) {}
-            Button(language.t("common.save")) {
-                if let (dialogue, scene) = editingDialogue {
-                    Task { await viewModel.updateDialogue(dialogue, in: scene, text: editingDialogueText) }
-                }
-            }
-        }
-        // "Timing der App" (2026-07-11) — offers to shift every later
-        // same-day scene's start by the same delta the just-edited scene's
-        // start moved by. Never applied silently — see
-        // applyTimeCascade/pendingTimeCascade. Exact wording per Lino's
-        // spec (2026-07-13): "Möchtest du die nachfolgenden Szenen
-        // zeitlich angleichen? Bestätigen / nicht angleichen."
-        .confirmationDialog(
-            language.t("shotListView.timeCascadeTitle"),
-            isPresented: Binding(
-                get: { viewModel.pendingTimeCascade != nil },
-                set: { if !$0 { viewModel.pendingTimeCascade = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button(language.t("common.confirm")) {
-                Task { await viewModel.applyTimeCascade() }
-            }
-            Button(language.t("shotListView.timeCascadeDecline"), role: .cancel) {
-                viewModel.pendingTimeCascade = nil
-            }
-        }
-        // 2026-07-21, #282 — used to be a single "OK" dismiss-only alert;
-        // now offers a real choice: Abbrechen just closes it (already on
-        // the Scene overview, nothing else to do), "Alles im Kasten"
-        // navigates straight to the Postproduction page (same
-        // goToWorkflowSection this screen's edge-swipe already uses, see
-        // its own doc comment).
-        .alert(language.t("shotListView.allDoneTitle"), isPresented: $viewModel.showAllTimedScenesDoneConfirmation) {
-            Button(language.t("common.cancel"), role: .cancel) {}
-            Button(language.t("shotListView.allDoneConfirm")) {
-                goToWorkflowSection(.postproduction)
-            }
-        } message: {
-            Text(language.t("shotListView.allDoneMessage"))
-        }
+        .modifier(ShotListSheetsAndAlerts(
+            viewModel: viewModel,
+            projectId: projectId,
+            shareKindForActiveWorkflowSection: shareKindForActiveWorkflowSection,
+            selectedShot: $selectedShot,
+            generatingImageScene: $generatingImageScene,
+            showingPostproductionList: $showingPostproductionList,
+            ideaCreatedByFAB: $ideaCreatedByFAB,
+            assigneeSheetScene: $assigneeSheetScene,
+            viewingSectionFeedback: $viewingSectionFeedback,
+            showingTeamSheet: $showingTeamSheet,
+            isPresentingShareSheet: $isPresentingShareSheet,
+            shareLinkURL: $shareLinkURL,
+            showingShareLinkSheet: $showingShareLinkSheet,
+            editingGoodTakeScene: $editingGoodTakeScene,
+            goodTakeText: $goodTakeText,
+            editingDialogue: $editingDialogue,
+            editingDialogueText: $editingDialogueText,
+            editingScene: $editingScene,
+            editingSection: $editingSection,
+            creatingIntermediateStep: creatingIntermediateStep,
+            targetSectionIdForNewScene: targetSectionIdForNewScene,
+            onAllDoneConfirm: { goToWorkflowSection(.postproduction) }
+        ))
         // All 5 of these (Abschnitt/Szene-löschen alerts, Szene/Abschnitt/
         // Delete-confirmation alerts for Abschnitt/Szene — used to be inline
         // modifiers right here — Xcode's "unable to type-check in
@@ -1193,46 +950,6 @@ struct ShotListView: View {
             sceneToDelete: $sceneToDelete,
             sectionToSendToPostproduction: $sectionToSendToPostproduction
         ))
-        .sheet(isPresented: Binding(
-            get: { editingScene != nil },
-            set: { if !$0 { editingScene = nil } }
-        )) {
-            if case .some(let existing) = editingScene {
-                SceneEditSheet(existing: existing, isIntermediateStep: creatingIntermediateStep, viewModel: viewModel) { name, color, description, dialogue, scheduledAt, durationMinutes, priority in
-                    if let existing {
-                        await viewModel.renameScene(existing, name: name, color: color, description: description, dialogue: dialogue, scheduledAt: scheduledAt, durationMinutes: durationMinutes, priority: priority)
-                        return existing
-                    } else {
-                        return await viewModel.createScene(
-                            name: name.isEmpty ? language.t("scene.unnamed") : name, color: color,
-                            description: description.isEmpty ? nil : description,
-                            dialogue: dialogue.isEmpty ? nil : dialogue,
-                            scheduledAt: scheduledAt,
-                            durationMinutes: durationMinutes,
-                            sectionId: targetSectionIdForNewScene,
-                            priority: priority,
-                            isIntermediateStep: creatingIntermediateStep
-                        )
-                    }
-                } onImagePicked: { scene, image in
-                    await viewModel.uploadSceneImage(scene, image: image)
-                }
-            }
-        }
-        .sheet(isPresented: Binding(
-            get: { editingSection != nil },
-            set: { if !$0 { editingSection = nil } }
-        )) {
-            if case .some(let existing) = editingSection {
-                SectionEditSheet(existing: existing) { name in
-                    if let existing {
-                        await viewModel.renameSection(existing, name: name)
-                    } else {
-                        await viewModel.createSection(name: name)
-                    }
-                }
-            }
-        }
         .safeAreaInset(edge: .bottom) {
             if let pending = viewModel.pendingUndoShot {
                 undoToast(for: pending)
@@ -1677,6 +1394,153 @@ struct ShotListView: View {
             }
         }
         .disabled(isExportingEDL)
+    }
+
+    /// Extracted out of `body`'s own `.toolbar { ... }` call — 2026-08-31,
+    /// fifth round: `timecodeBar` and 3 body-level onChange/onReceive/sheet
+    /// modifiers were already fixed (see the memory entries for this file),
+    /// but the type-check-timeout error persisted. This ~130-line
+    /// `@ToolbarContentBuilder` closure (nested if/else, a `Menu`, a
+    /// `ShareLink`, a `.popover`, all inside one `ExpandableToolbar`) was
+    /// the one remaining piece of `body` never touched by any of those
+    /// fixes, and by far the largest single closure left in the chain — a
+    /// plain computed property (same trick as `timecodeFpsMenu` etc., NOT
+    /// a separate ViewModifier struct, so every `self.`-implicit property/
+    /// method it already used stays directly accessible with zero
+    /// binding-threading).
+    @ToolbarContentBuilder
+    private var mainToolbar: some ToolbarContent {
+        if openSectionId != nil {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    withAnimation { openSectionId = nil }
+                } label: {
+                    Image(systemName: "chevron.backward")
+                }
+            }
+        }
+        // 2026-07-29, Lino: "Auftraggeber und Projektname sollen dann
+        // IMMER im header auf den pipelines dargestellt werden" — a
+        // custom .principal item so the client name can render as a
+        // small line above the bold project name, mirroring the web
+        // app's header (projects/[id]/page.tsx). .navigationTitle above
+        // still carries the plain projectName for VoiceOver and the
+        // back-button label on whatever gets pushed next; this visually
+        // overrides it. Only shown when set — most existing real
+        // projects predate this field (see Project.clientName).
+        ToolbarItem(placement: .principal) {
+            VStack(spacing: 0) {
+                if let projectClientName, !projectClientName.isEmpty {
+                    Text(projectClientName)
+                        .font(.caption2)
+                        .foregroundStyle(Color(hex: projectColor))
+                }
+                Text(projectName)
+                    .font(.headline)
+            }
+        }
+        // 2026-07-14, Lino: "momentan ist die icon bar oben ja immer
+        // offen, können wir diese schliessen? und wenn man drückt geht
+        // sie schnell auf mit einem überstrecht effect? ... das stretch
+        // menü oben soll sich nach 3 sekunden selber wieder schliessen."
+        // Every button that used to be its own always-visible
+        // ToolbarItem now lives inside ONE ExpandableToolbar, collapsed
+        // to a single icon by default — see its own doc comment for why
+        // this needs a custom view instead of native ToolbarItems (the
+        // overshoot animation has to be a plain SwiftUI view
+        // transition, not a UINavigationBar-managed item
+        // insertion/removal, which doesn't reliably animate at all).
+        ToolbarItem(placement: .navigationBarTrailing) {
+            ExpandableToolbar {
+                // 2026-07-13, Lino: "können wir das oben zur Iconbar
+                // hinzufügen? (so ein Rückgängig Pfeil?)" — same undo
+                // the bottom toast already offers (undoToast below),
+                // just also reachable from the toolbar. Extended
+                // 2026-07-14 to also cover viewModel.undoStack, not
+                // just the shot-delete toast — see performUndo()'s doc
+                // comment for how the two mechanisms share this button.
+                if viewModel.pendingUndoShot != nil || !viewModel.undoStack.isEmpty {
+                    Button {
+                        Task { await viewModel.performUndo() }
+                    } label: {
+                        Image(systemName: "arrow.uturn.backward")
+                    }
+                }
+                // Reduced-info 2-column tile overview vs. today's full-detail
+                // cards — orthogonal to the iPad-only column controls below
+                // (those change how many full cards fit per row; this changes
+                // how much detail each tile shows at all), so it's offered on
+                // every device including iPhone.
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { isCompactTileMode.toggle() }
+                } label: {
+                    Image(systemName: isCompactTileMode ? "checklist" : "square.grid.2x2")
+                }
+                // #335, 2026-07-26 — this whole ToolbarItem lives on the
+                // outer Group (see body below), which also hosts the
+                // Ideas and Postproduction panels, so without this gate
+                // these iPad column controls showed up there too even
+                // though ipadColumnCount/isGridMode only ever feed
+                // sceneGrid(_:), which is exclusively rendered by the
+                // .scripting (Scenes) branch. Scoped to just that section.
+                if isPad && activeWorkflowSection == .scripting {
+                    if horizontalSizeClass == .regular {
+                        Button {
+                            showingColumnCountPopover = true
+                        } label: {
+                            Image(systemName: "slider.horizontal.3")
+                        }
+                        .popover(isPresented: $showingColumnCountPopover) {
+                            columnCountPopover
+                        }
+                    } else {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) { isGridMode.toggle() }
+                        } label: {
+                            Image(systemName: isGridMode ? "rectangle.grid.1x2" : "square.grid.2x2")
+                        }
+                    }
+                }
+                if let exportedPdfURL {
+                    ShareLink(item: exportedPdfURL) {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                } else if isExportingPdf {
+                    ProgressView()
+                } else {
+                    // 2026-07-13, Lino: "beim Klick auf PDF Export soll
+                    // zuerst gefragt werden, ob Kachelansicht oder
+                    // Tabellenansicht exportiert werden soll" — was a
+                    // single tap straight to the (card-only) export before.
+                    Menu {
+                        Button(language.t("shotListView.pdfCardView")) { Task { await exportPdf(view: "cards") } }
+                        Button(language.t("shotListView.pdfTableView")) { Task { await exportPdf(view: "table") } }
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                }
+                // Opens the management sheet (link + optional password)
+                // instead of sharing straight away — password protection
+                // needs a place to live, and folding it into a quick-share
+                // one-tap button would either bury it or turn every share
+                // into a two-tap flow either way, so it's its own sheet now.
+                Button {
+                    showingShareLinkSheet = true
+                } label: {
+                    Image(systemName: "link")
+                }
+                Button { showingTeamSheet = true } label: {
+                    Image(systemName: "person.2")
+                }
+                // #11 Schritt 6 (Postproduction-Tracking) — nur sichtbar
+                // wenn das Projekt dieses Modul nutzt (#96).
+                if viewModel.modulePostproduction {
+                    Button { showingPostproductionList = true } label: {
+                        Image(systemName: "checklist.checked")
+                    }
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -3467,6 +3331,243 @@ private struct TimecodeSessionEffects: ViewModifier {
             .sheet(isPresented: $showingRecMarkersSync) {
                 if let section = markerTargetSection {
                     RecMarkersSyncSheet(section: section, viewModel: viewModel)
+                }
+            }
+    }
+}
+
+/// Groups the EDL-export share sheet + the generic marker-error alert + the
+/// reset-markers confirmation — same "one more `.modifier(...)` call instead
+/// of 3 chained ones" fix as `TimecodeSessionEffects` right above, for the
+/// remaining timecode-adjacent modifiers still directly on `body`.
+private struct TimecodeAuxDialogs: ViewModifier {
+    @ObservedObject private var language = AppLanguage.shared
+    @Binding var isPresentingEDLShare: Bool
+    let edlExportURL: URL?
+    @Binding var markerErrorMessage: String?
+    @Binding var showResetMarkersConfirm: Bool
+    let resetMarkerCount: Int?
+    let markerTargetSection: SceneSection?
+    let onConfirmReset: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $isPresentingEDLShare) {
+                if let edlExportURL {
+                    ActivityView(activityItems: [edlExportURL])
+                }
+            }
+            .alert(isPresented: Binding(
+                get: { markerErrorMessage != nil },
+                set: { if !$0 { markerErrorMessage = nil } }
+            )) {
+                Alert(title: Text(markerErrorMessage ?? ""))
+            }
+            .confirmationDialog(
+                markerTargetSection.map { language.t("shotListView.resetMarkersConfirmTitle").replacingOccurrences(of: "{section}", with: $0.name) } ?? "",
+                isPresented: $showResetMarkersConfirm,
+                titleVisibility: .visible,
+                actions: {
+                    Button(language.t("shotListView.resetMarkersConfirmButton"), role: .destructive) {
+                        onConfirmReset()
+                    }
+                    Button(language.t("common.cancel"), role: .cancel) {}
+                },
+                message: {
+                    Text(language.t("shotListView.resetMarkersConfirmMessage").replacingOccurrences(of: "{count}", with: String(resetMarkerCount ?? 0)))
+                }
+            )
+    }
+}
+
+/// Groups a big block of scene/idea/team/share sheets + their related
+/// alerts/confirmationDialogs — same fix pattern as `TimecodeSessionEffects`/
+/// `TimecodeAuxDialogs` above, folding ~9 chained modifiers previously
+/// directly on `body` into one `.modifier(...)` call.
+private struct ShotListSheetsAndAlerts: ViewModifier {
+    @ObservedObject var viewModel: ShotListViewModel
+    @ObservedObject private var language = AppLanguage.shared
+    let projectId: String
+    let shareKindForActiveWorkflowSection: String
+    @Binding var selectedShot: Shot?
+    @Binding var generatingImageScene: Scene?
+    @Binding var showingPostproductionList: Bool
+    @Binding var ideaCreatedByFAB: Idea?
+    @Binding var assigneeSheetScene: Scene?
+    @Binding var viewingSectionFeedback: SceneSection?
+    @Binding var showingTeamSheet: Bool
+    @Binding var isPresentingShareSheet: Bool
+    @Binding var shareLinkURL: URL?
+    @Binding var showingShareLinkSheet: Bool
+    @Binding var editingGoodTakeScene: Scene?
+    @Binding var goodTakeText: String
+    @Binding var editingDialogue: (dialogue: SceneDialogue, scene: Scene)?
+    @Binding var editingDialogueText: String
+    @Binding var editingScene: Scene??
+    @Binding var editingSection: SceneSection??
+    let creatingIntermediateStep: Bool
+    let targetSectionIdForNewScene: String?
+    let onAllDoneConfirm: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(item: $selectedShot) { shot in
+                ShotDetailSheet(shot: shot, viewModel: viewModel)
+            }
+            .sheet(item: $generatingImageScene) { scene in
+                SceneAIImageSheet(scene: scene, viewModel: viewModel)
+            }
+            .sheet(isPresented: $showingPostproductionList) {
+                PostproductionListView(viewModel: viewModel)
+            }
+            // #276 — the Ideas page's bottom-right FAB's own "just created,
+            // now open it" sheet; independent of IdeaGridView's own
+            // editingIdea (that one's for tapping an EXISTING tile).
+            .sheet(item: $ideaCreatedByFAB) { idea in
+                IdeaEditSheet(idea: idea, viewModel: viewModel)
+            }
+            .sheet(item: $assigneeSheetScene) { scene in
+                SceneAssigneeSheet(scene: scene, viewModel: viewModel)
+            }
+            .sheet(item: $viewingSectionFeedback) { section in
+                SectionFeedbackSheet(section: section, viewModel: viewModel)
+            }
+            .sheet(isPresented: $showingTeamSheet) {
+                TeamSheet(projectId: projectId)
+            }
+            .sheet(isPresented: $isPresentingShareSheet) {
+                if let shareLinkURL {
+                    ActivityView(activityItems: [shareLinkURL])
+                }
+            }
+            .sheet(isPresented: $showingShareLinkSheet) {
+                // 2026-07-17, #122 — mirrors the web app's "der Teilen-Button
+                // soll immer die Seite teilen auf der man gerade ist" (its
+                // shareKind tracks activeView live): shares whichever
+                // Workflow-Bereich is currently on screen instead of always
+                // the Szenen/storyboard link. Extended 2026-07-21 (#283) for
+                // the new third Postproduction page — "video" matches the
+                // kind PostproductionListView's own (non-embedded) share
+                // button already uses.
+                ShareLinkSheet(projectId: projectId, kind: shareKindForActiveWorkflowSection) { url in
+                    shareLinkURL = url
+                    isPresentingShareSheet = true
+                }
+            }
+            // Every failed API call in this screen (including a scene/shot
+            // image upload that didn't make it — e.g. a dropped connection
+            // mid-upload) only ever set viewModel.errorMessage; nothing
+            // displayed it, so those failures were completely silent —
+            // "the image just doesn't show up" with no error at all. This
+            // is the single alert for all of them.
+            .alert(language.t("common.error"), isPresented: Binding(
+                get: { viewModel.errorMessage != nil },
+                set: { if !$0 { viewModel.errorMessage = nil } }
+            )) {
+                Button(language.t("common.ok"), role: .cancel) {}
+            } message: {
+                Text(viewModel.errorMessage ?? "")
+            }
+            .alert(language.t("shotListView.goodTakeAlertTitle"), isPresented: Binding(
+                get: { editingGoodTakeScene != nil },
+                set: { if !$0 { editingGoodTakeScene = nil } }
+            )) {
+                TextField(language.t("shotListView.goodTakePlaceholder"), text: $goodTakeText)
+                Button(language.t("common.cancel"), role: .cancel) {}
+                Button(language.t("common.save")) {
+                    if let scene = editingGoodTakeScene {
+                        let trimmed = goodTakeText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        Task { await viewModel.setSceneGoodTake(scene, filename: trimmed.isEmpty ? nil : trimmed) }
+                    }
+                }
+            } message: {
+                Text(language.t("shotListView.goodTakeAlertMessage"))
+            }
+            .alert(language.t("shotListView.editDialogueLineTitle"), isPresented: Binding(
+                get: { editingDialogue != nil },
+                set: { if !$0 { editingDialogue = nil } }
+            )) {
+                TextField(language.t("shotListView.dialogueTextPlaceholder"), text: $editingDialogueText)
+                Button(language.t("common.cancel"), role: .cancel) {}
+                Button(language.t("common.save")) {
+                    if let (dialogue, scene) = editingDialogue {
+                        Task { await viewModel.updateDialogue(dialogue, in: scene, text: editingDialogueText) }
+                    }
+                }
+            }
+            // "Timing der App" (2026-07-11) — offers to shift every later
+            // same-day scene's start by the same delta the just-edited
+            // scene's start moved by. Never applied silently — see
+            // applyTimeCascade/pendingTimeCascade. Exact wording per
+            // Lino's spec (2026-07-13): "Möchtest du die nachfolgenden
+            // Szenen zeitlich angleichen? Bestätigen / nicht angleichen."
+            .confirmationDialog(
+                language.t("shotListView.timeCascadeTitle"),
+                isPresented: Binding(
+                    get: { viewModel.pendingTimeCascade != nil },
+                    set: { if !$0 { viewModel.pendingTimeCascade = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button(language.t("common.confirm")) {
+                    Task { await viewModel.applyTimeCascade() }
+                }
+                Button(language.t("shotListView.timeCascadeDecline"), role: .cancel) {
+                    viewModel.pendingTimeCascade = nil
+                }
+            }
+            // 2026-07-21, #282 — used to be a single "OK" dismiss-only
+            // alert; now offers a real choice: Abbrechen just closes it
+            // (already on the Scene overview, nothing else to do), "Alles
+            // im Kasten" navigates straight to the Postproduction page
+            // (same goToWorkflowSection this screen's edge-swipe already
+            // uses, see its own doc comment).
+            .alert(language.t("shotListView.allDoneTitle"), isPresented: $viewModel.showAllTimedScenesDoneConfirmation) {
+                Button(language.t("common.cancel"), role: .cancel) {}
+                Button(language.t("shotListView.allDoneConfirm")) {
+                    onAllDoneConfirm()
+                }
+            } message: {
+                Text(language.t("shotListView.allDoneMessage"))
+            }
+            .sheet(isPresented: Binding(
+                get: { editingScene != nil },
+                set: { if !$0 { editingScene = nil } }
+            )) {
+                if case .some(let existing) = editingScene {
+                    SceneEditSheet(existing: existing, isIntermediateStep: creatingIntermediateStep, viewModel: viewModel) { name, color, description, dialogue, scheduledAt, durationMinutes, priority in
+                        if let existing {
+                            await viewModel.renameScene(existing, name: name, color: color, description: description, dialogue: dialogue, scheduledAt: scheduledAt, durationMinutes: durationMinutes, priority: priority)
+                            return existing
+                        } else {
+                            return await viewModel.createScene(
+                                name: name.isEmpty ? language.t("scene.unnamed") : name, color: color,
+                                description: description.isEmpty ? nil : description,
+                                dialogue: dialogue.isEmpty ? nil : dialogue,
+                                scheduledAt: scheduledAt,
+                                durationMinutes: durationMinutes,
+                                sectionId: targetSectionIdForNewScene,
+                                priority: priority,
+                                isIntermediateStep: creatingIntermediateStep
+                            )
+                        }
+                    } onImagePicked: { scene, image in
+                        await viewModel.uploadSceneImage(scene, image: image)
+                    }
+                }
+            }
+            .sheet(isPresented: Binding(
+                get: { editingSection != nil },
+                set: { if !$0 { editingSection = nil } }
+            )) {
+                if case .some(let existing) = editingSection {
+                    SectionEditSheet(existing: existing) { name in
+                        if let existing {
+                            await viewModel.renameSection(existing, name: name)
+                        } else {
+                            await viewModel.createSection(name: name)
+                        }
+                    }
                 }
             }
     }
