@@ -579,11 +579,20 @@ struct ShotListView: View {
                 // scene tiles below do use a real MKMapSnapshotter thumbnail
                 // (SceneMapThumbnail, cached like AsyncShotThumbnail so
                 // LazyVStack recycling doesn't regenerate one per re-render).
-                ProjectInfoBox(viewModel: viewModel, projectId: projectId)
-                    // Forces a fresh instance (resets its own expand/
-                    // collapse @State) on every load()/refresh — see
-                    // loadGeneration's own doc comment.
-                    .id(viewModel.loadGeneration)
+                // 2026-08-31, Lino: "Die projektinfos soll nur in der
+                // Skript Übersicht sein, nicht wenn man in der shotlist
+                // selber ist" — hidden once a specific Abschnitt is opened
+                // (openSectionId != nil), still shown for the Ideas panel
+                // and the Skript-Auswahlübersicht (scriptOverviewGrid)
+                // below, since openSectionId is only ever non-nil while an
+                // actual shotlist is open.
+                if openSectionId == nil {
+                    ProjectInfoBox(viewModel: viewModel, projectId: projectId)
+                        // Forces a fresh instance (resets its own expand/
+                        // collapse @State) on every load()/refresh — see
+                        // loadGeneration's own doc comment.
+                        .id(viewModel.loadGeneration)
+                }
 
                 // 2026-07-21, #280 (Lino: "ganz falsch!" — a Scene resulting
                 // from an approved Idea was rendering inside a section at
@@ -619,17 +628,15 @@ struct ShotListView: View {
                         .transition(.opacity)
                 } else {
                     LazyVStack(alignment: .leading, spacing: 16) {
-                        // 2026-08-30 — zurück zur Übersicht, sichtbar nur
-                        // wenn gerade ein bestimmter Abschnitt geöffnet ist.
-                        if openSectionId != nil {
-                            Button {
-                                withAnimation { openSectionId = nil }
-                            } label: {
-                                Label(language.t("scriptOverview.backToOverview"), systemImage: "chevron.left")
-                                    .font(.subheadline.weight(.medium))
-                            }
-                            .padding(.horizontal, 16)
-                        }
+                        // 2026-08-31 — the in-content "zurück zur Übersicht"
+                        // button is gone; the nav bar's own top-left back
+                        // chevron now does this one step back instead (see
+                        // .navigationBarBackButtonHidden/the custom
+                        // navigationBarLeading ToolbarItem below). Directly
+                        // below the timecode bar there's now just the
+                        // opened section's own title (sectionHeader, inside
+                        // sectionGroup right below) followed immediately by
+                        // its first tile.
 
                         // 2026-07-14: was unconditional — with zero unassigned
                         // shots (the common case) this still rendered an empty,
@@ -801,7 +808,27 @@ struct ShotListView: View {
         )
         .navigationTitle(projectName)
         .navigationBarTitleDisplayMode(.inline)
+        // 2026-08-31, Lino: "mit dem < button der ganz oben links schon
+        // ist, kommt man eine stufe zurück (zur shotlist übersicht)" —
+        // the real system back button pops this whole screen to
+        // ProjectListView, which is wrong while a specific shotlist is
+        // open (openSectionId != nil): that tap should only close the
+        // shotlist back to the Skript-Auswahlübersicht instead. Swaps in
+        // a custom chevron with that one-level-back behavior ONLY while a
+        // shotlist is open; every other state (Ideas, Postproduction, the
+        // Skript-Übersicht itself) keeps the real system back button
+        // untouched.
+        .navigationBarBackButtonHidden(openSectionId != nil)
         .toolbar {
+            if openSectionId != nil {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        withAnimation { openSectionId = nil }
+                    } label: {
+                        Image(systemName: "chevron.backward")
+                    }
+                }
+            }
             // 2026-07-29, Lino: "Auftraggeber und Projektname sollen dann
             // IMMER im header auf den pipelines dargestellt werden" — a
             // custom .principal item so the client name can render as a
