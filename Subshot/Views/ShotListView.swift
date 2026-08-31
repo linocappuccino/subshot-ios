@@ -1545,45 +1545,27 @@ struct ShotListView: View {
     private var timecodeBar: some View {
         if isTimecodeRunning, let section = markerTargetSection, let fps = section.timecodeFps {
             let offset = section.timecodeOffsetSeconds
+            let targetLabel: String = language.t("shotListView.markClipTarget").replacingOccurrences(of: "{section}", with: section.name)
             TimelineView(.periodic(from: .now, by: 0.1)) { context in
+                let timecodeText = formatTimecode(context.date.addingTimeInterval(offset), fps: fps)
                 HStack(spacing: 10) {
-                    Text(formatTimecode(context.date.addingTimeInterval(offset), fps: fps))
+                    Text(timecodeText)
                         .font(.system(.title3, design: .monospaced).weight(.semibold))
                         .foregroundStyle(.white)
                         .monospacedDigit()
-                    Text(language.t("shotListView.markClipTarget").replacingOccurrences(of: "{section}", with: section.name))
+                    Text(targetLabel)
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.7))
                         .lineLimit(1)
                     Spacer()
                     timecodeFpsMenu(currentFps: fps)
-                    Button {
-                        startResetMarkers()
-                    } label: {
-                        if isResettingMarkers || isCountingForReset {
-                            ProgressView().tint(.white)
-                        } else {
-                            Image(systemName: "arrow.counterclockwise")
-                                .foregroundStyle(.white)
-                        }
-                    }
-                    .disabled(isResettingMarkers || isCountingForReset)
+                    resetMarkersButton
                     // 2026-08-30, Lino: "reset und senden button sind zu nahe
                     // aneinander" — Reset is destructive, a visible divider
                     // (not just the row's own 10pt gap) makes it harder to
                     // mis-tap right after it.
                     Divider().frame(height: 16).overlay(Color.white.opacity(0.2))
-                    Button {
-                        exportEDL()
-                    } label: {
-                        if isExportingEDL {
-                            ProgressView().tint(.white)
-                        } else {
-                            Image(systemName: "square.and.arrow.up")
-                                .foregroundStyle(.white)
-                        }
-                    }
-                    .disabled(isExportingEDL)
+                    exportEDLButton
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
@@ -1681,6 +1663,39 @@ struct ShotListView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.white.opacity(0.7))
         }
+    }
+
+    /// Also extracted out of `timecodeBar`'s running-state HStack — same
+    /// type-check-timeout fix as `timecodeFpsMenu` above, this time for the
+    /// two buttons whose label is itself an if/else.
+    @ViewBuilder
+    private var resetMarkersButton: some View {
+        Button {
+            startResetMarkers()
+        } label: {
+            if isResettingMarkers || isCountingForReset {
+                ProgressView().tint(.white)
+            } else {
+                Image(systemName: "arrow.counterclockwise")
+                    .foregroundStyle(.white)
+            }
+        }
+        .disabled(isResettingMarkers || isCountingForReset)
+    }
+
+    @ViewBuilder
+    private var exportEDLButton: some View {
+        Button {
+            exportEDL()
+        } label: {
+            if isExportingEDL {
+                ProgressView().tint(.white)
+            } else {
+                Image(systemName: "square.and.arrow.up")
+                    .foregroundStyle(.white)
+            }
+        }
+        .disabled(isExportingEDL)
     }
 
     @ViewBuilder
