@@ -90,9 +90,22 @@ struct AsyncShotThumbnail: View {
         // it was never actually lost server-side (confirmed via direct DB +
         // uploads-folder check while debugging that report). Three attempts
         // with a short backoff absorbs exactly that kind of transient blip.
+        // 2026-08-31 — perf pass: decode at roughly the largest size this
+        // view will ever actually display it at, in POINTS scaled up to
+        // pixels for the device's screen scale (never below the source's
+        // own resolution — ImageIO just returns the original if it's
+        // already smaller). `size` is a fixed square (thumbnails); the
+        // `lockAspectRatio` "big storyboard card" case has no fixed `size`
+        // but is still just one grid tile on a phone/iPad screen, never a
+        // full-bleed hero image — 900pt covers that comfortably at any
+        // real device width used in this app.
+        let targetPoints = size ?? 900
+        // UITraitCollection.current.displayScale, not UIScreen.main.scale
+        // (deprecated in iOS 26) — see SceneMapThumbnail's identical note.
+        let maxPixelSize = targetPoints * UITraitCollection.current.displayScale
         for attempt in 0..<3 {
             do {
-                let fetched = try await APIClient.shared.fetchImage(path: path)
+                let fetched = try await APIClient.shared.fetchImage(path: path, maxPixelSize: maxPixelSize)
                 Self.cache.setObject(fetched, forKey: key)
                 image = fetched
                 return

@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -960,7 +961,19 @@ final class APIClient {
         return try await send(req)
     }
 
-    func fetchImage(path: String) async throws -> UIImage {
+    /// 2026-08-31 — perf pass: `maxPixelSize` (when given) decodes the
+    /// image DIRECTLY at that downsampled resolution via ImageIO
+    /// (`CGImageSourceCreateThumbnailAtIndex`) instead of ever
+    /// materializing the full-resolution bitmap. Callers only ever display
+    /// this at thumbnail/card size (see AsyncShotThumbnail's own doc
+    /// comment — a real camera photo can be 4000×3000+, decoding that in
+    /// full for a 44×44pt tile is real, avoidable memory pressure AND a
+    /// slower first-decode, and NSCache then holds that full bitmap in
+    /// memory for as long as it isn't evicted). `nil` keeps the old
+    /// full-resolution decode — no other call site needs it today, but
+    /// this keeps the option open rather than baking downsampling in
+    /// unconditionally.
+    func fetchImage(path: String, maxPixelSize: CGFloat? = nil) async throws -> UIImage {
         // 2026-07-22 (#248) — Scene.imageUrl/Shot.imageUrl/Folder.
         // backgroundImageUrl/IdeaImage.imageUrl are now presigned R2 URLs
         // computed fresh per-response (see the backend's `_presign_image`
@@ -979,6 +992,21 @@ final class APIClient {
         let (data, response) = try await perform(req)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw APIError.server(status: (response as? HTTPURLResponse)?.statusCode ?? 0, message: "Image fetch failed")
+        }
+        if let maxPixelSize {
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+            ]
+            if let source = CGImageSourceCreateWithData(data as CFData, nil),
+               let cgThumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
+                return UIImage(cgImage: cgThumbnail)
+            }
+            // Falls through to a full-resolution decode below — a corrupt/
+            // unsupported-by-ImageIO source is exceedingly rare, better to
+            // still show SOMETHING than fail the whole fetch over a
+            // downsampling-only code path.
         }
         guard let image = UIImage(data: data) else {
             throw APIError.decoding(URLError(.cannotDecodeContentData))

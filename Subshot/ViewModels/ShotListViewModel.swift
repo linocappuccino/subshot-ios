@@ -9,7 +9,21 @@ import UIKit
 final class ShotListViewModel: ObservableObject {
     let projectId: String
 
-    @Published var scenes: [Scene] = []
+    // 2026-08-31 — perf pass: same shotsBySceneId idea below, applied to
+    // scenes(in:) — was a plain O(n) filter+sort re-run on EVERY call (once
+    // per section tile in the Skript-Auswahlübersicht for its scene-count
+    // badge, again for isSectionFullyDone/collapseFullyDoneSections, again
+    // to actually render the open section's own scene list), compounded by
+    // the 12s poll reassigning `scenes` (see load()'s own doc comment on
+    // why that's now equality-gated too). `scenes` is already globally
+    // sorted by sortOrder before assignment (see load()), so grouping
+    // preserves that order per-section for free — no separate `.sorted`
+    // needed in scenes(in:) anymore, same simplification shots(in:) below
+    // already relies on.
+    @Published var scenes: [Scene] = [] {
+        didSet { scenesBySectionId = Dictionary(grouping: scenes, by: \.sectionId) }
+    }
+    private var scenesBySectionId: [String?: [Scene]] = [:]
     // shots(in:) used to re-filter this whole array from scratch on every
     // call — and it's called twice per scene per render (once for the shot
     // list, once for the header count) — so a big project re-scanned every
@@ -144,31 +158,49 @@ final class ShotListViewModel: ObservableObject {
     /// that's already in flight, so total time drops to roughly the
     /// SLOWEST single one instead of the sum — same fix, same reasoning,
     /// as the web app's own projects/[id]/page.tsx waterfall fix same day.
-    func load(resetGeneration: Bool = true) async {
+    /// 2026-08-31 — perf pass: every `@Published` assignment below is now
+    /// equality-gated (`if new != old { old = new }`) instead of an
+    /// unconditional reassignment. `@Published` fires `objectWillChange`
+    /// (and every observing view's body re-evaluation) on assignment
+    /// regardless of whether the value actually changed — with the 12s
+    /// background poll below calling this forever while a screen is open,
+    /// an unconditional reassign meant this whole ~3700-line view's body
+    /// re-evaluated every 12s even when the server returned byte-identical
+    /// data. Every model here is already `Hashable` (implies `Equatable`),
+    /// so this is a cheap array/scalar comparison, not a real cost of its
+    /// own. `includeSecondary` (default true for the initial load and
+    /// pull-to-refresh) lets the background poll skip members/ideas/
+    /// annotations most ticks — see its own call site's doc comment for
+    /// why those don't need re-fetching as often as scenes/shots.
+    func load(resetGeneration: Bool = true, includeSecondary: Bool = true) async {
         isLoading = true
         if resetGeneration { loadGeneration += 1 }
         defer { isLoading = false }
         async let detailTask = APIClient.shared.getProject(projectId)
-        async let membersTask = APIClient.shared.members(projectId: projectId)
-        async let ideasTask = APIClient.shared.listIdeas(projectId: projectId)
-        async let annotationsTask = APIClient.shared.listProjectAnnotations(projectId: projectId)
+        async let membersTask: [Member]? = includeSecondary ? (try? await APIClient.shared.members(projectId: projectId)) : nil
+        async let ideasTask: [Idea]? = includeSecondary ? (try? await APIClient.shared.listIdeas(projectId: projectId)) : nil
+        async let annotationsTask: [Annotation]? = includeSecondary ? (try? await APIClient.shared.listProjectAnnotations(projectId: projectId)) : nil
 
         do {
             let detail = try await detailTask
-            scenes = detail.scenes.sorted { $0.sortOrder < $1.sortOrder }
-            shots = detail.shots
+            let newScenes = detail.scenes.sorted { $0.sortOrder < $1.sortOrder }
+            if newScenes != scenes { scenes = newScenes }
+            let newShots = detail.shots
                 .filter { $0.status != .deleted }
                 .sorted { $0.sortOrder < $1.sortOrder }
-            shootDate = detail.shootDate
-            locationAddress = detail.locationAddress
-            locationLat = detail.locationLat
-            locationLng = detail.locationLng
-            clientName = detail.clientName
-            todoLists = detail.todoLists.sorted { $0.sortOrder < $1.sortOrder }
-            sections = detail.sections.sorted { $0.sortOrder < $1.sortOrder }
-            moduleConcept = detail.moduleConcept
-            moduleScripting = detail.moduleScripting
-            modulePostproduction = detail.modulePostproduction
+            if newShots != shots { shots = newShots }
+            if shootDate != detail.shootDate { shootDate = detail.shootDate }
+            if locationAddress != detail.locationAddress { locationAddress = detail.locationAddress }
+            if locationLat != detail.locationLat { locationLat = detail.locationLat }
+            if locationLng != detail.locationLng { locationLng = detail.locationLng }
+            if clientName != detail.clientName { clientName = detail.clientName }
+            let newTodoLists = detail.todoLists.sorted { $0.sortOrder < $1.sortOrder }
+            if newTodoLists != todoLists { todoLists = newTodoLists }
+            let newSections = detail.sections.sorted { $0.sortOrder < $1.sortOrder }
+            if newSections != sections { sections = newSections }
+            if moduleConcept != detail.moduleConcept { moduleConcept = detail.moduleConcept }
+            if moduleScripting != detail.moduleScripting { moduleScripting = detail.moduleScripting }
+            if modulePostproduction != detail.modulePostproduction { modulePostproduction = detail.modulePostproduction }
         } catch {
             // A cancelled request (pull-to-refresh released mid-flight, or
             // the view disappearing) isn't a real failure — see
@@ -176,26 +208,20 @@ final class ShotListViewModel: ObservableObject {
             // Verbindungsfehler: cancelled" on swipe-to-refresh.
             if !APIError.isCancellation(error) { errorMessage = error.localizedDescription }
         }
-        // Independent of the main load — a failure here shouldn't block the
-        // scene/shot list from showing.
-        do {
-            members = try await membersTask
-        } catch {
-            // Silent: the info box just shows an empty people list; the user
-            // can still open "Team" from the toolbar, which surfaces errors.
+        // Independent of the main load — a failure/skip here shouldn't
+        // block the scene/shot list from showing. `try?` inside the
+        // `async let` above already collapsed a real failure to nil, same
+        // "silent, keep last-known-good value" behavior as the old
+        // per-task do/catch blocks.
+        if let fetchedMembers = await membersTask, fetchedMembers != members {
+            members = fetchedMembers
         }
-        // Same "independent, silent on failure" treatment — an Ideas-section
-        // outage shouldn't take the scene/shot list down with it.
-        do {
-            let fetchedIdeas = try await ideasTask
-            ideas = fetchedIdeas.sorted { $0.sortOrder < $1.sortOrder }
-        } catch {
-            // Silent, same reasoning as members above.
+        if let fetchedIdeas = await ideasTask {
+            let sortedIdeas = fetchedIdeas.sorted { $0.sortOrder < $1.sortOrder }
+            if sortedIdeas != ideas { ideas = sortedIdeas }
         }
-        do {
-            annotations = try await annotationsTask
-        } catch {
-            // Silent, same reasoning as members above.
+        if let fetchedAnnotations = await annotationsTask, fetchedAnnotations != annotations {
+            annotations = fetchedAnnotations
         }
     }
 
@@ -453,18 +479,17 @@ final class ShotListViewModel: ObservableObject {
     }
 
     /// Scenes belonging to a section, in order — nil means the "no section"
-    /// group. Plain filter (not cached like shotsBySceneId): scene counts
-    /// per project are small enough that re-scanning per render is cheap.
-    /// No longer sorts completed scenes to the end — "im Kasten" now
-    /// collapses a scene in place instead of moving it, see
-    /// setSceneCompleted's doc comment. A Projektinfo scene (isProjectInfo)
-    /// no longer sorts first either (2026-07-11, Lino: "die Info-Kachel
-    /// kann man jetzt überall platzieren... wie eine normale Szenenkachel
-    /// von der Platzierung her") — plain sort_order for everything, same
-    /// as the web app's scenesIn.
+    /// group. Now backed by scenesBySectionId (see its own doc comment
+    /// above) instead of a fresh filter+sort per call. No longer sorts
+    /// completed scenes to the end — "im Kasten" now collapses a scene in
+    /// place instead of moving it, see setSceneCompleted's doc comment. A
+    /// Projektinfo scene (isProjectInfo) no longer sorts first either
+    /// (2026-07-11, Lino: "die Info-Kachel kann man jetzt überall
+    /// platzieren... wie eine normale Szenenkachel von der Platzierung
+    /// her") — plain sort_order for everything, same as the web app's
+    /// scenesIn.
     func scenes(in section: SceneSection?) -> [Scene] {
-        scenes.filter { $0.sectionId == section?.id }
-            .sorted { $0.sortOrder < $1.sortOrder }
+        scenesBySectionId[section?.id] ?? []
     }
 
     // MARK: - Sections

@@ -1002,14 +1002,26 @@ struct ShotListView: View {
         // pull-to-refresh or the first load isn't affected by this timer's
         // own lifecycle.
         .task {
+            // 2026-08-31 — perf pass: members/ideas/annotations change far
+            // less often than scenes/shots (a teammate toggling a checkbox
+            // is common, someone joining the team or leaving a public
+            // preview comment mid-shoot is rare) and each was previously
+            // re-fetched on EVERY 12s tick regardless. Only include them
+            // every 5th tick (~60s) — `includeSecondary` skips their fetch
+            // AND their assignment entirely otherwise (see load()'s own
+            // doc comment), cutting this poll's steady-state network+
+            // reassignment cost by roughly 4/5 without changing how fresh
+            // the scene/shot list itself stays.
+            var tick = 0
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 12_000_000_000)
                 if Task.isCancelled { break }
+                tick += 1
                 // resetGeneration: false — see load()'s own doc comment.
                 // This silent poll must never force-collapse
                 // ProjectInfoBox/SectionInfoBox/SceneProjectInfoTile out
                 // from under an actively-interacting user.
-                await viewModel.load(resetGeneration: false)
+                await viewModel.load(resetGeneration: false, includeSecondary: tick % 5 == 0)
             }
         }
         .sheet(item: $selectedShot) { shot in
@@ -1765,8 +1777,19 @@ struct ShotListView: View {
             }
             .padding(.horizontal, 16)
         } else {
-            ForEach(scenes) { scene in
-                sceneCard(scene: scene, columnLayout: false)
+            // 2026-08-31 — perf pass: was a bare ForEach (no lazy container
+            // of its own), which meant a busy shoot day's full 30-60-scene
+            // single-column list mounted every card (and fired every
+            // card's own AsyncShotThumbnail .task) the instant a section
+            // opened, not as the user actually scrolls to it. `spacing: 10`
+            // matches sectionGroup's own outer VStack spacing exactly —
+            // this LazyVStack is that VStack's ONE child in place of what
+            // used to be N direct children, so the visual gap between
+            // scene cards is unchanged.
+            LazyVStack(spacing: 10) {
+                ForEach(scenes) { scene in
+                    sceneCard(scene: scene, columnLayout: false)
+                }
             }
         }
     }
