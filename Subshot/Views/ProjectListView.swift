@@ -114,21 +114,47 @@ struct ProjectListView: View {
     /// stays consistent with the existing "never silently reopen a
     /// section" rule.
     ///
-    /// Guarded to the ROOT list only (`folderId == nil` — a project living
-    /// inside a folder isn't in THIS screen's own `viewModel.projects` at
-    /// all, since list_projects only returns one folder level at a time;
-    /// restoring into a foldered project is a known, accepted gap for now,
-    /// not a regression — it simply falls through to showing the list,
-    /// same as today) and to firing only once per real app launch
-    /// (`path.isEmpty` — without this, a pull-to-refresh calling
-    /// viewModel.load() again, or this task somehow re-running, could yank
-    /// someone back into a project they'd deliberately navigated away from
-    /// moments earlier).
-    private func restoreLastOpenedProjectIfNeeded() {
+    /// Guarded to the ROOT list only (`folderId == nil`) and to firing only
+    /// once per real app launch (`path.isEmpty` — without this, a pull-to-
+    /// refresh calling viewModel.load() again, or this task somehow
+    /// re-running, could yank someone back into a project they'd
+    /// deliberately navigated away from moments earlier).
+    ///
+    /// 2026-08-31 (same-day correction, Lino asked what the folder
+    /// limitation actually meant): the last-opened project isn't
+    /// necessarily in THIS screen's own `viewModel.projects` — list_projects
+    /// only ever returns one folder level at a time, so a project filed
+    /// inside a folder is invisible to the ROOT list's own array. Falls
+    /// back to fetching it directly by id (`APIClient.getProject`) instead
+    /// of accepting that as a dead end. Pushed straight onto the ROOT
+    /// `path` either way (not through the intermediate folder screen) —
+    /// the root NavigationStack's `.navigationDestination(for: Project.
+    /// self)` matches ANY pushed Project value regardless of which folder
+    /// it conceptually lives in, so this reaches the project directly. The
+    /// one trade-off: the system back button then returns straight to
+    /// this root list, not to the project's actual folder view — an
+    /// accepted simplification for a "jump back to where you were"
+    /// restore, not the same as real breadcrumb navigation.
+    private func restoreLastOpenedProjectIfNeeded() async {
         guard folderId == nil, path.isEmpty else { return }
         guard let lastId = UserDefaults.standard.string(forKey: ShotListView.lastOpenedProjectIdKey), !lastId.isEmpty else { return }
-        guard let project = viewModel.projects.first(where: { $0.id == lastId }) else { return }
-        path.append(project)
+        if let project = viewModel.projects.first(where: { $0.id == lastId }) {
+            path.append(project)
+            return
+        }
+        guard let detail = try? await APIClient.shared.getProject(lastId) else { return }
+        // Re-check after the `await` — the user may have already tapped
+        // into a DIFFERENT project manually while this fetch was in flight.
+        guard path.isEmpty else { return }
+        path.append(Project(
+            id: detail.id, name: detail.name, color: detail.color,
+            shootDate: detail.shootDate, locationAddress: detail.locationAddress,
+            locationLat: detail.locationLat, locationLng: detail.locationLng,
+            clientName: detail.clientName, folderId: detail.folderId,
+            lastOpenedAt: detail.lastOpenedAt, createdAt: detail.createdAt,
+            moduleConcept: detail.moduleConcept, moduleScripting: detail.moduleScripting,
+            modulePostproduction: detail.modulePostproduction
+        ))
     }
 
     var body: some View {
@@ -172,7 +198,7 @@ struct ProjectListView: View {
             .toolbar { toolbarContent }
             .task {
                 await viewModel.load()
-                restoreLastOpenedProjectIfNeeded()
+                await restoreLastOpenedProjectIfNeeded()
             }
             .task { if folderId == nil { await viewModel.loadNotifications() } }
             .task { if folderId == nil { await viewModel.loadTodoSidebar() } }
