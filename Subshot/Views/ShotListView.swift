@@ -1241,6 +1241,14 @@ struct ShotListView: View {
                 try edlText.write(to: tempURL, atomically: true, encoding: .utf8)
                 edlExportURL = tempURL
                 isPresentingEDLShare = true
+                // 2026-08-31, Lino: "der timecode soll nach dem teilen der
+                // edl gestoppt werden.. also in der app nicht mehr
+                // weiterlaufen" — exporting the EDL is treated as "this
+                // project's shoot is done", same as the all-scenes-done
+                // auto-stop already does. Stops the SHARED session for
+                // every client with this section open, not just this
+                // device — same call already used there.
+                await viewModel.setSectionTimecode(section, fps: nil)
             } catch APIError.server(let status, _) where status == 404 {
                 markerErrorMessage = language.t("shotListView.exportEDLNoMarkers")
             } catch {
@@ -2226,7 +2234,14 @@ struct ShotListView: View {
             // real vertical padding (was frame-only, no padding, so the row
             // never actually grew visually) for a genuinely bigger, more
             // forgiving target, not just a technically-HIG-compliant one.
-            .frame(minHeight: 60)
+            // 2026-08-31, Lino, explicit trade-off call (asked directly via
+            // AskUserQuestion after the timecode-bar redesign made the gap
+            // above an opened section's header read as too big again):
+            // back down to 44pt — Apple's own HIG minimum, still meaningfully
+            // bigger than the original ~30pt that caused the complaint above,
+            // just not as generous as 60pt. If the mis-tap complaint comes
+            // back, that's the direct trade-off Lino chose here, not a bug.
+            .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
