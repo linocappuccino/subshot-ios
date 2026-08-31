@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// Planungssektor tile grid (2026-07-17 iOS port of the web app's
 /// IdeaGrid.tsx) — small reorderable-in-spirit grid (drag-to-reorder isn't

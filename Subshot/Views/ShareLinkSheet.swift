@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// Manage the project's public share link: fetch/create it, optionally
 /// password-protect it (2026-07-10, for client-facing previews where

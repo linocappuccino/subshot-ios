@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// There's no API to summon the OS emoji keyboard programmatically on iOS
 /// either, and relying on that (focus a plain TextField, hope the person

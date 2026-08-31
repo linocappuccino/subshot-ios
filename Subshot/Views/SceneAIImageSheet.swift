@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// 2026-08-05, Lino: "in den Szenen-Kacheln muss man auch einen prompt
 /// eingeben können um ein AI Bild zu generieren, damit man nicht immer den

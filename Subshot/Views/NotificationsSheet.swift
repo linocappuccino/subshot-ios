@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// Shows batched notifications (currently just "todo item assigned to you" —
 /// collapsed server-side into one row per unread batch, see the backend

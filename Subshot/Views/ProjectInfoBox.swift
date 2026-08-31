@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// Section-scoped counterpart to ProjectInfoBox, for multi-day shoots
 /// (2026-07-10): a section can optionally carry its own mini info box (own

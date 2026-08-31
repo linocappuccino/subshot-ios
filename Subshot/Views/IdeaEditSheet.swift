@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// Create/edit sheet for one Idea (2026-07-17 iOS port of the web app's
 /// IdeaFloatingCard). Unlike SceneEditSheet there's no create-then-stage

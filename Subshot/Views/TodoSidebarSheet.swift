@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// iOS port (#412) of the Projektübersicht's right-hand web sidebar
 /// (TodoSidebar.tsx, #305) — reachable via a bottom-center button on

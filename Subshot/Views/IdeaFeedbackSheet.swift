@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// Feedback list for one idea (2026-07-17 iOS port of the web app's
 /// IdeaFeedbackPanel; 2026-07-18 web-parity update — round grouping +

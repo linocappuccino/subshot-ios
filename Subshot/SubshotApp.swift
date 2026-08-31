@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import ClerkKit
 import Sentry
 import UserNotifications
@@ -12,7 +13,7 @@ import UserNotifications
 /// touches Subshot iOS source, so a glance at the Projects screen settles
 /// whether a `git pull` + rebuild actually picked up the latest commit.
 enum Config {
-    static let buildTag = "b39"
+    static let buildTag = "b40"
 }
 
 /// Registers for remote notifications so a scene-timer push (see

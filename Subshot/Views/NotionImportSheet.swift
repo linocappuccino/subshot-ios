@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// One-click Notion -> Subshot scene import (see app/notion_import.py for the
 /// full server-side mapping/setup story). Two states: no token connected yet
