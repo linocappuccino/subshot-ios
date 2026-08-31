@@ -148,7 +148,7 @@ struct RecMarkersSyncSheet: View {
             applyManual()
             return
         }
-        let offset = Self.offsetSeconds(forDetectedTimecode: detected, capturedAt: capturedAt) ?? 0
+        let offset = Self.offsetSeconds(forDetectedTimecode: detected, capturedAt: capturedAt, fps: selectedFps) ?? 0
         apply(offsetSeconds: offset)
     }
 
@@ -168,20 +168,32 @@ struct RecMarkersSyncSheet: View {
         }
     }
 
-    /// Parses "HH:MM:SS:FF" into today's calendar date at that time
-    /// (frames dropped — sub-second precision beyond what a wall-clock
-    /// offset needs here), then computes (that date) − (the moment the
-    /// frame was actually captured) — NOT the moment "Übernehmen" was
-    /// tapped, so a brief pause before confirming doesn't skew the
-    /// calibration.
-    private static func offsetSeconds(forDetectedTimecode timecode: String, capturedAt: Date) -> Double? {
+    /// Parses "HH:MM:SS:FF" into today's calendar date at that exact
+    /// moment — including the FF frame count, converted to a sub-second
+    /// fraction via `fps` (frame 0 of a running clock is :00.000, frame N
+    /// is N/fps seconds into that second) — then computes (that date) −
+    /// (the moment the frame was actually captured) — NOT the moment
+    /// "Übernehmen" was tapped, so a brief pause before confirming doesn't
+    /// skew the calibration.
+    ///
+    /// 2026-08-31, Lino (first real on-set test): "der timecode wurde
+    /// übernommen aber... es ist leicht verzögert... es muss ja genau
+    /// stimmen" — this used to floor to the whole second and silently
+    /// drop FF entirely, which systematically lags the synced clock
+    /// behind the real camera by up to a full second (worse the higher
+    /// the frame count read). Frame-accurate sync is the entire point of
+    /// this feature, so dropping it was wrong, not an acceptable
+    /// simplification.
+    private static func offsetSeconds(forDetectedTimecode timecode: String, capturedAt: Date, fps: Double) -> Double? {
         let parts = timecode.split(separator: ":").compactMap { Int($0) }
         guard parts.count == 4 else { return nil }
         var comps = Calendar.current.dateComponents([.year, .month, .day], from: capturedAt)
         comps.hour = parts[0]
         comps.minute = parts[1]
         comps.second = parts[2]
-        guard let cameraDate = Calendar.current.date(from: comps) else { return nil }
+        guard let wholeSecondDate = Calendar.current.date(from: comps) else { return nil }
+        let frameFraction = fps > 0 ? Double(parts[3]) / fps : 0
+        let cameraDate = wholeSecondDate.addingTimeInterval(frameFraction)
         return cameraDate.timeIntervalSince(capturedAt)
     }
 }
