@@ -743,7 +743,16 @@ struct ShotListView: View {
             // to justify it. Tightened ONLY for that case; every other
             // panel (Ideas, Skript-Auswahlübersicht, the flat unsectioned
             // list) keeps its normal spacing above ProjectInfoBox/the grid.
-            .padding(.top, openSectionId == nil ? 16 : 0)
+            // 2026-08-31, same day, correction — Lino: "der Abschnitt ist
+            // nicht mehr zuklappbar... anscheinend ist es zu nahe am
+            // nächsten Element oben dass sich evtl. Touchzonen
+            // überschneiden" — 0 was too tight: the section header's own
+            // tap target (sectionHeaderRow) started overlapping the
+            // timecode bar's own touch area right above it, swallowing the
+            // collapse/expand tap entirely. Back to a small real gap (10pt)
+            // — still far tighter than the original 16pt, just enough to
+            // keep the two touch zones physically separate.
+            .padding(.top, openSectionId == nil ? 16 : 10)
             .padding(.bottom, 16)
             .animation(.easeInOut(duration: 0.25), value: activeWorkflowSection)
         }
