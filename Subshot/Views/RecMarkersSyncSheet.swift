@@ -298,16 +298,30 @@ final class TimecodeScanner: NSObject, ObservableObject, AVCaptureVideoDataOutpu
             guard let self else { return }
             let observations = (request.results as? [VNRecognizedTextObservation]) ?? []
             for observation in observations {
-                guard let candidate = observation.topCandidates(1).first,
-                      let match = Self.extractTimecode(from: candidate.string) else { continue }
-                DispatchQueue.main.async {
-                    self.detectedTimecode = match
-                    self.detectedAt = now
+                // Try more than just the single best guess per text block —
+                // a digit that OCR is slightly unsure about (e.g. a thin
+                // colon read as "1", or "0" vs "O") often still shows up a
+                // couple of candidates down, especially on a small/stylized
+                // LCD timecode font.
+                for candidate in observation.topCandidates(3) {
+                    guard let match = Self.extractTimecode(from: candidate.string) else { continue }
+                    DispatchQueue.main.async {
+                        self.detectedTimecode = match
+                        self.detectedAt = now
+                    }
+                    return
                 }
-                return
             }
         }
-        request.recognitionLevel = .fast
+        // 2026-08-31 — Lino: "die Kamera erkennt keinen Timecode" (real
+        // on-set test, first one). `.fast` trades accuracy for speed and
+        // is documented by Apple as noticeably weaker on small/stylized
+        // text — exactly what a camera's own on-screen timecode digits
+        // are. `.accurate` costs more time per request (still fine, this
+        // is already throttled to ~once per 0.3s via minRequestInterval,
+        // not per-frame) but is far more likely to actually read a real
+        // display. First thing to try if it's STILL not detecting.
+        request.recognitionLevel = .accurate
         request.usesLanguageCorrection = false
         // .right — the standard orientation for a back-camera feed held in
         // portrait (the common way to point a phone at another device's
