@@ -743,7 +743,7 @@ struct ShotListView: View {
             // to justify it. Tightened ONLY for that case; every other
             // panel (Ideas, Skript-Auswahlübersicht, the flat unsectioned
             // list) keeps its normal spacing above ProjectInfoBox/the grid.
-            .padding(.top, openSectionId == nil ? 16 : 4)
+            .padding(.top, openSectionId == nil ? 16 : 0)
             .padding(.bottom, 16)
             .animation(.easeInOut(duration: 0.25), value: activeWorkflowSection)
         }
@@ -1320,17 +1320,28 @@ struct ShotListView: View {
             // framerate, matching Lino's reference screenshot) instead of
             // just picking a framerate blind.
             HStack(spacing: 10) {
+                // 2026-08-31, Lino: "der start rec-markers kann breiter
+                // sein, damit der ganze text auf eine zeile passt, der
+                // text links kann dann ein wenig weniger breite kriegen" —
+                // the button's own label now always gets its full,
+                // unwrapped width via .fixedSize() so "Start Rec-Markers"
+                // never breaks onto 2 lines; this hint text yields
+                // whatever's left, truncating instead of wrapping/pushing.
                 Text(language.t("shotListView.setFramerateHint"))
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.7))
-                Spacer()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Spacer(minLength: 8)
                 Button {
                     showingRecMarkersSync = true
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "camera.viewfinder")
                         Text(language.t("shotListView.startRecMarkers"))
+                            .lineLimit(1)
                     }
+                    .fixedSize()
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14)
@@ -1788,7 +1799,14 @@ struct ShotListView: View {
     /// though it has no SceneSection id of its own.
     @ViewBuilder
     private func sectionGroup(section: SceneSection?) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        // 2026-08-31, Lino: "wenn man eine shotlist geöffnet hat, der
+        // abschnitt darf viel weiter nach oben... sonst ist das so viel
+        // leerer Platz" — this function is ONLY ever called once, for the
+        // single opened section (see the ForEach at its call site,
+        // filtered to `openSectionId`), so tightening its own internal
+        // spacing here is scoped to exactly that focused view, not the
+        // Skript-Auswahlübersicht or anything else.
+        VStack(alignment: .leading, spacing: 4) {
             // Landing indicator — ONE indicator type everywhere now, same
             // dashed-rectangle style as scenes (see sceneDropIndicator's
             // doc comment for the full history: was a thin capsule line,
