@@ -733,7 +733,18 @@ struct ShotListView: View {
                     .transition(.opacity)
                 }
             }
-            .padding(.vertical, 16)
+            // 2026-08-31, Lino: "wenn man eine shotlist geöffnet hat, der
+            // abschnitt darf viel weiter nach oben, näher an den timecode,
+            // ansonsten ist das so viel leerer Platz" — with ProjectInfoBox
+            // hidden while a specific section is open (see its own
+            // condition above), this same fixed 16pt top padding that used
+            // to sit above ProjectInfoBox was now just an oversized gap
+            // between the timecode bar and the section header with nothing
+            // to justify it. Tightened ONLY for that case; every other
+            // panel (Ideas, Skript-Auswahlübersicht, the flat unsectioned
+            // list) keeps its normal spacing above ProjectInfoBox/the grid.
+            .padding(.top, openSectionId == nil ? 16 : 4)
+            .padding(.bottom, 16)
             .animation(.easeInOut(duration: 0.25), value: activeWorkflowSection)
         }
         // 2026-08-30 — leaving the Skript-Tab always resets back to the
