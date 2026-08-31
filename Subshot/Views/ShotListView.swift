@@ -515,12 +515,59 @@ struct ShotListView: View {
         self.projectColor = projectColor
         self.pendingDeepLinkKind = pendingDeepLinkKind
         self.pendingDeepLinkId = pendingDeepLinkId
-        let initialSection = [
+        // 2026-08-31, Lino: "die app muss immer da öffnen wo man sie das
+        // letzte mal verlassen hat" — this project is the one
+        // ProjectListView's own launch-restore just navigated back into
+        // (see its own doc comment), so also restore WHICH workflow tab
+        // was open, instead of always falling back to the first enabled
+        // module. Read straight from UserDefaults (not the @AppStorage
+        // property below, which isn't available yet this early in init) —
+        // only applied when the stored project id still matches THIS one
+        // (a manually-tapped different project must never inherit some
+        // other project's last tab) and the stored section is actually
+        // enabled for this project (a module could have been toggled off
+        // since). Deliberately does NOT also restore openSectionId (which
+        // specific shotlist inside Scripting) — leaving the Skript tab
+        // already intentionally resets to the section-overview every time
+        // (see the onChange below, "nie silently reopens whatever section
+        // war last viewed"), and stretching that same "no silent reopen"
+        // principle across app launches too, not just in-session tab
+        // switches, keeps this consistent rather than contradicting it.
+        let restoredSection: WorkflowSection?
+        if UserDefaults.standard.string(forKey: Self.lastOpenedProjectIdKey) == projectId,
+           let stored = WorkflowSection(rawValue: UserDefaults.standard.integer(forKey: Self.lastOpenedWorkflowSectionKey)) {
+            let storedEnabled: Bool
+            switch stored {
+            case .ideas: storedEnabled = moduleConcept
+            case .scripting: storedEnabled = moduleScripting
+            case .postproduction: storedEnabled = modulePostproduction
+            }
+            restoredSection = storedEnabled ? stored : nil
+        } else {
+            restoredSection = nil
+        }
+        let initialSection = restoredSection ?? [
             (WorkflowSection.ideas, moduleConcept),
             (WorkflowSection.scripting, moduleScripting),
             (WorkflowSection.postproduction, modulePostproduction),
         ].first(where: { $0.1 })?.0 ?? .ideas
         _activeWorkflowSection = State(initialValue: initialSection)
+    }
+
+    // Not `private` — ProjectListView reads lastOpenedProjectIdKey directly
+    // to decide whether/where to auto-navigate on launch (see its own
+    // "restore where you left off" doc comment).
+    static let lastOpenedProjectIdKey = "lastOpenedProjectId"
+    static let lastOpenedWorkflowSectionKey = "lastOpenedWorkflowSection"
+
+    /// Persists "this project, this tab" as the launch-restore target —
+    /// called once on appear and again on every real tab switch (see
+    /// .task/.onChange below). Plain UserDefaults, not @AppStorage — this
+    /// needs to be readable from `init` (see above) before any property
+    /// wrapper on `self` is available.
+    private func persistLastOpened() {
+        UserDefaults.standard.set(projectId, forKey: Self.lastOpenedProjectIdKey)
+        UserDefaults.standard.set(activeWorkflowSection.rawValue, forKey: Self.lastOpenedWorkflowSectionKey)
     }
 
     var body: some View {
@@ -697,6 +744,7 @@ struct ShotListView: View {
         // viewed.
         .onChange(of: activeWorkflowSection) { _, newValue in
             if newValue != .scripting { openSectionId = nil }
+            persistLastOpened()
         }
         // 2026-08-30, Lino: "sind alle clips als im kasten markiert in
         // einer shotlist, stopt der timecode marker (und speichert
@@ -987,6 +1035,11 @@ struct ShotListView: View {
                 break
             }
             if activeWorkflowSection == .scripting { collapseFullyDoneSections() }
+            // 2026-08-31 — see persistLastOpened's own doc comment. Called
+            // unconditionally here too (not just from the onChange above)
+            // so opening a project and never switching tabs still counts
+            // as "this is where I left off" for the next launch.
+            persistLastOpened()
         }
         .refreshable { await viewModel.load() }
         // Lightweight "live updates" (2026-07-10): polls every 12s while

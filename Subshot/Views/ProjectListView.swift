@@ -94,6 +94,43 @@ struct ProjectListView: View {
         _viewModel = StateObject(wrappedValue: ProjectListViewModel(folderId: folderId))
     }
 
+    /// 2026-08-31, Lino: "die app muss immer da öffnen wo man sie das
+    /// letzte mal verlassen hat! jetzt springt sie immer in die startseite
+    /// zurück" — this app never had ANY launch-state restoration before
+    /// (checked: no @SceneStorage, no persisted NavigationPath, `path`
+    /// above is plain unpersisted @State) — a genuine cold launch always
+    /// rebuilt a fresh ProjectListView with an empty `path`, landing on
+    /// this project-list "Startseite" every time, regardless of whatever
+    /// project was open before the app was last closed. ShotListView
+    /// persists (projectId, workflowSection) on every real open/tab-switch
+    /// (see its own persistLastOpened) — this reads that back once,
+    /// right after this screen's own project list has loaded, and
+    /// programmatically pushes onto `path` exactly the way tapping that
+    /// project's tile already does (`path.append(project)`, the existing
+    /// `.navigationDestination(for: Project.self)` above picks it up
+    /// unchanged). Restores the PROJECT + which workflow tab; deliberately
+    /// does NOT restore which specific Skript-Abschnitt was open within
+    /// Scripting — see ShotListView.init's own doc comment for why that
+    /// stays consistent with the existing "never silently reopen a
+    /// section" rule.
+    ///
+    /// Guarded to the ROOT list only (`folderId == nil` — a project living
+    /// inside a folder isn't in THIS screen's own `viewModel.projects` at
+    /// all, since list_projects only returns one folder level at a time;
+    /// restoring into a foldered project is a known, accepted gap for now,
+    /// not a regression — it simply falls through to showing the list,
+    /// same as today) and to firing only once per real app launch
+    /// (`path.isEmpty` — without this, a pull-to-refresh calling
+    /// viewModel.load() again, or this task somehow re-running, could yank
+    /// someone back into a project they'd deliberately navigated away from
+    /// moments earlier).
+    private func restoreLastOpenedProjectIfNeeded() {
+        guard folderId == nil, path.isEmpty else { return }
+        guard let lastId = UserDefaults.standard.string(forKey: ShotListView.lastOpenedProjectIdKey), !lastId.isEmpty else { return }
+        guard let project = viewModel.projects.first(where: { $0.id == lastId }) else { return }
+        path.append(project)
+    }
+
     var body: some View {
         // Only the root level owns a NavigationStack — a folder pushes onto
         // it the same way ShotListView already does, so drilling into a
@@ -133,7 +170,10 @@ struct ProjectListView: View {
     private var gridScreen: some View {
         gridContent
             .toolbar { toolbarContent }
-            .task { await viewModel.load() }
+            .task {
+                await viewModel.load()
+                restoreLastOpenedProjectIfNeeded()
+            }
             .task { if folderId == nil { await viewModel.loadNotifications() } }
             .task { if folderId == nil { await viewModel.loadTodoSidebar() } }
             .refreshable {
