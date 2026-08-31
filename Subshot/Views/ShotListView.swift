@@ -1255,13 +1255,15 @@ struct ShotListView: View {
         if isTimecodeRunning, let section = markerTargetSection, let fps = section.timecodeFps {
             let offset = section.timecodeOffsetSeconds
             let targetLabel: String = language.t("shotListView.markClipTarget").replacingOccurrences(of: "{section}", with: section.name)
-            // 2026-08-31, Lino: "der timecode soll gross über die ganze
-            // Bildschirmbreite direkt unter dem Ideentitel stehen... links
-            // gross: Titel, rechts daneben die Framerate" — picked via
-            // AskUserQuestion: 3 stacked rows instead of the old single
-            // cramped HStack. Row 1: just the timecode, big, full width.
-            // Row 2: target section label (left) + fps chip (right). Row
-            // 3: reset/export, right-aligned.
+            // 2026-08-31, Lino, second pass on this layout: "gross der
+            // Timecode, darunter links Projektname, mittig unter dem
+            // timecode (gleiche Höhe wie Projekttitel) die Framerate,
+            // rechtsbündig dann auf gleicher Höhe das Reset und Teilen
+            // Symbol" — collapses the previous 2 sub-rows (label+fps,
+            // reset+export) into ONE row with 3 zones. `.overlay` (not a
+            // 3-way HStack with equal Spacers) is what makes the fps chip
+            // truly centered on the row regardless of how wide the label
+            // or the reset/export icons happen to be.
             TimelineView(.periodic(from: .now, by: 0.1)) { context in
                 let timecodeText = formatTimecode(context.date.addingTimeInterval(offset), fps: fps)
                 VStack(spacing: 8) {
@@ -1277,11 +1279,7 @@ struct ShotListView: View {
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.7))
                             .lineLimit(1)
-                        Spacer()
-                        timecodeFpsMenu(currentFps: fps)
-                    }
-                    HStack(spacing: 10) {
-                        Spacer()
+                        Spacer(minLength: 8)
                         resetMarkersButton
                         // 2026-08-30, Lino: "reset und senden button sind zu
                         // nahe aneinander" — Reset is destructive, a visible
@@ -1289,6 +1287,9 @@ struct ShotListView: View {
                         // harder to mis-tap right after it.
                         Divider().frame(height: 16).overlay(Color.white.opacity(0.2))
                         exportEDLButton
+                    }
+                    .overlay {
+                        timecodeFpsMenu(currentFps: fps)
                     }
                 }
                 .padding(.horizontal, 16)
