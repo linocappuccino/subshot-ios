@@ -136,8 +136,28 @@ struct ProjectListView: View {
     /// this root list, not to the project's actual folder view — an
     /// accepted simplification for a "jump back to where you were"
     /// restore, not the same as real breadcrumb navigation.
+    /// 2026-08-31, Lino: "man kommt nicht mehr in die Projektübersicht. man
+    /// wird immer wieder zur Ideenseite geschickt von einem Projekt.. auch
+    /// wenn man die App öffnet" — `path.isEmpty` alone assumes this
+    /// function only ever runs once per real launch, which holds ONLY if
+    /// `gridScreen`'s `.task` itself only ever runs once per launch. If
+    /// anything upstream (Clerk/BackendAuth state settling shortly after
+    /// launch, a SwiftUI view-identity hiccup) causes this whole view to
+    /// get torn down and rebuilt even ONCE while still in the same running
+    /// process, `path` resets to a fresh empty `NavigationPath()` too, and
+    /// this fires again — silently re-pushing the SAME project right back
+    /// onto a freshly-emptied path the instant the user pops back out of
+    /// it, reading as "I can never leave this project". A `static var` is
+    /// tied to the process, not to any one `ProjectListView` instance or
+    /// its `path` — this now guarantees the restore fires at most ONCE per
+    /// real app launch (a genuine relaunch/force-quit resets it, since
+    /// that starts a new process), independent of how many times this
+    /// view itself gets recreated in between.
+    private static var hasAttemptedLaunchRestore = false
+
     private func restoreLastOpenedProjectIfNeeded() async {
-        guard folderId == nil, path.isEmpty else { return }
+        guard folderId == nil, path.isEmpty, !Self.hasAttemptedLaunchRestore else { return }
+        Self.hasAttemptedLaunchRestore = true
         guard let lastId = UserDefaults.standard.string(forKey: ShotListView.lastOpenedProjectIdKey), !lastId.isEmpty else { return }
         if let project = viewModel.projects.first(where: { $0.id == lastId }) {
             path.append(project)
