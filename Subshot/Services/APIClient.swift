@@ -626,6 +626,26 @@ final class APIClient {
         return try await send(req)
     }
 
+    // MARK: - Annotations (public-preview comments, PL-side triage)
+    //
+    // 2026-08-31, Todoist #96 — read+resolve only, mirrors the web app's
+    // AnnotationsPanel.tsx (GET /projects/{id}/annotations, PATCH
+    // /annotations/{id}). This app never CREATES an annotation — that's the
+    // public preview page's own job.
+
+    func listProjectAnnotations(projectId: String) async throws -> [Annotation] {
+        let req = try await authorizedRequest("projects/\(projectId)/annotations")
+        return try await send(req)
+    }
+
+    func patchAnnotation(_ id: String, status: String) async throws -> Annotation {
+        var req = try await authorizedRequest("annotations/\(id)", method: "PATCH")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let status: String }
+        req.httpBody = try encoder.encode(Body(status: status))
+        return try await send(req)
+    }
+
     func createIdea(projectId: String, title: String, text: String = "", sortOrder: Int = 0) async throws -> Idea {
         var req = try await authorizedRequest("projects/\(projectId)/ideas", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")

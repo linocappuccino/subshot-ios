@@ -431,6 +431,43 @@ struct IdeaFeedback: Codable, Identifiable, Hashable {
     }
 }
 
+/// Comment/markup left on the public no-login preview page — read-only
+/// here, this app never creates one (that's the public preview's own job,
+/// see subshot-web's preview-scenes/[token]/page.tsx and
+/// preview-ideas/[token]/page.tsx). Attached to exactly one of
+/// sceneId/ideaId/sectionId, mirroring the backend's Annotation model.
+/// 2026-08-31, Todoist #96 — sectionId added so the PL can see/resolve a
+/// public visitor's Skript/Shotlist-level comment from inside the app, the
+/// same way an idea/scene comment already can be triaged via
+/// AnnotationsPanel on web.
+struct Annotation: Codable, Identifiable, Hashable {
+    let id: String
+    let projectId: String
+    let sceneId: String?
+    let ideaId: String?
+    let sectionId: String?
+    var authorName: String
+    var kind: String
+    var field: String?
+    var text: String?
+    var comment: String?
+    var status: String
+    let createdAt: Date
+    var round: Int?
+    var resolvedByName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, kind, field, text, comment, status, round
+        case projectId = "project_id"
+        case sceneId = "scene_id"
+        case ideaId = "idea_id"
+        case sectionId = "section_id"
+        case authorName = "author_name"
+        case createdAt = "created_at"
+        case resolvedByName = "resolved_by_name"
+    }
+}
+
 struct Idea: Codable, Identifiable, Hashable {
     let id: String
     let projectId: String

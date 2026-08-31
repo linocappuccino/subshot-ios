@@ -225,6 +225,9 @@ struct ShotListView: View {
     @State private var resetMarkerCount: Int?
     @State private var isCountingForReset = false
     @State private var sectionToDelete: SceneSection?
+    /// 2026-08-31, Todoist #96 — PL-side viewer for a section's public
+    /// preview comments, see SectionFeedbackSheet.
+    @State private var viewingSectionFeedback: SceneSection?
     /// #11 Schritt 5 — "Alle Szenen im Kasten? Ab in die Postproduction?"
     @State private var sectionToSendToPostproduction: SceneSection?
     @State private var showingPostproductionList = false
@@ -1027,6 +1030,9 @@ struct ShotListView: View {
         .sheet(item: $assigneeSheetScene) { scene in
             SceneAssigneeSheet(scene: scene, viewModel: viewModel)
         }
+        .sheet(item: $viewingSectionFeedback) { section in
+            SectionFeedbackSheet(section: section, viewModel: viewModel)
+        }
         .sheet(isPresented: $showingTeamSheet) {
             TeamSheet(projectId: projectId)
         }
@@ -1773,6 +1779,11 @@ struct ShotListView: View {
         let columns = [GridItem(.adaptive(minimum: 160), spacing: 12)]
         LazyVGrid(columns: columns, spacing: 12) {
             ForEach(viewModel.sections) { section in
+                // 2026-08-31, Todoist #96 — open (unresolved) public preview
+                // comment count for this section, same "💬 {n}" badge idea
+                // VideoTile/IdeaTile already use for their own open-comment
+                // counts.
+                let openCommentCount = viewModel.annotations.filter { $0.sectionId == section.id && $0.status == "open" }.count
                 Button {
                     withAnimation { openSectionId = section.id }
                 } label: {
@@ -1782,9 +1793,16 @@ struct ShotListView: View {
                             .foregroundStyle(.primary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
-                        Text("\(viewModel.scenes(in: section).count) \(language.t("scriptOverview.sceneCount"))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        HStack(spacing: 8) {
+                            Text("\(viewModel.scenes(in: section).count) \(language.t("scriptOverview.sceneCount"))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if openCommentCount > 0 {
+                                Label("\(openCommentCount)", systemImage: "bubble.left.fill")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.orange)
+                            }
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(14)
@@ -1998,6 +2016,13 @@ struct ShotListView: View {
                         editingSection = .some(section)
                     } label: {
                         Label(language.t("shotListView.rename"), systemImage: "pencil")
+                    }
+                    // 2026-08-31, Todoist #96 — public preview comments left
+                    // on this section, see SectionFeedbackSheet.
+                    Button {
+                        viewingSectionFeedback = section
+                    } label: {
+                        Label(language.t("shotListView.sectionComments"), systemImage: "bubble.left")
                     }
                     if viewModel.modulePostproduction && !section.inPostproduction {
                         Button {

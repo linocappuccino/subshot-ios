@@ -65,6 +65,12 @@ final class ShotListViewModel: ObservableObject {
     /// (see load() below), same "independent of the main load, a failure
     /// here shouldn't block anything else" pattern as `members`.
     @Published var ideas: [Idea] = []
+    /// 2026-08-31, Todoist #96 — comments left on the public no-login
+    /// preview page (scene/idea/section highlights+comments), fetched
+    /// project-wide same as the web app's AnnotationsPanel — lets the PL
+    /// view/resolve a visitor's Skript/Shotlist-level comment from inside
+    /// the app. Same "independent, silent on failure" pattern as members.
+    @Published var annotations: [Annotation] = []
 
     /// Owned here, not as a @StateObject inside LocationSection — that view
     /// lives inside the scrolling LazyVStack and gets torn down/rebuilt
@@ -145,6 +151,7 @@ final class ShotListViewModel: ObservableObject {
         async let detailTask = APIClient.shared.getProject(projectId)
         async let membersTask = APIClient.shared.members(projectId: projectId)
         async let ideasTask = APIClient.shared.listIdeas(projectId: projectId)
+        async let annotationsTask = APIClient.shared.listProjectAnnotations(projectId: projectId)
 
         do {
             let detail = try await detailTask
@@ -184,6 +191,24 @@ final class ShotListViewModel: ObservableObject {
             ideas = fetchedIdeas.sorted { $0.sortOrder < $1.sortOrder }
         } catch {
             // Silent, same reasoning as members above.
+        }
+        do {
+            annotations = try await annotationsTask
+        } catch {
+            // Silent, same reasoning as members above.
+        }
+    }
+
+    /// PL-side triage of a public visitor's comment — mirrors the web app's
+    /// AnnotationsPanel.setStatus.
+    func setAnnotationStatus(_ annotation: Annotation, status: String) async {
+        do {
+            let updated = try await APIClient.shared.patchAnnotation(annotation.id, status: status)
+            if let idx = annotations.firstIndex(where: { $0.id == updated.id }) {
+                annotations[idx] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 

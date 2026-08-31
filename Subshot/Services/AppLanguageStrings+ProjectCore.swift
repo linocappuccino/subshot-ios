@@ -118,6 +118,17 @@ extension AppLanguage {
             // 2026-08-30 — Skript-Auswahlübersicht (web-parity).
             "scriptOverview.sceneCount": "Szenen",
             "scriptOverview.backToOverview": "Zur Übersicht",
+            // 2026-08-31, Todoist #96 — SectionFeedbackSheet (PL-Ansicht der
+            // öffentlichen Skript-Kommentare, siehe web AnnotationsPanel).
+            "sectionFeedbackSheet.navTitle": "Kommentare zu „{name}“",
+            "sectionFeedbackSheet.doneButton": "Fertig",
+            "sectionFeedbackSheet.emptyState": "Noch keine Kommentare",
+            "sectionFeedbackSheet.roundWord": "Feedback",
+            "sectionFeedbackSheet.openCount": "{count} offen",
+            "sectionFeedbackSheet.resolve": "Erledigt",
+            "sectionFeedbackSheet.reject": "Ablehnen",
+            "sectionFeedbackSheet.reopen": "Wieder öffnen",
+            "shotListView.sectionComments": "Kommentare",
             "shotListView.allSceneDoneTitle": "Alle Szenen im Kasten?",
             "shotListView.sendToPostproductionMessage": "\"{name}\" wandert in die Postproduction-Tracking-Liste.",
             "shotListView.goodTakeWithFilename": "Good Take: {filename}",
@@ -379,6 +390,16 @@ extension AppLanguage {
             // 2026-08-30 — Script selection overview (web-parity).
             "scriptOverview.sceneCount": "scenes",
             "scriptOverview.backToOverview": "Back to overview",
+            // 2026-08-31, Todoist #96 — SectionFeedbackSheet.
+            "sectionFeedbackSheet.navTitle": "Comments on “{name}”",
+            "sectionFeedbackSheet.doneButton": "Done",
+            "sectionFeedbackSheet.emptyState": "No comments yet",
+            "sectionFeedbackSheet.roundWord": "Feedback",
+            "sectionFeedbackSheet.openCount": "{count} open",
+            "sectionFeedbackSheet.resolve": "Resolve",
+            "sectionFeedbackSheet.reject": "Reject",
+            "sectionFeedbackSheet.reopen": "Reopen",
+            "shotListView.sectionComments": "Comments",
             "shotListView.allSceneDoneTitle": "All scenes in the can?",
             "shotListView.sendToPostproductionMessage": "\"{name}\" moves to the postproduction tracking list.",
             "shotListView.goodTakeWithFilename": "Good take: {filename}",
