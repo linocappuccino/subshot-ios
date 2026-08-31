@@ -744,35 +744,21 @@ struct ShotListView: View {
             if newValue != .scripting { openSectionId = nil }
             persistLastOpened()
         }
-        // 2026-08-30, Lino: "sind alle clips als im kasten markiert in
-        // einer shotlist, stopt der timecode marker (und speichert
-        // natuerlich)" - 2026-08-31: now clears the SHARED backend
-        // session (not just local display) so it doesn't linger stale for
-        // the next shoot day on this section, same fix as the web app's
-        // identical effect.
-        .onChange(of: allScenesInOpenSectionDone) { _, isDone in
-            if isDone, let section = markerTargetSection {
-                Task { await viewModel.setSectionTimecode(section, fps: nil) }
-            }
-        }
-        // 2026-08-31 - no more manual load/save on section switch, and no
-        // more scenePhase-backgrounding persistence: the timecode session
-        // now lives entirely on `markerTargetSection` itself (derived
-        // from `viewModel.sections`, which already refreshes via the
-        // normal polling/API-response flow) - switching sections just
-        // means `markerTargetSection` resolves to a DIFFERENT SceneSection
-        // with its own independent timecodeFps/timecodeSyncedAt, nothing
-        // to load/save by hand anymore.
-        //
-        // Lino: "auch wenn man mindestens 1h nicht mehr im projekt war
-        // wird der timecode timer automatisch gestoppt" - isTimecodeRunning
-        // is a pure Date()-vs-timecodeSyncedAt comparison with no state of
-        // its own to update, so it needs an external nudge to actually
-        // re-render at the 1h boundary even if nothing else changes; this
-        // just bumps a dummy counter every minute to force that re-check.
-        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
-            timecodeFreshnessTick += 1
-        }
+        // 2026-08-31 — 3 more modifiers (this onChange, the onReceive, and
+        // the RecMarkersSync sheet) landed directly on THIS SAME body chain
+        // that the TileActionDialogs comment below already flags as having
+        // tipped over once before — reproduced the identical "unable to
+        // type-check in reasonable time" error. Bundled into one
+        // TimecodeSessionEffects ViewModifier for the same reason
+        // TileActionDialogs exists: the compiler only has to resolve one
+        // `.modifier(...)` call here instead of 3 separate generic chains.
+        .modifier(TimecodeSessionEffects(
+            viewModel: viewModel,
+            markerTargetSection: markerTargetSection,
+            allScenesInOpenSectionDone: allScenesInOpenSectionDone,
+            showingRecMarkersSync: $showingRecMarkersSync,
+            timecodeFreshnessTick: $timecodeFreshnessTick
+        ))
         .scrollTargetBehaviorIf(wantsScrollSnap && activeWorkflowSection == .scripting && scrollSnapTargetCount > 1)
         // 2026-07-23 (#320) — the Postproduction branch above already had
         // its own .transition(.opacity), but this branch (Ideas/Scripting)
@@ -1094,11 +1080,6 @@ struct ShotListView: View {
         }
         .sheet(item: $viewingSectionFeedback) { section in
             SectionFeedbackSheet(section: section, viewModel: viewModel)
-        }
-        .sheet(isPresented: $showingRecMarkersSync) {
-            if let section = markerTargetSection {
-                RecMarkersSyncSheet(section: section, viewModel: viewModel)
-            }
         }
         .sheet(isPresented: $showingTeamSheet) {
             TeamSheet(projectId: projectId)
@@ -3439,6 +3420,58 @@ struct ShotListView: View {
 /// themselves are .contextMenu now, attached directly on each tile (see
 /// sceneToDelete's doc comment in ShotListView for why) — only the actual
 /// "really delete?" confirmation lives here.
+/// See the call site's 2026-08-31 comment — bundles the timecode session's
+/// onChange/onReceive/sheet trio (previously 3 separate modifiers directly
+/// on ShotListView's main body chain) into one `.modifier(...)` call, same
+/// fix pattern as TileActionDialogs right below.
+private struct TimecodeSessionEffects: ViewModifier {
+    @ObservedObject var viewModel: ShotListViewModel
+    let markerTargetSection: SceneSection?
+    let allScenesInOpenSectionDone: Bool
+    @Binding var showingRecMarkersSync: Bool
+    @Binding var timecodeFreshnessTick: Int
+
+    func body(content: Content) -> some View {
+        content
+            // 2026-08-30, Lino: "sind alle clips als im kasten markiert in
+            // einer shotlist, stopt der timecode marker (und speichert
+            // natuerlich)" - 2026-08-31: now clears the SHARED backend
+            // session (not just local display) so it doesn't linger stale
+            // for the next shoot day on this section, same fix as the web
+            // app's identical effect.
+            .onChange(of: allScenesInOpenSectionDone) { _, isDone in
+                if isDone, let section = markerTargetSection {
+                    Task { await viewModel.setSectionTimecode(section, fps: nil) }
+                }
+            }
+            // 2026-08-31 - no more manual load/save on section switch, and
+            // no more scenePhase-backgrounding persistence: the timecode
+            // session now lives entirely on `markerTargetSection` itself
+            // (derived from `viewModel.sections`, which already refreshes
+            // via the normal polling/API-response flow) - switching
+            // sections just means `markerTargetSection` resolves to a
+            // DIFFERENT SceneSection with its own independent
+            // timecodeFps/timecodeSyncedAt, nothing to load/save by hand
+            // anymore.
+            //
+            // Lino: "auch wenn man mindestens 1h nicht mehr im projekt war
+            // wird der timecode timer automatisch gestoppt" -
+            // isTimecodeRunning is a pure Date()-vs-timecodeSyncedAt
+            // comparison with no state of its own to update, so it needs
+            // an external nudge to actually re-render at the 1h boundary
+            // even if nothing else changes; this just bumps a dummy
+            // counter every minute to force that re-check.
+            .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+                timecodeFreshnessTick += 1
+            }
+            .sheet(isPresented: $showingRecMarkersSync) {
+                if let section = markerTargetSection {
+                    RecMarkersSyncSheet(section: section, viewModel: viewModel)
+                }
+            }
+    }
+}
+
 private struct TileActionDialogs: ViewModifier {
     @ObservedObject var viewModel: ShotListViewModel
     @ObservedObject private var language = AppLanguage.shared
