@@ -492,6 +492,14 @@ final class ShotListViewModel: ObservableObject {
         scenesBySectionId[section?.id] ?? []
     }
 
+    /// 2026-09-09 — web-parity (page.tsx's own firstThumbnailFor, added
+    /// 2026-09-07 for the Skript-Übersicht tiles): first scene with a
+    /// cover photo in this section, sort_order-first (scenes(in:) is
+    /// already that order), or nil if none has one yet.
+    func firstThumbnail(in section: SceneSection) -> String? {
+        scenes(in: section).first(where: { $0.imageUrl != nil })?.imageUrl
+    }
+
     /// 2026-09-09 — same section's scenes, sorted for the "Shot-Reihenfolge"
     /// (shooting-day order) instead of the narrative sort_order — see
     /// Scene.shootingOrder's own doc comment. Falls back to sortOrder for

@@ -1837,10 +1837,21 @@ struct ShotListView: View {
                 // VideoTile/IdeaTile already use for their own open-comment
                 // counts.
                 let openCommentCount = viewModel.annotations.filter { $0.sectionId == section.id && $0.status == "open" }.count
+                // 2026-09-09, Lino: "wieso sieht man keine thumbnails bei
+                // der Shotlisten übersicht?? in der ios app??" — web-parity
+                // (page.tsx's own firstThumbnailFor, added 2026-09-07) had
+                // never been ported here; this tile stayed text-only.
+                let thumbnailUrl = viewModel.firstThumbnail(in: section)
                 Button {
                     withAnimation { openSectionId = section.id; shotOrderMode = false }
                 } label: {
                     VStack(alignment: .leading, spacing: 6) {
+                        if let thumbnailUrl {
+                            AsyncShotThumbnail(path: thumbnailUrl, size: nil, lockAspectRatio: true)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 100)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                        }
                         Text(section.name)
                             .font(.headline)
                             .foregroundStyle(.primary)
