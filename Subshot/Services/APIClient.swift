@@ -539,6 +539,19 @@ final class APIClient {
         return try await send(req)
     }
 
+    /// 2026-09-09 — independent "Shot-Reihenfolge" view (see
+    /// Scene.shootingOrder's own doc comment): whole scene blocks within
+    /// one Section reordered for the shooting-day schedule, separate from
+    /// reorderScenes' narrative sort_order. Same bulk client-computes-the-
+    /// order pattern.
+    func reorderScenesShootingOrder(sectionId: String, orderedSceneIds: [String]) async throws -> [Scene] {
+        var req = try await authorizedRequest("sections/\(sectionId)/scenes/reorder-shooting-order", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let ordered_scene_ids: [String] }
+        req.httpBody = try encoder.encode(Body(ordered_scene_ids: orderedSceneIds))
+        return try await send(req)
+    }
+
     /// Server-authoritative reorder (2026-07-13) — same shared endpoint the
     /// web app now calls too, replacing what used to be a client-computed
     /// multi-PATCH loop independently implemented on both platforms.

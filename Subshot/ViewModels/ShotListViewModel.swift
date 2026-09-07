@@ -492,6 +492,38 @@ final class ShotListViewModel: ObservableObject {
         scenesBySectionId[section?.id] ?? []
     }
 
+    /// 2026-09-09 — same section's scenes, sorted for the "Shot-Reihenfolge"
+    /// (shooting-day order) instead of the narrative sort_order — see
+    /// Scene.shootingOrder's own doc comment. Falls back to sortOrder for
+    /// any scene that's never been touched in this view yet, same
+    /// de-facto order scenes(in:) already shows until someone actually
+    /// drags something here.
+    func scenesInShootingOrder(in section: SceneSection?) -> [Scene] {
+        scenes(in: section).sorted { a, b in
+            if let av = a.shootingOrder, let bv = b.shootingOrder { return av < bv }
+            if a.shootingOrder != nil { return true }
+            if b.shootingOrder != nil { return false }
+            return a.sortOrder < b.sortOrder
+        }
+    }
+
+    /// Position-in-section count, 1..N, keyed by scene id — replaces the
+    /// old screenplay-style scene.displayNumber (stable, deliberately non-
+    /// renumbering) with a live count matching the web app's
+    /// sceneNumberBySectionId (see its own doc comment in page.tsx).
+    /// Recomputed straight off scenes(in:) (already sort_order-first) so
+    /// it updates the instant a scene drag reorders that array. Consumed
+    /// by BOTH the narrative Szenen-Reihenfolge AND the Shot-Reihenfolge
+    /// (which reorders shootingOrder, never a scene's position in THIS
+    /// map) so the number shown per scene stays in lockstep across views.
+    func sceneNumbers(in section: SceneSection?) -> [String: Int] {
+        var map: [String: Int] = [:]
+        for (index, scene) in scenes(in: section).enumerated() {
+            map[scene.id] = index + 1
+        }
+        return map
+    }
+
     // MARK: - Sections
 
     /// `startInPostproduction` (2026-07-21, #284) — the "+" arbitrary/
@@ -1067,8 +1099,18 @@ final class ShotListViewModel: ObservableObject {
     /// is both correct and simpler ("soll sie direkt automatisch ganz oben
     /// im gewählten Abschnitt platziert werden" — that's exactly what
     /// scenes(in:)'s sort already guarantees for free).
-    func handleSceneDroppedOnTile(_ draggedId: String, targetScene: Scene) async {
+    /// `shootingOrder` (2026-09-09) — Shot-Reihenfolge mode: reorders
+    /// Scene.shootingOrder instead of sortOrder/section_id. No cross-
+    /// section filing applies here (there's only ever one section visible
+    /// in that mode) — a drop that would somehow cross sections is simply
+    /// ignored rather than silently falling back to the narrative move.
+    func handleSceneDroppedOnTile(_ draggedId: String, targetScene: Scene, shootingOrder: Bool = false) async {
         guard draggedId != targetScene.id, let dragged = scenes.first(where: { $0.id == draggedId }) else { return }
+        if shootingOrder {
+            guard let sectionId = targetScene.sectionId, dragged.sectionId == sectionId else { return }
+            await reorderSceneShootingOrder(draggedId, before: targetScene.id, in: sectionId)
+            return
+        }
         if dragged.sectionId != targetScene.sectionId {
             await assignSceneToSection(dragged, sectionId: targetScene.sectionId)
         }
@@ -1187,6 +1229,40 @@ final class ShotListViewModel: ObservableObject {
                 scenes[index] = updated
             }
             await load()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// 2026-09-09, Lino: "die szenen-reihefolge zeigt die szenen wie sie im
+    /// fertigen video gezeigt werden... die shot-reihenfolge zeigt die
+    /// reihenfolge wie sie am set gefilmt wird... man muss die szenen
+    /// verschieben können und sie müssen die nummer von der
+    /// szenen-reihenfolge behalten" — same shape as reorderScene above
+    /// (drag one scene block to a new position among its section's own
+    /// siblings), just against Scene.shootingOrder instead of sortOrder/
+    /// section_id, and persisted via the bulk endpoint (there's no
+    /// single-move equivalent for this field) since the server renumbers
+    /// every sibling 0..N-1 in one request either way.
+    func reorderSceneShootingOrder(_ sceneId: String, before targetId: String?, in sectionId: String) async {
+        guard let section = sections.first(where: { $0.id == sectionId }) else { return }
+        guard let scene = scenes.first(where: { $0.id == sceneId }) else { return }
+        var siblings = scenesInShootingOrder(in: section)
+        siblings.removeAll { $0.id == sceneId }
+        let insertIndex = targetId.flatMap { id in siblings.firstIndex(where: { $0.id == id }) } ?? siblings.count
+        siblings.insert(scene, at: insertIndex)
+
+        let orderedIds = siblings.map(\.id)
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+            for (index, id) in orderedIds.enumerated() {
+                if let i = scenes.firstIndex(where: { $0.id == id }), scenes[i].shootingOrder != index {
+                    scenes[i].shootingOrder = index
+                }
+            }
+        }
+
+        do {
+            _ = try await APIClient.shared.reorderScenesShootingOrder(sectionId: sectionId, orderedSceneIds: orderedIds)
         } catch {
             errorMessage = error.localizedDescription
         }

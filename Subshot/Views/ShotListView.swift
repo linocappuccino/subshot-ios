@@ -454,6 +454,13 @@ struct ShotListView: View {
     /// NUR diesen einen Abschnitt in der bestehenden Shot-Planungsansicht.
     /// nil = Übersicht.
     @State private var openSectionId: String?
+    /// 2026-09-09 — "Szenen-Reihenfolge" (narrative, default) vs.
+    /// "Shot-Reihenfolge" (shooting-day order) toggle, web-parity (see
+    /// page.tsx's own `shotOrderMode`). Reset whenever `openSectionId`
+    /// changes (back to overview, or a DIFFERENT section opened) — re-
+    /// entering a section always starts on the narrative view, matching
+    /// the web app exactly.
+    @State private var shotOrderMode = false
     /// 2026-07-23 (#323, Lino: swiping to another section still worked even
     /// when a project only has Postproduction active) — module_concept/
     /// module_scripting/module_postproduction (see ShotListViewModel.load)
@@ -725,6 +732,21 @@ struct ShotListView: View {
                             // identische Filterung. "Ohne Abschnitt" wird in
                             // diesem fokussierten Modus nie gezeigt (s.o.).
                             ForEach(viewModel.sections.filter { $0.id == openSectionId }) { section in
+                                // 2026-09-09, Lino: "2 sortierfunktionien 1. die
+                                // Szenenreihenfolge 2. Shotreihenfolge... web-parity
+                                // mit page.tsx's SegmentedControl. Only for a REAL
+                                // section (Scene.shootingOrder is scoped to one
+                                // Section's own scenes server-side) — "Ohne
+                                // Abschnitt" never opens through openSectionId at
+                                // all on iOS (see markerTargetSection's own doc
+                                // comment), so no extra guard is needed here.
+                                Picker("", selection: $shotOrderMode) {
+                                    Text(language.t("shotListView.sceneOrderTab")).tag(false)
+                                    Text(language.t("shotListView.shotOrderTab")).tag(true)
+                                }
+                                .pickerStyle(.segmented)
+                                .padding(.horizontal, 16)
+                                .padding(.bottom, 4)
                                 sectionGroup(section: section)
                             }
                         }
@@ -1468,7 +1490,7 @@ struct ShotListView: View {
         if openSectionId != nil {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button {
-                    withAnimation { openSectionId = nil }
+                    withAnimation { openSectionId = nil; shotOrderMode = false }
                 } label: {
                     Image(systemName: "chevron.backward")
                 }
@@ -1718,6 +1740,26 @@ struct ShotListView: View {
 
     // MARK: - Sections
 
+    /// 2026-09-09, Lino: "bei der szenen reihenfolge, müssen die zahlen
+    /// für die szenen sich anpassen und von 1 hochzählen... in der shot
+    /// reihenfolge sollen die nummern von der szenenreihenfolge für die
+    /// szenen übernommen werden und sich NICHT ändern" — web-parity (see
+    /// sceneNumberBySectionId's own doc comment in page.tsx): a live
+    /// position-in-section count, 1..N, replacing the old stable
+    /// Scene.number/letter identity everywhere a scene's badge is shown.
+    /// Recomputes off viewModel.scenes(in:) (already sort_order-first) so
+    /// it updates the instant a scene drag reorders that section — and
+    /// stays put while shotOrderMode reorders shootingOrder instead, since
+    /// this always reads the NARRATIVE order regardless of which mode is
+    /// currently displayed.
+    private func sceneNumberLabel(_ scene: Scene) -> String {
+        let section = scene.sectionId.flatMap { id in viewModel.sections.first(where: { $0.id == id }) }
+        if let n = viewModel.sceneNumbers(in: section)[scene.id] {
+            return String(n)
+        }
+        return scene.displayNumber
+    }
+
     /// Renders a set of scene cards either as today's single full-width
     /// column, or as a 2-column grid — see isGridMode. Grid mode owns the
     /// horizontal padding + inter-column gap itself (sceneCard skips its own
@@ -1796,7 +1838,7 @@ struct ShotListView: View {
                 // counts.
                 let openCommentCount = viewModel.annotations.filter { $0.sectionId == section.id && $0.status == "open" }.count
                 Button {
-                    withAnimation { openSectionId = section.id }
+                    withAnimation { openSectionId = section.id; shotOrderMode = false }
                 } label: {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(section.name)
@@ -1897,7 +1939,7 @@ struct ShotListView: View {
                 sectionProjectInfoArea(section: section)
             }
             if !isSectionCollapsed(section) {
-                sceneGrid(viewModel.scenes(in: section))
+                sceneGrid(shotOrderMode ? viewModel.scenesInShootingOrder(in: section) : viewModel.scenes(in: section))
                 sectionTrailingDropZone(section: section)
             }
         }
@@ -1935,6 +1977,14 @@ struct ShotListView: View {
                 let draggedId = String(raw.dropFirst("scene:".count))
                 guard let dragged = viewModel.scenes.first(where: { $0.id == draggedId }) else { return false }
                 Task {
+                    // 2026-09-09 — Shot-Reihenfolge: no cross-section filing
+                    // (there's only ever one section visible in this mode),
+                    // just append to the end of this section's own
+                    // shootingOrder.
+                    if shotOrderMode, let sectionId = section?.id, dragged.sectionId == sectionId {
+                        await viewModel.reorderSceneShootingOrder(draggedId, before: nil, in: sectionId)
+                        return
+                    }
                     if dragged.sectionId != section?.id {
                         await viewModel.assignSceneToSection(dragged, sectionId: section?.id)
                     }
@@ -2374,7 +2424,7 @@ struct ShotListView: View {
             .dropDestination(for: String.self) { ids, _ in
                 guard let raw = ids.first, raw.hasPrefix("scene:") else { return false }
                 let draggedId = String(raw.dropFirst("scene:".count))
-                Task { await viewModel.handleSceneDroppedOnTile(draggedId, targetScene: target) }
+                Task { await viewModel.handleSceneDroppedOnTile(draggedId, targetScene: target, shootingOrder: shotOrderMode) }
                 return true
             } isTargeted: { targeted in
                 setSceneDropTarget(target.id, targeted: targeted)
@@ -2589,7 +2639,7 @@ struct ShotListView: View {
     private func sceneCollapsedRow(scene: Scene) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .top, spacing: 8) {
-                Text(scene.displayNumber)
+                Text(sceneNumberLabel(scene))
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 9)
@@ -2901,7 +2951,7 @@ struct ShotListView: View {
             if raw.hasPrefix("scene:") {
                 let draggedId = String(raw.dropFirst("scene:".count))
                 guard let dragged = viewModel.scenes.first(where: { $0.id == draggedId }), dragged.isProjectInfo else { return false }
-                Task { await viewModel.handleSceneDroppedOnTile(draggedId, targetScene: scene) }
+                Task { await viewModel.handleSceneDroppedOnTile(draggedId, targetScene: scene, shootingOrder: shotOrderMode) }
                 return true
             }
             Task { await viewModel.moveShot(raw, toScene: scene.id) }
@@ -2940,7 +2990,7 @@ struct ShotListView: View {
                 // bündig zur Identifikationsnummer legen") — spelled-out
                 // priority, right-aligned against the ID badge.
                 HStack {
-                    Text(scene.displayNumber)
+                    Text(sceneNumberLabel(scene))
                         .font(.caption.weight(.bold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 7)
@@ -3060,7 +3110,7 @@ struct ShotListView: View {
     /// the full tile following the finger.
     private func sceneDragPreview(scene: Scene) -> some View {
         HStack(spacing: 8) {
-            Text(scene.displayNumber)
+            Text(sceneNumberLabel(scene))
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 6)
@@ -3086,7 +3136,7 @@ struct ShotListView: View {
     @ViewBuilder
     private func sceneHeader(scene: Scene) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Text(scene.displayNumber)
+            Text(sceneNumberLabel(scene))
                 .font(.subheadline.weight(.bold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 9)

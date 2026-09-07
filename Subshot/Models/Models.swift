@@ -258,6 +258,13 @@ struct Scene: Codable, Identifiable, Hashable {
     var goodTakeFilename: String?
     let number: Int
     let letter: String?
+    /// 2026-09-09 — independent "Shot-Reihenfolge" (shooting-day order of
+    /// whole SCENE blocks within one Section, each scene's own shots stay
+    /// in their normal order), separate from `sortOrder` (narrative order,
+    /// drives the Szenen-Reihenfolge). Null until the flat shooting-order
+    /// view has actually been reordered once — falls back to `sortOrder`
+    /// until then, same de-facto order the Szenen-Reihenfolge already shows.
+    var shootingOrder: Int?
     var priority: ShotPriority?
     /// Set once at creation (which FAB menu option was tapped), never
     /// changes after. Lighter-weight scenes for connective beats: no shot
@@ -286,6 +293,7 @@ struct Scene: Codable, Identifiable, Hashable {
 
     enum CodingKeys: String, CodingKey {
         case id, name, color, description, dialogue, completed, number, letter, priority, dialogues
+        case shootingOrder = "shooting_order"
         case projectId = "project_id"
         case scheduledAt = "scheduled_at"
         case durationMinutes = "duration_minutes"
