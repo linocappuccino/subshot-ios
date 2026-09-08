@@ -28,6 +28,19 @@ struct ReferenceVideoBlockView: View {
     @State private var pickerItem: PhotosPickerItem?
     @State private var confirmingDelete = false
     @State private var showingLightbox = false
+    /// 2026-09-08, Lino: "in der ios app wird kein thumbnail vom video
+    /// angezeigt" — root cause was a reference video uploaded BEFORE this
+    /// thumbnail feature shipped (the backend background task only fires
+    /// from complete_reference_video, never retroactively), backfilled once
+    /// server-side. This flag is the belt-and-suspenders fix for the same
+    /// class of gap happening again (a background job that fails silently,
+    /// or just never runs for some other reason): the plain `ProgressView`
+    /// fallback below used to spin forever with zero visual feedback if
+    /// `referenceVideoThumbnailUrl` never arrives — generation normally
+    /// takes a few seconds (see video_processing.process_video), so past
+    /// this timeout it's clearly not coming and a static placeholder icon
+    /// is more honest than an indefinite spinner.
+    @State private var thumbnailTimedOut = false
 
     private var hasVideo: Bool {
         viewModel.referenceVideoStatus == "ready" && viewModel.referenceVideoUrl != nil
@@ -56,6 +69,10 @@ struct ReferenceVideoBlockView: View {
                                     path: thumbUrl, size: nil, lockAspectRatio: false,
                                     focusPoint: viewModel.referenceVideoThumbnailFocusPoint
                                 )
+                            } else if thumbnailTimedOut {
+                                Image(systemName: "film")
+                                    .font(.system(size: 22))
+                                    .foregroundStyle(.white.opacity(0.5))
                             } else {
                                 // Face-centered thumbnail is still being generated
                                 // server-side (background task after complete —
@@ -64,6 +81,10 @@ struct ReferenceVideoBlockView: View {
                                 // comment) — plain placeholder in the meantime,
                                 // no live player needed just to show something.
                                 ProgressView()
+                                    .task {
+                                        try? await Task.sleep(nanoseconds: 15_000_000_000)
+                                        if viewModel.referenceVideoThumbnailUrl == nil { thumbnailTimedOut = true }
+                                    }
                             }
                             Circle()
                                 .fill(.black.opacity(0.45))
@@ -135,6 +156,9 @@ struct ReferenceVideoBlockView: View {
             }
         } message: {
             Text(language.t("referenceVideo.deleteMessage"))
+        }
+        .onChange(of: viewModel.referenceVideoUploading) { _, uploading in
+            if uploading { thumbnailTimedOut = false }
         }
         .fullScreenCover(isPresented: $showingLightbox) {
             if let urlString = viewModel.referenceVideoUrl, let url = URL(string: urlString) {
