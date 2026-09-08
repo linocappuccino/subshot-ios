@@ -85,6 +85,15 @@ final class ShotListViewModel: ObservableObject {
     /// view/resolve a visitor's Skript/Shotlist-level comment from inside
     /// the app. Same "independent, silent on failure" pattern as members.
     @Published var annotations: [Annotation] = []
+    /// 2026-09-08 (iOS parity pass, Lino: "man darf NUR eingeloggt
+    /// kommentare löschen können! und das auch nur als admin") — mirrors
+    /// the web app's canDeleteComments (projects/[id]/page.tsx): true for
+    /// the project's own owner, or a TEAM admin (a different role axis
+    /// than `members`' own owner/projektleiter/editor — see TeamMember's
+    /// doc comment). Computed fresh in load(). UI-only — the DELETE
+    /// endpoints enforce the real permission server-side regardless of
+    /// what this says.
+    @Published var canDeleteComments: Bool = false
 
     /// Owned here, not as a @StateObject inside LocationSection — that view
     /// lives inside the scrolling LazyVStack and gets torn down/rebuilt
@@ -223,6 +232,23 @@ final class ShotListViewModel: ObservableObject {
         if let fetchedAnnotations = await annotationsTask, fetchedAnnotations != annotations {
             annotations = fetchedAnnotations
         }
+        // 2026-09-08 (iOS parity pass) — see canDeleteComments' own doc
+        // comment. Gated on includeSecondary same as members/ideas/
+        // annotations above — team-admin status doesn't need rechecking on
+        // every ~12s background poll tick, only the ~60s "full" ones (see
+        // ShotListView's own tick % 5 == 0 comment). `detailTask` is an
+        // `async let`, already awaited once above inside the do/catch —
+        // awaiting it again here just returns the cached result, no second
+        // network round trip.
+        if includeSecondary, let me = try? await APIClient.shared.me() {
+            let projectDetail = try? await detailTask
+            var admin = members.first(where: { $0.userId == me.id })?.role == "owner"
+            if !admin, let teamId = projectDetail?.teamId,
+               let teamMembers = try? await APIClient.shared.teamMembers(teamId: teamId) {
+                admin = teamMembers.contains { $0.userId == me.id && $0.role == "admin" }
+            }
+            if canDeleteComments != admin { canDeleteComments = admin }
+        }
     }
 
     /// PL-side triage of a public visitor's comment — mirrors the web app's
@@ -233,6 +259,18 @@ final class ShotListViewModel: ObservableObject {
             if let idx = annotations.firstIndex(where: { $0.id == updated.id }) {
                 annotations[idx] = updated
             }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// 2026-09-08 (iOS parity pass) — mirrors the web app's
+    /// handleDeleteAnnotation, gated by canDeleteComments in the view.
+    /// Regardless of status, per _require_comment_delete_permission.
+    func deleteAnnotation(_ annotation: Annotation) async {
+        do {
+            try await APIClient.shared.deleteAnnotation(annotation.id)
+            annotations.removeAll { $0.id == annotation.id }
         } catch {
             errorMessage = error.localizedDescription
         }

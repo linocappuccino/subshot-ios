@@ -175,6 +175,11 @@ struct ProjectDetail: Codable {
     var locationLng: Double?
     var folderId: String?
     var clientName: String?
+    /// 2026-09-08 (iOS parity pass) — nil for a team-less/solo project, see
+    /// canDeleteComments in ShotListViewModel for the one thing this
+    /// currently drives (whether a comment/annotation delete needs a TEAM
+    /// admin check at all, vs. just the project's own owner).
+    var teamId: String?
     let lastOpenedAt: Date
     let createdAt: Date
     var scenes: [Scene]
@@ -201,6 +206,7 @@ struct ProjectDetail: Codable {
         case locationLng = "location_lng"
         case folderId = "folder_id"
         case clientName = "client_name"
+        case teamId = "team_id"
         case lastOpenedAt = "last_opened_at"
         case createdAt = "created_at"
         case todoLists = "todo_lists"
@@ -666,6 +672,24 @@ struct Member: Codable, Identifiable, Hashable {
         case email, name, role
         case userId = "user_id"
         case avatarUrl = "avatar_url"
+    }
+}
+
+/// 2026-09-08 (iOS parity pass) — TEAM-wide role (admin/projektleiter/
+/// editor, see `_get_team_role` in app/main.py), a completely different
+/// axis from Member.role above (that one is project-level owner/
+/// projektleiter/editor). Only fetched for the one thing this app
+/// currently needs it for — ShotListViewModel.canDeleteComments — so this
+/// only declares the fields that check actually uses; extra JSON keys on
+/// GET /teams/{id}/members (status, invited_at, joined_at, is_owner, ...)
+/// are simply ignored by Codable, not an error.
+struct TeamMember: Codable {
+    let userId: String
+    let role: String
+
+    enum CodingKeys: String, CodingKey {
+        case userId = "user_id"
+        case role
     }
 }
 

@@ -13,7 +13,23 @@ enum APIError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notAuthenticated: return "Nicht angemeldet."
-        case .server(let status, let message): return "Serverfehler (\(status)): \(message)"
+        case .server(let status, let message):
+            // 2026-09-08 (iOS parity pass) — `message` used to be shown
+            // completely raw (the literal response body, e.g.
+            // `{"detail":"Speicherlimit erreicht..."}`), unlike the web
+            // app's lib/api.ts which always parses FastAPI's default
+            // `{"detail": "..."}` error shape into just the human-readable
+            // text. Every backend error (including the new storage-tier
+            // 413 from _require_storage_within_tier) would otherwise show
+            // as garbled JSON here. Falls back to the old raw format for a
+            // genuinely non-JSON body (e.g. a plain-text 502 from a proxy),
+            // same fallback web's own parsing has.
+            if let data = message.data(using: .utf8),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let detail = json["detail"] as? String {
+                return detail
+            }
+            return "Serverfehler (\(status)): \(message)"
         case .decoding: return "Antwort konnte nicht gelesen werden."
         case .network(let e): return "Verbindungsfehler: \(e.localizedDescription)"
         }
@@ -642,8 +658,8 @@ final class APIClient {
 
     // MARK: - Annotations (public-preview comments, PL-side triage)
     //
-    // 2026-08-31, Todoist #96 — read+resolve only, mirrors the web app's
-    // AnnotationsPanel.tsx (GET /projects/{id}/annotations, PATCH
+    // 2026-08-31, Todoist #96 — read/resolve/delete, mirrors the web app's
+    // AnnotationsPanel.tsx (GET /projects/{id}/annotations, PATCH+DELETE
     // /annotations/{id}). This app never CREATES an annotation — that's the
     // public preview page's own job.
 
@@ -658,6 +674,17 @@ final class APIClient {
         struct Body: Encodable { let status: String }
         req.httpBody = try encoder.encode(Body(status: status))
         return try await send(req)
+    }
+
+    /// 2026-09-08 (iOS parity pass, Lino: "man darf NUR eingeloggt
+    /// kommentare löschen können! und das auch nur als admin") — mirrors
+    /// the web app's api.deleteAnnotation, gated the same way there
+    /// (ShotListViewModel.canDeleteComments, UI-only — the backend's
+    /// _require_comment_delete_permission is the real enforcement).
+    /// Regardless of status (open/resolved/rejected all deletable here).
+    func deleteAnnotation(_ id: String) async throws {
+        let req = try await authorizedRequest("annotations/\(id)", method: "DELETE")
+        try await sendNoContent(req)
     }
 
     func createIdea(projectId: String, title: String, text: String = "", sortOrder: Int = 0) async throws -> Idea {
@@ -742,6 +769,15 @@ final class APIClient {
         struct Body: Encodable { let resolved: Bool }
         req.httpBody = try encoder.encode(Body(resolved: resolved))
         return try await send(req)
+    }
+
+    /// 2026-09-08 (iOS parity pass) — mirrors the web app's
+    /// api.deleteIdeaFeedback, same admin-only gate as deleteAnnotation
+    /// above (ShotListViewModel.canDeleteComments). Plain IdeaFeedback had
+    /// no delete at all from this app before this.
+    func deleteIdeaFeedback(ideaId: String, feedbackId: String) async throws {
+        let req = try await authorizedRequest("ideas/\(ideaId)/feedback/\(feedbackId)", method: "DELETE")
+        try await sendNoContent(req)
     }
 
     #if canImport(UIKit)
@@ -1091,6 +1127,15 @@ final class APIClient {
 
     func members(projectId: String) async throws -> [Member] {
         let req = try await authorizedRequest("projects/\(projectId)/members")
+        return try await send(req)
+    }
+
+    /// 2026-09-08 (iOS parity pass) — TEAM-wide roster (see TeamMember's
+    /// own doc comment for why this is a different axis from `members`
+    /// above), used only to check whether the current user is a team
+    /// admin. Same endpoint the web app's AppShell/isTeamAdmin fetch uses.
+    func teamMembers(teamId: String) async throws -> [TeamMember] {
+        let req = try await authorizedRequest("teams/\(teamId)/members")
         return try await send(req)
     }
 

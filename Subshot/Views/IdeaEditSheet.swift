@@ -343,7 +343,7 @@ struct IdeaEditSheet: View {
                 }
             }
             .sheet(isPresented: $showFeedback) {
-                IdeaFeedbackSheet(idea: liveIdea)
+                IdeaFeedbackSheet(idea: liveIdea, viewModel: viewModel)
             }
             .sheet(isPresented: $showGeneratePopup) {
                 ideaGeneratePopup

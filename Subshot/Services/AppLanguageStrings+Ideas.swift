@@ -83,6 +83,7 @@ extension AppLanguage {
             "ideaFeedbackSheet.openCount": "{count} offen",
             "ideaFeedbackSheet.navTitle": "Feedback zu „{title}“",
             "ideaFeedbackSheet.doneButton": "Fertig",
+            "ideaFeedbackSheet.deleteConfirmTitle": "Kommentar löschen?",
 
             // IdeaMediaSourceButton.swift
             "ideaMediaSourceButton.dialogTitle": "Bild oder Video hinzufügen",
@@ -246,6 +247,7 @@ extension AppLanguage {
             "ideaFeedbackSheet.openCount": "{count} open",
             "ideaFeedbackSheet.navTitle": "Feedback on “{title}”",
             "ideaFeedbackSheet.doneButton": "Done",
+            "ideaFeedbackSheet.deleteConfirmTitle": "Delete comment?",
 
             // IdeaMediaSourceButton.swift
             "ideaMediaSourceButton.dialogTitle": "Add photo or video",

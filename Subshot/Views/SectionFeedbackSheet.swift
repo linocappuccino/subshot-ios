@@ -16,6 +16,13 @@ struct SectionFeedbackSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var collapsedRounds: Set<Int> = []
+    /// 2026-09-08 (iOS parity pass) — armed by tapping "Löschen", confirmed
+    /// via .confirmationDialog below (matches the destructive-action
+    /// pattern already used elsewhere in this app, e.g. shot/scene
+    /// delete), rather than the web app's own tap-again-within-4s inline
+    /// pattern — a native iOS confirmation sheet is the more idiomatic
+    /// equivalent here.
+    @State private var pendingDelete: Annotation?
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -94,6 +101,26 @@ struct SectionFeedbackSheet: View {
                     Button(language.t("sectionFeedbackSheet.doneButton")) { dismiss() }
                 }
             }
+            // 2026-09-08 (iOS parity pass) — see pendingDelete's own doc
+            // comment.
+            .confirmationDialog(
+                language.t("sectionFeedbackSheet.deleteConfirmTitle"),
+                isPresented: Binding(
+                    get: { pendingDelete != nil },
+                    set: { if !$0 { pendingDelete = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button(language.t("common.delete"), role: .destructive) {
+                    if let annotation = pendingDelete {
+                        Task { await viewModel.deleteAnnotation(annotation) }
+                    }
+                    pendingDelete = nil
+                }
+                Button(language.t("common.cancel"), role: .cancel) {
+                    pendingDelete = nil
+                }
+            }
         }
         .preferredColorScheme(.dark)
     }
@@ -138,6 +165,18 @@ struct SectionFeedbackSheet: View {
                     }
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
+                }
+                // 2026-09-08 (iOS parity pass, Lino: "man darf NUR
+                // eingeloggt kommentare löschen können! und das auch nur
+                // als admin") — mirrors the web app's AnnotationsPanel
+                // delete button, same canDeleteComments gate.
+                if viewModel.canDeleteComments {
+                    Spacer()
+                    Button(language.t("common.delete")) {
+                        pendingDelete = entry
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.red)
                 }
             }
             .buttonStyle(.plain)

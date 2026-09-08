@@ -15,6 +15,12 @@ import Combine
 /// assignee/todo avatars elsewhere in this app).
 struct IdeaFeedbackSheet: View {
     let idea: Idea
+    /// 2026-09-08 (iOS parity pass) — only ever read for `canDeleteComments`
+    /// here (this sheet manages its own `feedback` array independently,
+    /// unlike SectionFeedbackSheet which observes the view model's own
+    /// `annotations`), passed down from IdeaEditSheet which already holds
+    /// the same instance.
+    @ObservedObject var viewModel: ShotListViewModel
     @ObservedObject private var language = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
 
@@ -24,6 +30,9 @@ struct IdeaFeedbackSheet: View {
     /// Collapsed rounds (by round number) — all rounds start expanded, same
     /// default as the web app's FeedbackRound.
     @State private var collapsedRounds: Set<Int> = []
+    /// 2026-09-08 (iOS parity pass) — see SectionFeedbackSheet's identical
+    /// pendingDelete for the full reasoning.
+    @State private var pendingDelete: IdeaFeedback?
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -111,6 +120,26 @@ struct IdeaFeedbackSheet: View {
                     Button(language.t("ideaFeedbackSheet.doneButton")) { dismiss() }
                 }
             }
+            // 2026-09-08 (iOS parity pass) — see pendingDelete's own doc
+            // comment.
+            .confirmationDialog(
+                language.t("ideaFeedbackSheet.deleteConfirmTitle"),
+                isPresented: Binding(
+                    get: { pendingDelete != nil },
+                    set: { if !$0 { pendingDelete = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button(language.t("common.delete"), role: .destructive) {
+                    if let entry = pendingDelete {
+                        Task { await delete(entry) }
+                    }
+                    pendingDelete = nil
+                }
+                Button(language.t("common.cancel"), role: .cancel) {
+                    pendingDelete = nil
+                }
+            }
         }
         .preferredColorScheme(.dark)
         .task {
@@ -146,6 +175,18 @@ struct IdeaFeedbackSheet: View {
                     .font(.subheadline)
                     .strikethrough(entry.resolved)
                     .foregroundStyle(entry.resolved ? .secondary : .primary)
+                // 2026-09-08 (iOS parity pass, Lino: "man darf NUR
+                // eingeloggt kommentare löschen können! und das auch nur
+                // als admin") — mirrors the web app's IdeaFeedbackPanel
+                // delete button, same canDeleteComments gate.
+                if viewModel.canDeleteComments {
+                    Button(language.t("common.delete")) {
+                        pendingDelete = entry
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.red)
+                    .buttonStyle(.plain)
+                }
             }
         }
         .padding(.leading, 6)
@@ -161,6 +202,18 @@ struct IdeaFeedbackSheet: View {
                 ideaId: idea.id, feedbackId: entry.id, resolved: !entry.resolved
             )
             feedback[index] = updated
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// 2026-09-08 (iOS parity pass) — mirrors the web app's
+    /// IdeaFeedbackPanel deleteOne, gated by canDeleteComments in the view.
+    /// Any status (resolved or not) is deletable here.
+    private func delete(_ entry: IdeaFeedback) async {
+        do {
+            try await APIClient.shared.deleteIdeaFeedback(ideaId: idea.id, feedbackId: entry.id)
+            feedback.removeAll { $0.id == entry.id }
         } catch {
             errorMessage = error.localizedDescription
         }
