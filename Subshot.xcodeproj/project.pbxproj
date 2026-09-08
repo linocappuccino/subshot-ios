@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		804F9CB83F4E6067939EF029 /* ReferenceVideoBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5795010C29EB20A3A330283 /* ReferenceVideoBlockView.swift */; };
 		9D65C43E3012BA7600D56768 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 9D65C43D3012BA7600D56768 /* Sentry */; };
 		9DEA06A42FFD72C400AB854B /* ClerkKit in Frameworks */ = {isa = PBXBuildFile; productRef = 9DEA06A32FFD72C400AB854B /* ClerkKit */; };
 		9DEA06A62FFD72C400AB854B /* ClerkKitUI in Frameworks */ = {isa = PBXBuildFile; productRef = 9DEA06A52FFD72C400AB854B /* ClerkKitUI */; };
@@ -77,6 +78,7 @@
 		9DEA06EF2FFEE76800AB854B /* NotificationsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsSheet.swift; sourceTree = "<group>"; };
 		9DEA06F12FFEFB0B00AB854B /* ImageSourceButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageSourceButton.swift; sourceTree = "<group>"; };
 		9DEA06F32FFF050400AB854B /* FolderEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderEditSheet.swift; sourceTree = "<group>"; };
+		B5795010C29EB20A3A330283 /* ReferenceVideoBlockView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ReferenceVideoBlockView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -244,6 +246,7 @@
 				9D65C4513012C01B00D56768 /* AvatarMenu.swift */,
 				9DB09AD53023D9B4008FD00A /* NotificationSettingsView.swift */,
 				9DB09AD73023D9DE008FD00A /* SceneAIImageSheet.swift */,
+				B5795010C29EB20A3A330283 /* ReferenceVideoBlockView.swift */,
 			);
 			name = Views;
 			path = "/Users/linohaltinner/Documents/GitHub/subshot-ios/Subshot/Views";
@@ -396,6 +399,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				804F9CB83F4E6067939EF029 /* ReferenceVideoBlockView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

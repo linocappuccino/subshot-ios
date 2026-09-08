@@ -133,6 +133,15 @@ extension AppLanguage {
             // 2026-08-30 — Skript-Auswahlübersicht (web-parity).
             "scriptOverview.sceneCount": "Szenen",
             "scriptOverview.backToOverview": "Zur Übersicht",
+            // 2026-09-08 — Referenz-Video, ganz oben auf der
+            // Skript-Auswahlübersicht (web-parity, ReferenceVideoBlock.tsx).
+            "referenceVideo.upload": "Beispielvideo als Referenz hochladen",
+            "referenceVideo.replace": "Video ersetzen",
+            "referenceVideo.delete": "Video löschen",
+            "referenceVideo.uploadFailed": "Upload fehlgeschlagen.",
+            "referenceVideo.deleteFailed": "Löschen fehlgeschlagen.",
+            "referenceVideo.deleteTitle": "Referenz-Video löschen?",
+            "referenceVideo.deleteMessage": "Das Beispielvideo wird endgültig entfernt.",
             // 2026-08-31, Todoist #96 — SectionFeedbackSheet (PL-Ansicht der
             // öffentlichen Skript-Kommentare, siehe web AnnotationsPanel).
             "sectionFeedbackSheet.navTitle": "Kommentare zu „{name}“",
@@ -417,6 +426,14 @@ extension AppLanguage {
             // 2026-08-30 — Script selection overview (web-parity).
             "scriptOverview.sceneCount": "scenes",
             "scriptOverview.backToOverview": "Back to overview",
+            // 2026-09-08 — Reference video, above the script overview tiles.
+            "referenceVideo.upload": "Upload reference video",
+            "referenceVideo.replace": "Replace video",
+            "referenceVideo.delete": "Delete video",
+            "referenceVideo.uploadFailed": "Upload failed.",
+            "referenceVideo.deleteFailed": "Delete failed.",
+            "referenceVideo.deleteTitle": "Delete reference video?",
+            "referenceVideo.deleteMessage": "The reference video will be removed permanently.",
             // 2026-08-31, Todoist #96 — SectionFeedbackSheet.
             "sectionFeedbackSheet.navTitle": "Comments on “{name}”",
             "sectionFeedbackSheet.doneButton": "Done",

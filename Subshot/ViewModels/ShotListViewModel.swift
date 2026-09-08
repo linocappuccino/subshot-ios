@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import Combine
+import AVFoundation
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -74,6 +75,14 @@ final class ShotListViewModel: ObservableObject {
     @Published var moduleConcept: Bool = true
     @Published var moduleScripting: Bool = true
     @Published var modulePostproduction: Bool = true
+    /// 2026-09-08 — "Scribble Video", one reference video for the whole
+    /// project shotlist, shown above the Skript-Auswahlübersicht (web-
+    /// parity, ReferenceVideoBlock.tsx / ReferenceVideoBlockView.swift).
+    @Published var referenceVideoUrl: String?
+    @Published var referenceVideoStatus: String?
+    @Published var referenceVideoOriginalFilename: String?
+    @Published var referenceVideoDurationSeconds: Double?
+    @Published var referenceVideoUploading = false
     /// Planungssektor (2026-07-17 iOS port — see web app's IdeaGrid.tsx) —
     /// not part of ProjectDetail server-side, always its own round trip
     /// (see load() below), same "independent of the main load, a failure
@@ -210,6 +219,10 @@ final class ShotListViewModel: ObservableObject {
             if moduleConcept != detail.moduleConcept { moduleConcept = detail.moduleConcept }
             if moduleScripting != detail.moduleScripting { moduleScripting = detail.moduleScripting }
             if modulePostproduction != detail.modulePostproduction { modulePostproduction = detail.modulePostproduction }
+            if referenceVideoUrl != detail.referenceVideoUrl { referenceVideoUrl = detail.referenceVideoUrl }
+            if referenceVideoStatus != detail.referenceVideoStatus { referenceVideoStatus = detail.referenceVideoStatus }
+            if referenceVideoOriginalFilename != detail.referenceVideoOriginalFilename { referenceVideoOriginalFilename = detail.referenceVideoOriginalFilename }
+            if referenceVideoDurationSeconds != detail.referenceVideoDurationSeconds { referenceVideoDurationSeconds = detail.referenceVideoDurationSeconds }
         } catch {
             // A cancelled request (pull-to-refresh released mid-flight, or
             // the view disappearing) isn't a real failure — see
@@ -499,6 +512,50 @@ final class ShotListViewModel: ObservableObject {
         do {
             let updated = try await APIClient.shared.patchProject(projectId, clientName: name)
             clientName = updated.clientName
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// 2026-09-08 — "Scribble Video" upload, same create→upload→complete
+    /// steps as PostproductionListView's uploadPickedVideo, just against
+    /// the project-level reference-video endpoints instead of a Video/
+    /// VideoVersion row (no polling for a thumbnail/filmstrip afterward —
+    /// that background job doesn't exist for this simpler, unversioned
+    /// slot).
+    func uploadReferenceVideo(fileURL: URL, filename: String, contentType: String) async {
+        referenceVideoUploading = true
+        defer { referenceVideoUploading = false }
+        do {
+            let draft = try await APIClient.shared.createReferenceVideo(projectId: projectId, filename: filename, contentType: contentType)
+            referenceVideoStatus = "uploading"
+            referenceVideoOriginalFilename = filename
+            guard let uploadURL = URL(string: draft.uploadUrl) else {
+                errorMessage = "Keine Upload-URL erhalten."
+                return
+            }
+            try await APIClient.shared.uploadVideoFile(to: uploadURL, fileURL: fileURL, contentType: contentType)
+            let duration = try? await AVURLAsset(url: fileURL).load(.duration).seconds
+            let updated = try await APIClient.shared.completeReferenceVideo(projectId: projectId, durationSeconds: duration)
+            referenceVideoUrl = updated.referenceVideoUrl
+            referenceVideoStatus = updated.referenceVideoStatus
+            referenceVideoOriginalFilename = updated.referenceVideoOriginalFilename
+            referenceVideoDurationSeconds = updated.referenceVideoDurationSeconds
+        } catch {
+            errorMessage = error.localizedDescription
+            referenceVideoUrl = nil
+            referenceVideoStatus = nil
+            referenceVideoOriginalFilename = nil
+        }
+    }
+
+    func deleteReferenceVideo() async {
+        do {
+            try await APIClient.shared.deleteReferenceVideo(projectId: projectId)
+            referenceVideoUrl = nil
+            referenceVideoStatus = nil
+            referenceVideoOriginalFilename = nil
+            referenceVideoDurationSeconds = nil
         } catch {
             errorMessage = error.localizedDescription
         }

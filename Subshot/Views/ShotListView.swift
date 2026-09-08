@@ -679,8 +679,15 @@ struct ShotListView: View {
                     // Abschnitte (jeder Abschnitt = eine abgenommene Idee),
                     // Tap öffnet NUR diesen einen Abschnitt unten in der
                     // bestehenden, unveränderten LazyVStack-Ansicht.
-                    scriptOverviewGrid()
-                        .transition(.opacity)
+                    VStack(alignment: .leading, spacing: 16) {
+                        // 2026-09-08 — "Scribble Video", ganz oben über den
+                        // Abschnitt-Kacheln (web-parity, see
+                        // ReferenceVideoBlockView's own doc comment).
+                        ReferenceVideoBlockView(viewModel: viewModel)
+                            .padding(.horizontal, 16)
+                        scriptOverviewGrid()
+                    }
+                    .transition(.opacity)
                 } else {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         // 2026-08-31 — the in-content "zurück zur Übersicht"

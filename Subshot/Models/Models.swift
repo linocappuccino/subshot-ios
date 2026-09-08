@@ -63,6 +63,13 @@ struct Project: Codable, Identifiable, Hashable {
     /// app's Projektübersicht badge already reads, see
     /// PIPELINE_STAGE_LABELS/stageStyle in app/projects/page.tsx).
     var pipelineStage: ProjectPipelineStage = .idea
+    /// 2026-09-08 — Beispielvideo, ganz oben auf der Shotlist-Übersicht
+    /// abspielbar (web-parity, ReferenceVideoBlock.tsx). `referenceVideoUrl`
+    /// ist bereits eine presignte, direkt abspielbare R2-URL.
+    var referenceVideoUrl: String?
+    var referenceVideoStatus: String?
+    var referenceVideoOriginalFilename: String?
+    var referenceVideoDurationSeconds: Double?
 
     enum CodingKeys: String, CodingKey {
         case id, name, color, emoji
@@ -80,6 +87,10 @@ struct Project: Codable, Identifiable, Hashable {
         case moduleScripting = "module_scripting"
         case modulePostproduction = "module_postproduction"
         case pipelineStage = "pipeline_stage"
+        case referenceVideoUrl = "reference_video_url"
+        case referenceVideoStatus = "reference_video_status"
+        case referenceVideoOriginalFilename = "reference_video_original_filename"
+        case referenceVideoDurationSeconds = "reference_video_duration_seconds"
     }
 }
 
@@ -197,6 +208,11 @@ struct ProjectDetail: Codable {
     var moduleConcept: Bool = true
     var moduleScripting: Bool = true
     var modulePostproduction: Bool = true
+    /// 2026-09-08 — see Project.referenceVideoUrl's own doc comment above.
+    var referenceVideoUrl: String?
+    var referenceVideoStatus: String?
+    var referenceVideoOriginalFilename: String?
+    var referenceVideoDurationSeconds: Double?
 
     enum CodingKeys: String, CodingKey {
         case id, name, color, scenes, shots
@@ -214,6 +230,10 @@ struct ProjectDetail: Codable {
         case moduleConcept = "module_concept"
         case moduleScripting = "module_scripting"
         case modulePostproduction = "module_postproduction"
+        case referenceVideoUrl = "reference_video_url"
+        case referenceVideoStatus = "reference_video_status"
+        case referenceVideoOriginalFilename = "reference_video_original_filename"
+        case referenceVideoDurationSeconds = "reference_video_duration_seconds"
     }
 }
 
@@ -1064,6 +1084,16 @@ struct VideoVersion: Codable, Identifiable, Hashable {
         case createdAt = "created_at"
         case playbackUrl = "playback_url"
         case thumbnailUrl = "thumbnail_url"
+    }
+}
+
+/// 2026-09-08 — response of `POST /projects/{id}/reference-video` (the
+/// "Scribble Video" upload button, see ReferenceVideoBlockView.swift).
+struct ReferenceVideoUpload: Codable {
+    let uploadUrl: String
+
+    enum CodingKeys: String, CodingKey {
+        case uploadUrl = "upload_url"
     }
 }
 
