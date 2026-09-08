@@ -83,6 +83,10 @@ final class ShotListViewModel: ObservableObject {
     @Published var referenceVideoOriginalFilename: String?
     @Published var referenceVideoDurationSeconds: Double?
     @Published var referenceVideoUploading = false
+    /// 2026-09-08 — see Project.referenceVideoThumbnailUrl's own doc
+    /// comment (Models.swift).
+    @Published var referenceVideoThumbnailUrl: String?
+    @Published var referenceVideoThumbnailFocusPoint: UnitPoint?
     /// Planungssektor (2026-07-17 iOS port — see web app's IdeaGrid.tsx) —
     /// not part of ProjectDetail server-side, always its own round trip
     /// (see load() below), same "independent of the main load, a failure
@@ -223,6 +227,8 @@ final class ShotListViewModel: ObservableObject {
             if referenceVideoStatus != detail.referenceVideoStatus { referenceVideoStatus = detail.referenceVideoStatus }
             if referenceVideoOriginalFilename != detail.referenceVideoOriginalFilename { referenceVideoOriginalFilename = detail.referenceVideoOriginalFilename }
             if referenceVideoDurationSeconds != detail.referenceVideoDurationSeconds { referenceVideoDurationSeconds = detail.referenceVideoDurationSeconds }
+            if referenceVideoThumbnailUrl != detail.referenceVideoThumbnailUrl { referenceVideoThumbnailUrl = detail.referenceVideoThumbnailUrl }
+            if referenceVideoThumbnailFocusPoint != detail.referenceVideoThumbnailFocusPoint { referenceVideoThumbnailFocusPoint = detail.referenceVideoThumbnailFocusPoint }
         } catch {
             // A cancelled request (pull-to-refresh released mid-flight, or
             // the view disappearing) isn't a real failure — see
@@ -520,9 +526,14 @@ final class ShotListViewModel: ObservableObject {
     /// 2026-09-08 — "Scribble Video" upload, same create→upload→complete
     /// steps as PostproductionListView's uploadPickedVideo, just against
     /// the project-level reference-video endpoints instead of a Video/
-    /// VideoVersion row (no polling for a thumbnail/filmstrip afterward —
-    /// that background job doesn't exist for this simpler, unversioned
-    /// slot).
+    /// VideoVersion row. Same-day follow-up (Lino: "das video thumbnail
+    /// soll dann auch immer ein zentriertes gesicht sein"): a face-centered
+    /// thumbnail now IS generated server-side (background task after
+    /// complete_reference_video), just asynchronously — this call doesn't
+    /// wait for it, `referenceVideoThumbnailUrl` starts nil right after
+    /// upload and picks up the real value on this view model's next regular
+    /// poll (load(), same as web's 12s "live updates" convention) once the
+    /// background job finishes.
     func uploadReferenceVideo(fileURL: URL, filename: String, contentType: String) async {
         referenceVideoUploading = true
         defer { referenceVideoUploading = false }
@@ -530,6 +541,8 @@ final class ShotListViewModel: ObservableObject {
             let draft = try await APIClient.shared.createReferenceVideo(projectId: projectId, filename: filename, contentType: contentType)
             referenceVideoStatus = "uploading"
             referenceVideoOriginalFilename = filename
+            referenceVideoThumbnailUrl = nil
+            referenceVideoThumbnailFocusPoint = nil
             guard let uploadURL = URL(string: draft.uploadUrl) else {
                 errorMessage = "Keine Upload-URL erhalten."
                 return
@@ -541,11 +554,15 @@ final class ShotListViewModel: ObservableObject {
             referenceVideoStatus = updated.referenceVideoStatus
             referenceVideoOriginalFilename = updated.referenceVideoOriginalFilename
             referenceVideoDurationSeconds = updated.referenceVideoDurationSeconds
+            referenceVideoThumbnailUrl = updated.referenceVideoThumbnailUrl
+            referenceVideoThumbnailFocusPoint = updated.referenceVideoThumbnailFocusPoint
         } catch {
             errorMessage = error.localizedDescription
             referenceVideoUrl = nil
             referenceVideoStatus = nil
             referenceVideoOriginalFilename = nil
+            referenceVideoThumbnailUrl = nil
+            referenceVideoThumbnailFocusPoint = nil
         }
     }
 
@@ -556,6 +573,8 @@ final class ShotListViewModel: ObservableObject {
             referenceVideoStatus = nil
             referenceVideoOriginalFilename = nil
             referenceVideoDurationSeconds = nil
+            referenceVideoThumbnailUrl = nil
+            referenceVideoThumbnailFocusPoint = nil
         } catch {
             errorMessage = error.localizedDescription
         }

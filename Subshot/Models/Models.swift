@@ -70,6 +70,19 @@ struct Project: Codable, Identifiable, Hashable {
     var referenceVideoStatus: String?
     var referenceVideoOriginalFilename: String?
     var referenceVideoDurationSeconds: Double?
+    /// 2026-09-08, Lino: "das video thumbnail soll dann auch immer ein
+    /// zentriertes gesicht sein" — same face-detected-focus convention as
+    /// Folder.backgroundImageFocusX/Y (see that field's own doc comment),
+    /// generated server-side shortly after upload; nil until the background
+    /// task finishes, or if no face was found.
+    var referenceVideoThumbnailUrl: String?
+    var referenceVideoThumbnailFocusX: Double?
+    var referenceVideoThumbnailFocusY: Double?
+
+    var referenceVideoThumbnailFocusPoint: UnitPoint? {
+        guard let referenceVideoThumbnailFocusX, let referenceVideoThumbnailFocusY else { return nil }
+        return UnitPoint(x: referenceVideoThumbnailFocusX, y: referenceVideoThumbnailFocusY)
+    }
 
     enum CodingKeys: String, CodingKey {
         case id, name, color, emoji
@@ -91,6 +104,9 @@ struct Project: Codable, Identifiable, Hashable {
         case referenceVideoStatus = "reference_video_status"
         case referenceVideoOriginalFilename = "reference_video_original_filename"
         case referenceVideoDurationSeconds = "reference_video_duration_seconds"
+        case referenceVideoThumbnailUrl = "reference_video_thumbnail_url"
+        case referenceVideoThumbnailFocusX = "reference_video_thumbnail_focus_x"
+        case referenceVideoThumbnailFocusY = "reference_video_thumbnail_focus_y"
     }
 }
 
@@ -213,6 +229,16 @@ struct ProjectDetail: Codable {
     var referenceVideoStatus: String?
     var referenceVideoOriginalFilename: String?
     var referenceVideoDurationSeconds: Double?
+    /// 2026-09-08 — see Project.referenceVideoThumbnailUrl's own doc
+    /// comment above.
+    var referenceVideoThumbnailUrl: String?
+    var referenceVideoThumbnailFocusX: Double?
+    var referenceVideoThumbnailFocusY: Double?
+
+    var referenceVideoThumbnailFocusPoint: UnitPoint? {
+        guard let referenceVideoThumbnailFocusX, let referenceVideoThumbnailFocusY else { return nil }
+        return UnitPoint(x: referenceVideoThumbnailFocusX, y: referenceVideoThumbnailFocusY)
+    }
 
     enum CodingKeys: String, CodingKey {
         case id, name, color, scenes, shots
@@ -234,6 +260,9 @@ struct ProjectDetail: Codable {
         case referenceVideoStatus = "reference_video_status"
         case referenceVideoOriginalFilename = "reference_video_original_filename"
         case referenceVideoDurationSeconds = "reference_video_duration_seconds"
+        case referenceVideoThumbnailUrl = "reference_video_thumbnail_url"
+        case referenceVideoThumbnailFocusX = "reference_video_thumbnail_focus_x"
+        case referenceVideoThumbnailFocusY = "reference_video_thumbnail_focus_y"
     }
 }
 

@@ -11,6 +11,14 @@ import PhotosUI
 /// the whole project, not per Abschnitt). Same presign-then-complete upload
 /// flow as PostproductionListView's video uploads, driven by
 /// ShotListViewModel.uploadReferenceVideo/deleteReferenceVideo.
+///
+/// 2026-09-08, same session, Lino: "es soll ein thumbnail dargestellt
+/// werden und wenn man darauf klickt, soll sich das video in einer
+/// lightbox öffnen (auch in der ios app)... das video thumbnail soll dann
+/// auch immer ein zentriertes gesicht sein" — was an always-live inline
+/// VideoPlayer; now a tappable AsyncShotThumbnail (same face-focus-pan
+/// component ProjectFolder cover photos already use, see its own doc
+/// comment) that opens ReferenceVideoLightboxView (new file) full-screen.
 /// UNVERIFIED — no compiler here, see project memory (iOS: no compiler here).
 struct ReferenceVideoBlockView: View {
     @ObservedObject var viewModel: ShotListViewModel
@@ -19,7 +27,7 @@ struct ReferenceVideoBlockView: View {
     @State private var showingLibrary = false
     @State private var pickerItem: PhotosPickerItem?
     @State private var confirmingDelete = false
-    @State private var player: AVPlayer?
+    @State private var showingLightbox = false
 
     private var hasVideo: Bool {
         viewModel.referenceVideoStatus == "ready" && viewModel.referenceVideoUrl != nil
@@ -37,20 +45,43 @@ struct ReferenceVideoBlockView: View {
                 .frame(maxWidth: .infinity)
                 .padding(14)
                 .background(RoundedRectangle(cornerRadius: 16).fill(Color(.secondarySystemBackground)))
-            } else if hasVideo, let urlString = viewModel.referenceVideoUrl, let url = URL(string: urlString) {
+            } else if hasVideo, viewModel.referenceVideoUrl != nil {
                 ZStack(alignment: .topTrailing) {
-                    VideoPlayer(player: player)
+                    Button {
+                        showingLightbox = true
+                    } label: {
+                        ZStack {
+                            if let thumbUrl = viewModel.referenceVideoThumbnailUrl {
+                                AsyncShotThumbnail(
+                                    path: thumbUrl, size: nil, lockAspectRatio: false,
+                                    focusPoint: viewModel.referenceVideoThumbnailFocusPoint
+                                )
+                            } else {
+                                // Face-centered thumbnail is still being generated
+                                // server-side (background task after complete —
+                                // picks up automatically on the next poll, see
+                                // ShotListViewModel.uploadReferenceVideo's doc
+                                // comment) — plain placeholder in the meantime,
+                                // no live player needed just to show something.
+                                ProgressView()
+                            }
+                            Circle()
+                                .fill(.black.opacity(0.45))
+                                .frame(width: 52, height: 52)
+                                .overlay {
+                                    Image(systemName: "play.fill")
+                                        .font(.system(size: 20, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                        .offset(x: 2)
+                                }
+                        }
                         .frame(height: 220)
                         .frame(maxWidth: .infinity)
                         .background(Color.black)
                         .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .onAppear {
-                            if player == nil { player = AVPlayer(url: url) }
-                        }
-                        .onChange(of: urlString) { _, newValue in
-                            guard let newURL = URL(string: newValue) else { return }
-                            player = AVPlayer(url: newURL)
-                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(language.t("referenceVideo.play"))
                     Menu {
                         Button {
                             showingLibrary = true
@@ -104,6 +135,11 @@ struct ReferenceVideoBlockView: View {
             }
         } message: {
             Text(language.t("referenceVideo.deleteMessage"))
+        }
+        .fullScreenCover(isPresented: $showingLightbox) {
+            if let urlString = viewModel.referenceVideoUrl, let url = URL(string: urlString) {
+                ReferenceVideoLightboxView(url: url)
+            }
         }
     }
 

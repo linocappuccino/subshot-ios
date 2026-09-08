@@ -136,6 +136,7 @@ extension AppLanguage {
             // 2026-09-08 — Referenz-Video, ganz oben auf der
             // Skript-Auswahlübersicht (web-parity, ReferenceVideoBlock.tsx).
             "referenceVideo.upload": "Beispielvideo als Referenz hochladen",
+            "referenceVideo.play": "Scribble Video abspielen",
             "referenceVideo.replace": "Video ersetzen",
             "referenceVideo.delete": "Video löschen",
             "referenceVideo.uploadFailed": "Upload fehlgeschlagen.",
@@ -428,6 +429,7 @@ extension AppLanguage {
             "scriptOverview.backToOverview": "Back to overview",
             // 2026-09-08 — Reference video, above the script overview tiles.
             "referenceVideo.upload": "Upload reference video",
+            "referenceVideo.play": "Play scribble video",
             "referenceVideo.replace": "Replace video",
             "referenceVideo.delete": "Delete video",
             "referenceVideo.uploadFailed": "Upload failed.",
