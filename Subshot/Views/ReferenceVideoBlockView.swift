@@ -36,10 +36,16 @@ struct ReferenceVideoBlockView: View {
     /// class of gap happening again (a background job that fails silently,
     /// or just never runs for some other reason): the plain `ProgressView`
     /// fallback below used to spin forever with zero visual feedback if
-    /// `referenceVideoThumbnailUrl` never arrives — generation normally
-    /// takes a few seconds (see video_processing.process_video), so past
-    /// this timeout it's clearly not coming and a static placeholder icon
-    /// is more honest than an indefinite spinner.
+    /// `referenceVideoThumbnailUrl` never arrives.
+    /// 2026-09-08, same day, Lino (live report): "das thumbnail wird
+    /// erstellt... aber geht extrem lange" — the backend generation itself
+    /// was genuinely slow (~60-90s, see video_processing.
+    /// pick_face_thumbnail's own doc comment for the real fix, since
+    /// verified live at ~15s), not silently broken. 30s (with a comfortable
+    /// margin over that measured time, and >2x this view's own 12s poll
+    /// interval so a normal-length video gets at least two chances to pick
+    /// the result up) is generous enough that reaching this timeout now
+    /// really does mean "not coming", not "still processing".
     @State private var thumbnailTimedOut = false
 
     private var hasVideo: Bool {
@@ -82,7 +88,7 @@ struct ReferenceVideoBlockView: View {
                                 // no live player needed just to show something.
                                 ProgressView()
                                     .task {
-                                        try? await Task.sleep(nanoseconds: 15_000_000_000)
+                                        try? await Task.sleep(nanoseconds: 30_000_000_000)
                                         if viewModel.referenceVideoThumbnailUrl == nil { thumbnailTimedOut = true }
                                     }
                             }
