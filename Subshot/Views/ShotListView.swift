@@ -679,15 +679,8 @@ struct ShotListView: View {
                     // Abschnitte (jeder Abschnitt = eine abgenommene Idee),
                     // Tap öffnet NUR diesen einen Abschnitt unten in der
                     // bestehenden, unveränderten LazyVStack-Ansicht.
-                    VStack(alignment: .leading, spacing: 16) {
-                        // 2026-09-08 — "Scribble Video", ganz oben über den
-                        // Abschnitt-Kacheln (web-parity, see
-                        // ReferenceVideoBlockView's own doc comment).
-                        ReferenceVideoBlockView(viewModel: viewModel)
-                            .padding(.horizontal, 16)
-                        scriptOverviewGrid()
-                    }
-                    .transition(.opacity)
+                    scriptOverviewGrid()
+                        .transition(.opacity)
                 } else {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         // 2026-08-31 — the in-content "zurück zur Übersicht"
@@ -747,6 +740,17 @@ struct ShotListView: View {
                                 // Abschnitt" never opens through openSectionId at
                                 // all on iOS (see markerTargetSection's own doc
                                 // comment), so no extra guard is needed here.
+                                // 2026-09-08, Lino: "unter der framerate und
+                                // timecode funktion kommt das scribble
+                                // video, dann die szenen sortierung, und
+                                // dann der abschnitt mit den szenen" — one
+                                // reference video for the whole project (not
+                                // per Abschnitt), between the pinned
+                                // timecodeBar above (safeAreaInset) and this
+                                // Szenen-/Shot-Reihenfolge Picker.
+                                ReferenceVideoBlockView(viewModel: viewModel)
+                                    .padding(.horizontal, 16)
+                                    .padding(.bottom, 4)
                                 Picker("", selection: $shotOrderMode) {
                                     Text(language.t("shotListView.sceneOrderTab")).tag(false)
                                     Text(language.t("shotListView.shotOrderTab")).tag(true)
