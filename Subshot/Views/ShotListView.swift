@@ -753,12 +753,16 @@ struct ShotListView: View {
                                 // 2026-09-08, Lino: "unter der framerate und
                                 // timecode funktion kommt das scribble
                                 // video, dann die szenen sortierung, und
-                                // dann der abschnitt mit den szenen" — one
-                                // reference video for the whole project (not
-                                // per Abschnitt), between the pinned
-                                // timecodeBar above (safeAreaInset) and this
-                                // Szenen-/Shot-Reihenfolge Picker.
-                                ReferenceVideoBlockView(viewModel: viewModel)
+                                // dann der abschnitt mit den szenen" —
+                                // between the pinned timecodeBar above
+                                // (safeAreaInset) and this Szenen-/Shot-
+                                // Reihenfolge Picker. 2026-09-10 fix, Lino:
+                                // "jede shotlist hat aber ihr eigenes
+                                // scribble video!" — was one video for the
+                                // whole project (every shotlist showed the
+                                // same one); now genuinely scoped to THIS
+                                // section.
+                                ReferenceVideoBlockView(section: section, viewModel: viewModel)
                                     .padding(.horizontal, 16)
                                     .padding(.bottom, 4)
                                 Picker("", selection: $shotOrderMode) {

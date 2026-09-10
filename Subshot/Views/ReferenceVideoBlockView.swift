@@ -5,12 +5,17 @@ import PhotosUI
 /// 2026-09-08, Lino: "in einer shotlist soll man die möglichkeit haben ganz
 /// oben ein beispielvideo hochzuladen das man dann als referenz abspielen
 /// lassen kann... der button soll heissen 'scribble Video hinzufügen'" —
-/// web-parity counterpart to ReferenceVideoBlock.tsx, shown above
-/// scriptOverviewGrid() in ShotListView.swift (only on the Skript-
-/// Auswahlübersicht, not inside an opened shotlist — this is one video for
-/// the whole project, not per Abschnitt). Same presign-then-complete upload
-/// flow as PostproductionListView's video uploads, driven by
+/// web-parity counterpart to ReferenceVideoBlock.tsx, shown inside the
+/// currently open shotlist in ShotListView.swift. Same presign-then-complete
+/// upload flow as PostproductionListView's video uploads, driven by
 /// ShotListViewModel.uploadReferenceVideo/deleteReferenceVideo.
+///
+/// 2026-09-10, Lino: "das scribble Video wird jetzt bei jeder shotlist
+/// dargestellt im projekt.. jede shotlist hat aber ihr eigenes scribble
+/// video!" — was one video for the whole project (every shotlist showed the
+/// same one); now takes the specific open `section` and reads/writes its
+/// own reference-video fields directly instead of separate view-model-level
+/// published properties.
 ///
 /// 2026-09-08, same session, Lino: "es soll ein thumbnail dargestellt
 /// werden und wenn man darauf klickt, soll sich das video in einer
@@ -21,6 +26,7 @@ import PhotosUI
 /// comment) that opens ReferenceVideoLightboxView (new file) full-screen.
 /// UNVERIFIED — no compiler here, see project memory (iOS: no compiler here).
 struct ReferenceVideoBlockView: View {
+    let section: SceneSection
     @ObservedObject var viewModel: ShotListViewModel
     @ObservedObject private var language = AppLanguage.shared
 
@@ -49,7 +55,7 @@ struct ReferenceVideoBlockView: View {
     @State private var thumbnailTimedOut = false
 
     private var hasVideo: Bool {
-        viewModel.referenceVideoStatus == "ready" && viewModel.referenceVideoUrl != nil
+        section.referenceVideoStatus == "ready" && section.referenceVideoUrl != nil
     }
 
     var body: some View {
@@ -64,16 +70,16 @@ struct ReferenceVideoBlockView: View {
                 .frame(maxWidth: .infinity)
                 .padding(14)
                 .background(RoundedRectangle(cornerRadius: 16).fill(Color(.secondarySystemBackground)))
-            } else if hasVideo, viewModel.referenceVideoUrl != nil {
+            } else if hasVideo, section.referenceVideoUrl != nil {
                 ZStack(alignment: .topTrailing) {
                     Button {
                         showingLightbox = true
                     } label: {
                         ZStack {
-                            if let thumbUrl = viewModel.referenceVideoThumbnailUrl {
+                            if let thumbUrl = section.referenceVideoThumbnailUrl {
                                 AsyncShotThumbnail(
                                     path: thumbUrl, size: nil, lockAspectRatio: false,
-                                    focusPoint: viewModel.referenceVideoThumbnailFocusPoint
+                                    focusPoint: section.referenceVideoThumbnailFocusPoint
                                 )
                             } else if thumbnailTimedOut {
                                 Image(systemName: "film")
@@ -89,7 +95,7 @@ struct ReferenceVideoBlockView: View {
                                 ProgressView()
                                     .task {
                                         try? await Task.sleep(nanoseconds: 30_000_000_000)
-                                        if viewModel.referenceVideoThumbnailUrl == nil { thumbnailTimedOut = true }
+                                        if section.referenceVideoThumbnailUrl == nil { thumbnailTimedOut = true }
                                     }
                             }
                             Circle()
@@ -158,7 +164,7 @@ struct ReferenceVideoBlockView: View {
         .alert(language.t("referenceVideo.deleteTitle"), isPresented: $confirmingDelete) {
             Button(language.t("common.cancel"), role: .cancel) {}
             Button(language.t("common.delete"), role: .destructive) {
-                Task { await viewModel.deleteReferenceVideo() }
+                Task { await viewModel.deleteReferenceVideo(sectionId: section.id) }
             }
         } message: {
             Text(language.t("referenceVideo.deleteMessage"))
@@ -167,7 +173,7 @@ struct ReferenceVideoBlockView: View {
             if uploading { thumbnailTimedOut = false }
         }
         .fullScreenCover(isPresented: $showingLightbox) {
-            if let urlString = viewModel.referenceVideoUrl, let url = URL(string: urlString) {
+            if let urlString = section.referenceVideoUrl, let url = URL(string: urlString) {
                 ReferenceVideoLightboxView(url: url)
             }
         }
@@ -178,6 +184,6 @@ struct ReferenceVideoBlockView: View {
         defer { try? FileManager.default.removeItem(at: movie.url) }
         let filename = movie.url.lastPathComponent
         let contentType = movie.url.pathExtension.lowercased() == "mov" ? "video/quicktime" : "video/mp4"
-        await viewModel.uploadReferenceVideo(fileURL: movie.url, filename: filename, contentType: contentType)
+        await viewModel.uploadReferenceVideo(sectionId: section.id, fileURL: movie.url, filename: filename, contentType: contentType)
     }
 }

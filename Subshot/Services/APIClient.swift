@@ -1460,32 +1460,34 @@ final class APIClient {
         try await sendNoContent(req)
     }
 
-    // MARK: - Referenz-/"Scribble"-Video (2026-09-08) — ein Beispielvideo pro
-    // Projekt, ganz oben auf der Skript-Auswahlübersicht (web-parity, see
-    // ReferenceVideoBlock.tsx). Gleicher presign-then-complete Ablauf wie
-    // Video-Versionen oben, ohne Versionierung.
+    // MARK: - Referenz-/"Scribble"-Video (2026-09-08, moved to per-Section
+    // 2026-09-10 — "jede shotlist hat aber ihr eigenes scribble video!", was
+    // one slot per Projekt so every shotlist showed the same one) — ein
+    // Beispielvideo pro Shotlist (web-parity, see ReferenceVideoBlock.tsx).
+    // Gleicher presign-then-complete Ablauf wie Video-Versionen oben, ohne
+    // Versionierung.
 
-    func createReferenceVideo(projectId: String, filename: String, contentType: String) async throws -> ReferenceVideoUpload {
-        var req = try await authorizedRequest("projects/\(projectId)/reference-video", method: "POST")
+    func createReferenceVideo(sectionId: String, filename: String, contentType: String) async throws -> ReferenceVideoUpload {
+        var req = try await authorizedRequest("sections/\(sectionId)/reference-video", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         struct Body: Encodable { let original_filename: String; let content_type: String }
         req.httpBody = try encoder.encode(Body(original_filename: filename, content_type: contentType))
         return try await send(req)
     }
 
-    /// Backend response is `ProjectOut`, not `ProjectDetail` (no scenes/
-    /// shots/sections in the payload) — decoding this into the flatter
-    /// `Project` type here, same reasoning as patchProject above.
-    func completeReferenceVideo(projectId: String, durationSeconds: Double?) async throws -> Project {
-        var req = try await authorizedRequest("projects/\(projectId)/reference-video/complete", method: "POST")
+    /// Backend response is `SectionOut`, decoded into `SceneSection`
+    /// directly (same shape every other section-patch endpoint already
+    /// returns).
+    func completeReferenceVideo(sectionId: String, durationSeconds: Double?) async throws -> SceneSection {
+        var req = try await authorizedRequest("sections/\(sectionId)/reference-video/complete", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         struct Body: Encodable { let duration_seconds: Double? }
         req.httpBody = try encoder.encode(Body(duration_seconds: durationSeconds))
         return try await send(req)
     }
 
-    func deleteReferenceVideo(projectId: String) async throws {
-        let req = try await authorizedRequest("projects/\(projectId)/reference-video", method: "DELETE")
+    func deleteReferenceVideo(sectionId: String) async throws {
+        let req = try await authorizedRequest("sections/\(sectionId)/reference-video", method: "DELETE")
         try await sendNoContent(req)
     }
 

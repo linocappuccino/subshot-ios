@@ -978,6 +978,23 @@ struct SceneSection: Codable, Identifiable, Hashable {
     var timecodeFps: Double?
     var timecodeOffsetSeconds: Double = 0
     var timecodeSyncedAt: Date?
+    /// 2026-09-08, moved here from Project 2026-09-10 (Lino: "jede shotlist
+    /// hat aber ihr eigenes scribble video!" — was one slot for the whole
+    /// project, every shotlist showed the same one) — see backend
+    /// Section.referenceVideoUrl's own doc comment, web-parity with
+    /// ReferenceVideoBlock.tsx.
+    var referenceVideoUrl: String?
+    var referenceVideoStatus: String?
+    var referenceVideoOriginalFilename: String?
+    var referenceVideoDurationSeconds: Double?
+    var referenceVideoThumbnailUrl: String?
+    var referenceVideoThumbnailFocusX: Double?
+    var referenceVideoThumbnailFocusY: Double?
+
+    var referenceVideoThumbnailFocusPoint: UnitPoint? {
+        guard let referenceVideoThumbnailFocusX, let referenceVideoThumbnailFocusY else { return nil }
+        return UnitPoint(x: referenceVideoThumbnailFocusX, y: referenceVideoThumbnailFocusY)
+    }
 
     enum CodingKeys: String, CodingKey {
         case id, name
@@ -996,6 +1013,13 @@ struct SceneSection: Codable, Identifiable, Hashable {
         case timecodeFps = "timecode_fps"
         case timecodeOffsetSeconds = "timecode_offset_seconds"
         case timecodeSyncedAt = "timecode_synced_at"
+        case referenceVideoUrl = "reference_video_url"
+        case referenceVideoStatus = "reference_video_status"
+        case referenceVideoOriginalFilename = "reference_video_original_filename"
+        case referenceVideoDurationSeconds = "reference_video_duration_seconds"
+        case referenceVideoThumbnailUrl = "reference_video_thumbnail_url"
+        case referenceVideoThumbnailFocusX = "reference_video_thumbnail_focus_x"
+        case referenceVideoThumbnailFocusY = "reference_video_thumbnail_focus_y"
     }
 }
 

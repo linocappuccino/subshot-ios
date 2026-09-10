@@ -75,18 +75,15 @@ final class ShotListViewModel: ObservableObject {
     @Published var moduleConcept: Bool = true
     @Published var moduleScripting: Bool = true
     @Published var modulePostproduction: Bool = true
-    /// 2026-09-08 — "Scribble Video", one reference video for the whole
-    /// project shotlist, shown above the Skript-Auswahlübersicht (web-
-    /// parity, ReferenceVideoBlock.tsx / ReferenceVideoBlockView.swift).
-    @Published var referenceVideoUrl: String?
-    @Published var referenceVideoStatus: String?
-    @Published var referenceVideoOriginalFilename: String?
-    @Published var referenceVideoDurationSeconds: Double?
+    /// 2026-09-08 — "Scribble Video". Moved from one global slot per
+    /// project (this view model's own top-level published properties) to
+    /// per-Section 2026-09-10 (Lino: "jede shotlist hat aber ihr eigenes
+    /// scribble video!") — the actual url/status/thumbnail/etc. now live
+    /// directly on each `SceneSection` in `sections` below (web-parity,
+    /// ReferenceVideoBlock.tsx / ReferenceVideoBlockView.swift). Only the
+    /// upload-in-flight flag stays global — at most one shotlist is open/
+    /// visible at a time, so a single shared flag is enough.
     @Published var referenceVideoUploading = false
-    /// 2026-09-08 — see Project.referenceVideoThumbnailUrl's own doc
-    /// comment (Models.swift).
-    @Published var referenceVideoThumbnailUrl: String?
-    @Published var referenceVideoThumbnailFocusPoint: UnitPoint?
     /// Planungssektor (2026-07-17 iOS port — see web app's IdeaGrid.tsx) —
     /// not part of ProjectDetail server-side, always its own round trip
     /// (see load() below), same "independent of the main load, a failure
@@ -223,12 +220,6 @@ final class ShotListViewModel: ObservableObject {
             if moduleConcept != detail.moduleConcept { moduleConcept = detail.moduleConcept }
             if moduleScripting != detail.moduleScripting { moduleScripting = detail.moduleScripting }
             if modulePostproduction != detail.modulePostproduction { modulePostproduction = detail.modulePostproduction }
-            if referenceVideoUrl != detail.referenceVideoUrl { referenceVideoUrl = detail.referenceVideoUrl }
-            if referenceVideoStatus != detail.referenceVideoStatus { referenceVideoStatus = detail.referenceVideoStatus }
-            if referenceVideoOriginalFilename != detail.referenceVideoOriginalFilename { referenceVideoOriginalFilename = detail.referenceVideoOriginalFilename }
-            if referenceVideoDurationSeconds != detail.referenceVideoDurationSeconds { referenceVideoDurationSeconds = detail.referenceVideoDurationSeconds }
-            if referenceVideoThumbnailUrl != detail.referenceVideoThumbnailUrl { referenceVideoThumbnailUrl = detail.referenceVideoThumbnailUrl }
-            if referenceVideoThumbnailFocusPoint != detail.referenceVideoThumbnailFocusPoint { referenceVideoThumbnailFocusPoint = detail.referenceVideoThumbnailFocusPoint }
         } catch {
             // A cancelled request (pull-to-refresh released mid-flight, or
             // the view disappearing) isn't a real failure — see
@@ -525,59 +516,71 @@ final class ShotListViewModel: ObservableObject {
 
     /// 2026-09-08 — "Scribble Video" upload, same create→upload→complete
     /// steps as PostproductionListView's uploadPickedVideo, just against
-    /// the project-level reference-video endpoints instead of a Video/
-    /// VideoVersion row. Same-day follow-up (Lino: "das video thumbnail
-    /// soll dann auch immer ein zentriertes gesicht sein"): a face-centered
-    /// thumbnail now IS generated server-side (background task after
-    /// complete_reference_video), just asynchronously — this call doesn't
-    /// wait for it, `referenceVideoThumbnailUrl` starts nil right after
-    /// upload and picks up the real value on this view model's next regular
-    /// poll (load(), same as web's 12s "live updates" convention) once the
-    /// background job finishes.
-    func uploadReferenceVideo(fileURL: URL, filename: String, contentType: String) async {
+    /// the reference-video endpoints instead of a Video/VideoVersion row.
+    /// Same-day follow-up (Lino: "das video thumbnail soll dann auch immer
+    /// ein zentriertes gesicht sein"): a face-centered thumbnail now IS
+    /// generated server-side (background task after complete_reference_
+    /// video), just asynchronously — this call doesn't wait for it, the
+    /// section's thumbnail starts nil right after upload and picks up the
+    /// real value on this view model's next regular poll (load(), same as
+    /// web's 12s "live updates" convention) once the background job
+    /// finishes.
+    ///
+    /// 2026-09-10, Lino: "jede shotlist hat aber ihr eigenes scribble
+    /// video!" — sectionId-scoped now (was projectId), updates the matching
+    /// entry in `sections` in place instead of separate top-level published
+    /// properties.
+    func uploadReferenceVideo(sectionId: String, fileURL: URL, filename: String, contentType: String) async {
         referenceVideoUploading = true
         defer { referenceVideoUploading = false }
+        updateSectionReferenceVideo(sectionId) {
+            $0.referenceVideoStatus = "uploading"
+            $0.referenceVideoOriginalFilename = filename
+            $0.referenceVideoThumbnailUrl = nil
+            $0.referenceVideoThumbnailFocusX = nil
+            $0.referenceVideoThumbnailFocusY = nil
+        }
         do {
-            let draft = try await APIClient.shared.createReferenceVideo(projectId: projectId, filename: filename, contentType: contentType)
-            referenceVideoStatus = "uploading"
-            referenceVideoOriginalFilename = filename
-            referenceVideoThumbnailUrl = nil
-            referenceVideoThumbnailFocusPoint = nil
+            let draft = try await APIClient.shared.createReferenceVideo(sectionId: sectionId, filename: filename, contentType: contentType)
             guard let uploadURL = URL(string: draft.uploadUrl) else {
                 errorMessage = "Keine Upload-URL erhalten."
                 return
             }
             try await APIClient.shared.uploadVideoFile(to: uploadURL, fileURL: fileURL, contentType: contentType)
             let duration = try? await AVURLAsset(url: fileURL).load(.duration).seconds
-            let updated = try await APIClient.shared.completeReferenceVideo(projectId: projectId, durationSeconds: duration)
-            referenceVideoUrl = updated.referenceVideoUrl
-            referenceVideoStatus = updated.referenceVideoStatus
-            referenceVideoOriginalFilename = updated.referenceVideoOriginalFilename
-            referenceVideoDurationSeconds = updated.referenceVideoDurationSeconds
-            referenceVideoThumbnailUrl = updated.referenceVideoThumbnailUrl
-            referenceVideoThumbnailFocusPoint = updated.referenceVideoThumbnailFocusPoint
+            let updated = try await APIClient.shared.completeReferenceVideo(sectionId: sectionId, durationSeconds: duration)
+            if let idx = sections.firstIndex(where: { $0.id == sectionId }) { sections[idx] = updated }
         } catch {
             errorMessage = error.localizedDescription
-            referenceVideoUrl = nil
-            referenceVideoStatus = nil
-            referenceVideoOriginalFilename = nil
-            referenceVideoThumbnailUrl = nil
-            referenceVideoThumbnailFocusPoint = nil
+            updateSectionReferenceVideo(sectionId) {
+                $0.referenceVideoUrl = nil
+                $0.referenceVideoStatus = nil
+                $0.referenceVideoOriginalFilename = nil
+                $0.referenceVideoThumbnailUrl = nil
+            }
         }
     }
 
-    func deleteReferenceVideo() async {
+    func deleteReferenceVideo(sectionId: String) async {
         do {
-            try await APIClient.shared.deleteReferenceVideo(projectId: projectId)
-            referenceVideoUrl = nil
-            referenceVideoStatus = nil
-            referenceVideoOriginalFilename = nil
-            referenceVideoDurationSeconds = nil
-            referenceVideoThumbnailUrl = nil
-            referenceVideoThumbnailFocusPoint = nil
+            try await APIClient.shared.deleteReferenceVideo(sectionId: sectionId)
+            updateSectionReferenceVideo(sectionId) {
+                $0.referenceVideoUrl = nil
+                $0.referenceVideoStatus = nil
+                $0.referenceVideoOriginalFilename = nil
+                $0.referenceVideoDurationSeconds = nil
+                $0.referenceVideoThumbnailUrl = nil
+                $0.referenceVideoThumbnailFocusX = nil
+                $0.referenceVideoThumbnailFocusY = nil
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func updateSectionReferenceVideo(_ sectionId: String, _ transform: (inout SceneSection) -> Void) {
+        guard let idx = sections.firstIndex(where: { $0.id == sectionId }) else { return }
+        transform(&sections[idx])
     }
 
     func refreshMembers() async {
