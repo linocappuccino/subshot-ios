@@ -198,7 +198,7 @@ struct ProjectListView: View {
                     .navigationDestination(for: NotificationDeepLink.self) { link in
                         ShotListView(
                             projectId: link.project.id, projectName: link.project.name, projectClientName: link.project.clientName, projectColor: link.project.color,
-                            pendingDeepLinkKind: link.entityKind, pendingDeepLinkId: link.entityId,
+                            pendingDeepLinkKind: link.entityKind, pendingDeepLinkId: link.entityId, pendingDeepLinkCommentId: link.commentId,
                             moduleConcept: link.project.moduleConcept, moduleScripting: link.project.moduleScripting,
                             modulePostproduction: link.project.modulePostproduction
                         )
@@ -747,9 +747,9 @@ private struct GridSheets: ViewModifier {
                 }
             }
             .sheet(isPresented: $showingNotifications) {
-                NotificationsSheet(viewModel: viewModel) { project, entityKind, entityId in
+                NotificationsSheet(viewModel: viewModel) { project, entityKind, entityId, commentId in
                     if let entityKind, let entityId {
-                        path.append(NotificationDeepLink(project: project, entityKind: entityKind, entityId: entityId))
+                        path.append(NotificationDeepLink(project: project, entityKind: entityKind, entityId: entityId, commentId: commentId))
                     } else {
                         path.append(project)
                     }
@@ -760,9 +760,9 @@ private struct GridSheets: ViewModifier {
                 // shape as NotificationsSheet's callback right above; an
                 // open-comment row passes both, deadline/todo rows keep
                 // passing nil/nil (plain project navigation, unchanged).
-                TodoSidebarSheet(viewModel: viewModel) { project, entityKind, entityId in
+                TodoSidebarSheet(viewModel: viewModel) { project, entityKind, entityId, commentId in
                     if let entityKind, let entityId {
-                        path.append(NotificationDeepLink(project: project, entityKind: entityKind, entityId: entityId))
+                        path.append(NotificationDeepLink(project: project, entityKind: entityKind, entityId: entityId, commentId: commentId))
                     } else {
                         path.append(project)
                     }
@@ -781,6 +781,8 @@ private struct NotificationDeepLink: Hashable {
     let project: Project
     let entityKind: String
     let entityId: String
+    /// 2026-09-10 — see AppNotification.commentId's own doc comment.
+    let commentId: String?
 }
 
 /// Raw UIKit badge (see toolbarContent's own comment on why) — after the

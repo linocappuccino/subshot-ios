@@ -226,6 +226,11 @@ struct ShotListView: View {
     /// 2026-08-31, Todoist #96 — PL-side viewer for a section's public
     /// preview comments, see SectionFeedbackSheet.
     @State private var viewingSectionFeedback: SceneSection?
+    /// 2026-09-10 — the specific comment to highlight once
+    /// viewingSectionFeedback's sheet opens from a notification deep link
+    /// (see the "section" case below); web-parity with AnnotationsPanel's
+    /// highlightedAnnotationId.
+    @State private var highlightSectionCommentId: String?
     /// #11 Schritt 5 — "Alle Szenen im Kasten? Ab in die Postproduction?"
     @State private var sectionToSendToPostproduction: SceneSection?
     @State private var showingPostproductionList = false
@@ -414,6 +419,10 @@ struct ShotListView: View {
     /// once loaded, then open the matching sheet" shape).
     private let pendingDeepLinkKind: String?
     private let pendingDeepLinkId: String?
+    /// 2026-09-10 — see AppNotification.commentId's own doc comment; only
+    /// used by the "section" case below to also open that section's
+    /// SectionFeedbackSheet with the right entry in view.
+    private let pendingDeepLinkCommentId: String?
     /// 2026-07-17, Lino: "lösche den Tinderswipe und setze das Swipen zum
     /// nächsten oder vorherigen Workflow-Bereich um" — replaces the removed
     /// scene-card swipe-to-delete/complete gesture entirely; this is a
@@ -510,7 +519,7 @@ struct ShotListView: View {
     /// the tapped Project's actual values.
     init(
         projectId: String, projectName: String, projectClientName: String? = nil, projectColor: String = "8e8e93",
-        pendingDeepLinkKind: String? = nil, pendingDeepLinkId: String? = nil,
+        pendingDeepLinkKind: String? = nil, pendingDeepLinkId: String? = nil, pendingDeepLinkCommentId: String? = nil,
         moduleConcept: Bool = true, moduleScripting: Bool = true, modulePostproduction: Bool = true
     ) {
         self.projectId = projectId
@@ -520,6 +529,7 @@ struct ShotListView: View {
         self.projectColor = projectColor
         self.pendingDeepLinkKind = pendingDeepLinkKind
         self.pendingDeepLinkId = pendingDeepLinkId
+        self.pendingDeepLinkCommentId = pendingDeepLinkCommentId
         // 2026-08-31, Lino: "die app muss immer da öffnen wo man sie das
         // letzte mal verlassen hat" — this project is the one
         // ProjectListView's own launch-restore just navigated back into
@@ -915,7 +925,24 @@ struct ShotListView: View {
             case "scene":
                 if isWorkflowSectionEnabled(.scripting) { activeWorkflowSection = .scripting }
                 if let pendingDeepLinkId, let scene = viewModel.scenes.first(where: { $0.id == pendingDeepLinkId }) {
+                    // 2026-09-10 — web-parity fix (see page.tsx's own
+                    // "silently scrolled to nothing" fix): also land on the
+                    // scene's own Shotlist, not just open the edit sheet on
+                    // top of whatever (or no) section happened to be open.
+                    openSectionId = scene.sectionId
                     editingScene = .some(scene)
+                }
+            case "section":
+                // 2026-09-10, Lino: "wurde ein kommentar in einer Shotlist
+                // gemacht, muss man direkt in diese shotliste kommen" — a
+                // section-scoped comment has no single scene to open, so
+                // landing on the Shotlist itself (with SectionFeedbackSheet
+                // open, showing this comment) IS the destination.
+                if isWorkflowSectionEnabled(.scripting) { activeWorkflowSection = .scripting }
+                if let pendingDeepLinkId, let section = viewModel.sections.first(where: { $0.id == pendingDeepLinkId }) {
+                    openSectionId = section.id
+                    highlightSectionCommentId = pendingDeepLinkCommentId
+                    viewingSectionFeedback = section
                 }
             case "video", "postproduction":
                 if isWorkflowSectionEnabled(.postproduction) { activeWorkflowSection = .postproduction }
@@ -975,6 +1002,7 @@ struct ShotListView: View {
             ideaCreatedByFAB: $ideaCreatedByFAB,
             assigneeSheetScene: $assigneeSheetScene,
             viewingSectionFeedback: $viewingSectionFeedback,
+            highlightSectionCommentId: $highlightSectionCommentId,
             showingTeamSheet: $showingTeamSheet,
             isPresentingShareSheet: $isPresentingShareSheet,
             shareLinkURL: $shareLinkURL,
@@ -3536,6 +3564,7 @@ private struct ShotListSheetsAndAlerts: ViewModifier {
     @Binding var ideaCreatedByFAB: Idea?
     @Binding var assigneeSheetScene: Scene?
     @Binding var viewingSectionFeedback: SceneSection?
+    @Binding var highlightSectionCommentId: String?
     @Binding var showingTeamSheet: Bool
     @Binding var isPresentingShareSheet: Bool
     @Binding var shareLinkURL: URL?
@@ -3571,7 +3600,7 @@ private struct ShotListSheetsAndAlerts: ViewModifier {
                 SceneAssigneeSheet(scene: scene, viewModel: viewModel)
             }
             .sheet(item: $viewingSectionFeedback) { section in
-                SectionFeedbackSheet(section: section, viewModel: viewModel)
+                SectionFeedbackSheet(section: section, viewModel: viewModel, highlightCommentId: highlightSectionCommentId)
             }
             .sheet(isPresented: $showingTeamSheet) {
                 TeamSheet(projectId: projectId)

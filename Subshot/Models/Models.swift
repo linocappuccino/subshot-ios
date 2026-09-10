@@ -1192,6 +1192,13 @@ struct AppNotification: Codable, Identifiable, Hashable {
     /// openVideo click-through.
     let entityKind: String?
     let entityId: String?
+    /// 2026-09-10 — the specific Annotation/IdeaFeedback/VideoComment row
+    /// this notification is about (see Notification.comment_id's own doc
+    /// comment on the backend), so a tap can scroll/highlight the exact
+    /// comment instead of just opening the right tile. Already sent by the
+    /// backend and already read on web (NotificationBell.tsx's
+    /// `n.comment_id`); never decoded here before now.
+    let commentId: String?
 
     enum CodingKeys: String, CodingKey {
         case id, kind, count, title, body
@@ -1201,6 +1208,7 @@ struct AppNotification: Codable, Identifiable, Hashable {
         case readAt = "read_at"
         case entityKind = "entity_kind"
         case entityId = "entity_id"
+        case commentId = "comment_id"
     }
 }
 

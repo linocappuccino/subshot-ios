@@ -12,6 +12,13 @@ import Combine
 struct SectionFeedbackSheet: View {
     let section: SceneSection
     @ObservedObject var viewModel: ShotListViewModel
+    /// 2026-09-10 — set when this sheet was opened from a notification/todo
+    /// deep link that points at one specific comment (see AppNotification.
+    /// commentId's own doc comment); highlights that entry's row, web-parity
+    /// with AnnotationsPanel.tsx's highlightedAnnotationId. Its round is
+    /// never pre-collapsed either way (collapsedRounds starts empty), so no
+    /// extra "expand to reveal it" step is needed.
+    var highlightCommentId: String? = nil
     @ObservedObject private var language = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
 
@@ -183,7 +190,8 @@ struct SectionFeedbackSheet: View {
         }
         .padding(.leading, 6)
         .overlay(alignment: .leading) {
-            Rectangle().fill(color).frame(width: 3)
+            Rectangle().fill(entry.id == highlightCommentId ? Color.accentColor : color).frame(width: entry.id == highlightCommentId ? 4 : 3)
         }
+        .listRowBackground(entry.id == highlightCommentId ? Color.accentColor.opacity(0.12) : nil)
     }
 }

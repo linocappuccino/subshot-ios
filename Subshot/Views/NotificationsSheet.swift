@@ -9,7 +9,11 @@ import Combine
 /// entityKind/entityId, same as web's NotificationBell.tsx click-through.
 struct NotificationsSheet: View {
     @ObservedObject var viewModel: ProjectListViewModel
-    var onSelectProject: (Project, String?, String?) -> Void
+    /// 2026-09-10 — widened with a 4th optional commentId so a tap can
+    /// scroll/highlight the exact comment, not just open the right tile
+    /// (see AppNotification.commentId's own doc comment). Mirrors web's
+    /// NotificationBell.tsx `&openComment=`.
+    var onSelectProject: (Project, String?, String?, String?) -> Void
     @ObservedObject private var language = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
 
@@ -69,7 +73,7 @@ struct NotificationsSheet: View {
         await viewModel.markNotificationRead(notification)
         if let project = viewModel.projects.first(where: { $0.id == notification.projectId }) {
             dismiss()
-            onSelectProject(project, notification.entityKind, notification.entityId)
+            onSelectProject(project, notification.entityKind, notification.entityId, notification.commentId)
         }
     }
 }

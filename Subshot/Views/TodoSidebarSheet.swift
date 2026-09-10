@@ -29,7 +29,12 @@ struct TodoSidebarSheet: View {
     /// (see openCommentRow below) can deep-link straight to that idea/scene
     /// instead of just landing on the project's default view. Existing
     /// deadline/todo rows keep passing nil/nil, unchanged behavior.
-    var onSelectProject: (Project, String?, String?) -> Void
+    /// 2026-09-10 — widened to the same 4-arg shape as NotificationsSheet's
+    /// own callback (see its doc comment) so both can share one
+    /// NotificationDeepLink push in ProjectListView; this feed has no
+    /// comment id of its own to offer, so selectProject below always passes
+    /// nil for it.
+    var onSelectProject: (Project, String?, String?, String?) -> Void
     @ObservedObject private var language = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
     /// 2026-08-06, Lino: "wenn man in der todoliste was abhackt, soll es mit
@@ -50,7 +55,7 @@ struct TodoSidebarSheet: View {
     private func selectProject(id: String, entityKind: String? = nil, entityId: String? = nil) {
         if let project = viewModel.projects.first(where: { $0.id == id }) {
             dismiss()
-            onSelectProject(project, entityKind, entityId)
+            onSelectProject(project, entityKind, entityId, nil)
         }
     }
 
