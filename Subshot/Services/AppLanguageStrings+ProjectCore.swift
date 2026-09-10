@@ -143,6 +143,7 @@ extension AppLanguage {
             "referenceVideo.deleteFailed": "Löschen fehlgeschlagen.",
             "referenceVideo.deleteTitle": "Referenz-Video löschen?",
             "referenceVideo.deleteMessage": "Das Beispielvideo wird endgültig entfernt.",
+            "referenceVideo.processing": "Video wird optimiert…",
             // 2026-08-31, Todoist #96 — SectionFeedbackSheet (PL-Ansicht der
             // öffentlichen Skript-Kommentare, siehe web AnnotationsPanel).
             "sectionFeedbackSheet.navTitle": "Kommentare zu „{name}“",
@@ -436,6 +437,7 @@ extension AppLanguage {
             "referenceVideo.deleteFailed": "Delete failed.",
             "referenceVideo.deleteTitle": "Delete reference video?",
             "referenceVideo.deleteMessage": "The reference video will be removed permanently.",
+            "referenceVideo.processing": "Optimizing video…",
             // 2026-08-31, Todoist #96 — SectionFeedbackSheet.
             "sectionFeedbackSheet.navTitle": "Comments on “{name}”",
             "sectionFeedbackSheet.doneButton": "Done",

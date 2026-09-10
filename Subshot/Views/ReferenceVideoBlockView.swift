@@ -70,6 +70,23 @@ struct ReferenceVideoBlockView: View {
                 .frame(maxWidth: .infinity)
                 .padding(14)
                 .background(RoundedRectangle(cornerRadius: 16).fill(Color(.secondarySystemBackground)))
+            } else if section.referenceVideoStatus == "processing" {
+                // 2026-09-10, Lino: "das scribble Video braucht extrem
+                // lange zu laden wenn man es abspielt! wird es
+                // komprimiert?" — web-parity with ReferenceVideoBlock.tsx's
+                // own "processing" branch: distinct from the upload-progress
+                // state above (client's own upload already finished, no
+                // percent to show — the backend's web-compression pass is
+                // what's running now).
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text(language.t("referenceVideo.processing"))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(14)
+                .background(RoundedRectangle(cornerRadius: 16).fill(Color(.secondarySystemBackground)))
             } else if hasVideo, section.referenceVideoUrl != nil {
                 ZStack(alignment: .topTrailing) {
                     Button {
