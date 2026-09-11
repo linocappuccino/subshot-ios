@@ -684,6 +684,32 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
+    #if canImport(UIKit)
+    /// 2026-09-11 — manual shotlist-tile cover (web-parity), see
+    /// APIClient.uploadSectionThumbnail's own doc comment.
+    func uploadSectionThumbnail(_ section: SceneSection, image: UIImage) async {
+        do {
+            let updated = try await APIClient.shared.uploadSectionThumbnail(sectionId: section.id, image: image)
+            if let index = sections.firstIndex(where: { $0.id == updated.id }) {
+                sections[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+    #endif
+
+    func clearSectionThumbnail(_ section: SceneSection) async {
+        do {
+            let updated = try await APIClient.shared.patchSection(section.id, clearThumbnail: true)
+            if let index = sections.firstIndex(where: { $0.id == updated.id }) {
+                sections[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     /// Scenes in a deleted section fall back to "no section" server-side
     /// (ON DELETE SET NULL) — mirrored locally so the scene tiles don't
     /// vanish from the list.

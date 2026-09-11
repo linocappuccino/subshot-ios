@@ -1884,38 +1884,73 @@ struct ShotListView: View {
                 // der Shotlisten übersicht?? in der ios app??" — web-parity
                 // (page.tsx's own firstThumbnailFor, added 2026-09-07) had
                 // never been ported here; this tile stayed text-only.
-                let thumbnailUrl = viewModel.firstThumbnail(in: section)
-                Button {
-                    withAnimation { openSectionId = section.id; shotOrderMode = false }
-                } label: {
-                    VStack(alignment: .leading, spacing: 6) {
-                        if let thumbnailUrl {
-                            AsyncShotThumbnail(path: thumbnailUrl, size: nil, lockAspectRatio: true)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 100)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                        }
-                        Text(section.name)
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                        HStack(spacing: 8) {
-                            Text("\(viewModel.scenes(in: section).count) \(language.t("scriptOverview.sceneCount"))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            if openCommentCount > 0 {
-                                Label("\(openCommentCount)", systemImage: "bubble.left.fill")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.orange)
+                // 2026-09-11 — manual override (web-parity, see
+                // uploadSectionThumbnail below) wins over the auto-derived
+                // fallback when set.
+                let thumbnailUrl = section.thumbnailUrl ?? viewModel.firstThumbnail(in: section)
+                ZStack(alignment: .topTrailing) {
+                    Button {
+                        withAnimation { openSectionId = section.id; shotOrderMode = false }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 6) {
+                            if let thumbnailUrl {
+                                AsyncShotThumbnail(path: thumbnailUrl, size: nil, lockAspectRatio: true)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 100)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                            Text(section.name)
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                            HStack(spacing: 8) {
+                                Text("\(viewModel.scenes(in: section).count) \(language.t("scriptOverview.sceneCount"))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                if openCommentCount > 0 {
+                                    Label("\(openCommentCount)", systemImage: "bubble.left.fill")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.orange)
+                                }
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                        .background(RoundedRectangle(cornerRadius: 16).fill(Color(.secondarySystemBackground)))
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14)
-                    .background(RoundedRectangle(cornerRadius: 16).fill(Color(.secondarySystemBackground)))
+                    .buttonStyle(.plain)
+
+                    // 2026-09-11, Lino: "bei der übersicht von den
+                    // shotlisten soll man das thumbnail bestimmen können /
+                    // hochladen können" — web-parity (page.tsx's own
+                    // "…" menu Thumbnail hochladen/ändern/entfernen).
+                    // Siblings of the main Button above (not nested inside
+                    // it) so both stay independently tappable.
+                    HStack(spacing: 6) {
+                        if section.thumbnailUrl != nil {
+                            Button {
+                                Task { await viewModel.clearSectionThumbnail(section) }
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 15))
+                                    .symbolRenderingMode(.palette)
+                                    .foregroundStyle(.white, .black.opacity(0.55))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        ImageSourceButton(onImagePicked: { image in
+                            Task { await viewModel.uploadSectionThumbnail(section, image: image) }
+                        }) {
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.white)
+                                .frame(width: 24, height: 24)
+                                .background(Circle().fill(Color.black.opacity(0.55)))
+                        }
+                    }
+                    .padding(8)
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 16)

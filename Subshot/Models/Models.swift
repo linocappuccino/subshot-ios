@@ -990,6 +990,10 @@ struct SceneSection: Codable, Identifiable, Hashable {
     var referenceVideoThumbnailUrl: String?
     var referenceVideoThumbnailFocusX: Double?
     var referenceVideoThumbnailFocusY: Double?
+    /// 2026-09-11 — manually uploaded shotlist-tile cover (web-parity, see
+    /// backend Section.thumbnail_url's own doc comment), overrides the
+    /// auto-derived "first scene's own imageUrl" fallback when set.
+    var thumbnailUrl: String?
 
     var referenceVideoThumbnailFocusPoint: UnitPoint? {
         guard let referenceVideoThumbnailFocusX, let referenceVideoThumbnailFocusY else { return nil }
@@ -1020,6 +1024,7 @@ struct SceneSection: Codable, Identifiable, Hashable {
         case referenceVideoThumbnailUrl = "reference_video_thumbnail_url"
         case referenceVideoThumbnailFocusX = "reference_video_thumbnail_focus_x"
         case referenceVideoThumbnailFocusY = "reference_video_thumbnail_focus_y"
+        case thumbnailUrl = "thumbnail_url"
     }
 }
 

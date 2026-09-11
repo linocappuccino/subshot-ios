@@ -1319,7 +1319,8 @@ final class APIClient {
         shootDate: Date? = nil, locationAddress: String? = nil, locationLat: Double? = nil, locationLng: Double? = nil,
         clearLocation: Bool = false,
         clientName: String? = nil,
-        addProjectInfo: Bool = false, removeProjectInfo: Bool = false
+        addProjectInfo: Bool = false, removeProjectInfo: Bool = false,
+        clearThumbnail: Bool = false
     ) async throws -> SceneSection {
         var req = try await authorizedRequest("sections/\(id)", method: "PATCH")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -1329,16 +1330,42 @@ final class APIClient {
             let clear_location: Bool
             let client_name: String?
             let add_project_info: Bool; let remove_project_info: Bool
+            let clear_thumbnail: Bool
         }
         req.httpBody = try encoder.encode(Body(
             name: name, sort_order: sortOrder,
             shoot_date: shootDate, location_address: locationAddress, location_lat: locationLat, location_lng: locationLng,
             clear_location: clearLocation,
             client_name: clientName,
-            add_project_info: addProjectInfo, remove_project_info: removeProjectInfo
+            add_project_info: addProjectInfo, remove_project_info: removeProjectInfo,
+            clear_thumbnail: clearThumbnail
         ))
         return try await send(req)
     }
+
+    #if canImport(UIKit)
+    /// 2026-09-11 — manual shotlist-tile cover (web-parity, see
+    /// Section.thumbnail_url's own backend doc comment). Mirrors
+    /// uploadSceneImage exactly (same multipart shape, same "file" field).
+    func uploadSectionThumbnail(sectionId: String, image: UIImage) async throws -> SceneSection {
+        guard let jpegData = image.jpegData(compressionQuality: 0.85) else {
+            throw APIError.network(URLError(.cannotCreateFile))
+        }
+        var req = try await authorizedRequest("sections/\(sectionId)/thumbnail", method: "POST")
+        let boundary = "Boundary-\(UUID().uuidString)"
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"thumbnail.jpg\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+        body.append(jpegData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        req.httpBody = body
+
+        return try await send(req)
+    }
+    #endif
 
     func deleteSection(_ id: String) async throws {
         let req = try await authorizedRequest("sections/\(id)", method: "DELETE")
