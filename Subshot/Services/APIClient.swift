@@ -1488,34 +1488,45 @@ final class APIClient {
     }
 
     // MARK: - Referenz-/"Scribble"-Video (2026-09-08, moved to per-Section
-    // 2026-09-10 — "jede shotlist hat aber ihr eigenes scribble video!", was
-    // one slot per Projekt so every shotlist showed the same one) — ein
-    // Beispielvideo pro Shotlist (web-parity, see ReferenceVideoBlock.tsx).
-    // Gleicher presign-then-complete Ablauf wie Video-Versionen oben, ohne
-    // Versionierung.
+    // 2026-09-10 — "jede shotlist hat aber ihr eigenes scribble video!", then
+    // 2026-09-11 same day — multi-video, "man soll mehrere scribble videos
+    // hochladen können" — several per Shotlist now (web-parity, see
+    // ReferenceVideoBlock.tsx). Gleicher presign-then-complete Ablauf wie
+    // Video-Versionen oben, ohne Versionierung; jeder Call adressiert jetzt
+    // eine eigene Video-id statt die Section (kein "replace" mehr — jeder
+    // Upload legt eine neue Zeile an, Ersetzen = Löschen + neu hochladen).
 
     func createReferenceVideo(sectionId: String, filename: String, contentType: String) async throws -> ReferenceVideoUpload {
-        var req = try await authorizedRequest("sections/\(sectionId)/reference-video", method: "POST")
+        var req = try await authorizedRequest("sections/\(sectionId)/reference-videos", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         struct Body: Encodable { let original_filename: String; let content_type: String }
         req.httpBody = try encoder.encode(Body(original_filename: filename, content_type: contentType))
         return try await send(req)
     }
 
-    /// Backend response is `SectionOut`, decoded into `SceneSection`
-    /// directly (same shape every other section-patch endpoint already
-    /// returns).
-    func completeReferenceVideo(sectionId: String, durationSeconds: Double?) async throws -> SceneSection {
-        var req = try await authorizedRequest("sections/\(sectionId)/reference-video/complete", method: "POST")
+    func completeReferenceVideo(videoId: String, durationSeconds: Double?) async throws -> ReferenceVideo {
+        var req = try await authorizedRequest("reference-videos/\(videoId)/complete", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         struct Body: Encodable { let duration_seconds: Double? }
         req.httpBody = try encoder.encode(Body(duration_seconds: durationSeconds))
         return try await send(req)
     }
 
-    func deleteReferenceVideo(sectionId: String) async throws {
-        let req = try await authorizedRequest("sections/\(sectionId)/reference-video", method: "DELETE")
+    func deleteReferenceVideo(videoId: String) async throws {
+        let req = try await authorizedRequest("reference-videos/\(videoId)", method: "DELETE")
         try await sendNoContent(req)
+    }
+
+    /// 2026-09-11 (same day, Lino: "man muss aber die videos in der
+    /// reihenfolge verschieben können wenn man in der web app oder ios app
+    /// ist") — drag-to-reorder, same "send the whole final order at once"
+    /// shape web's reorderReferenceVideos uses.
+    func reorderReferenceVideos(sectionId: String, orderedVideoIds: [String]) async throws -> [ReferenceVideo] {
+        var req = try await authorizedRequest("sections/\(sectionId)/reference-videos/reorder", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let ordered_video_ids: [String] }
+        req.httpBody = try encoder.encode(Body(ordered_video_ids: orderedVideoIds))
+        return try await send(req)
     }
 
     func createVideoComment(versionId: String, timestampSeconds: Double, authorName: String, comment: String) async throws -> VideoComment {

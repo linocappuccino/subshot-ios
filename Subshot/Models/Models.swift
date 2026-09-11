@@ -980,25 +980,21 @@ struct SceneSection: Codable, Identifiable, Hashable {
     var timecodeSyncedAt: Date?
     /// 2026-09-08, moved here from Project 2026-09-10 (Lino: "jede shotlist
     /// hat aber ihr eigenes scribble video!" — was one slot for the whole
-    /// project, every shotlist showed the same one) — see backend
-    /// Section.referenceVideoUrl's own doc comment, web-parity with
-    /// ReferenceVideoBlock.tsx.
-    var referenceVideoUrl: String?
-    var referenceVideoStatus: String?
-    var referenceVideoOriginalFilename: String?
-    var referenceVideoDurationSeconds: Double?
-    var referenceVideoThumbnailUrl: String?
-    var referenceVideoThumbnailFocusX: Double?
-    var referenceVideoThumbnailFocusY: Double?
+    /// project, every shotlist showed the same one), then 2026-09-11 (same
+    /// day) moved AGAIN from a single set of scalar fields to a real list
+    /// (Lino: "man soll mehrere scribble videos hochladen können, diese
+    /// werden dann nebeneinander angezeigt.. das erste hochgeladene Video
+    /// wird mit V1 markiert, das zweite mit V2..") — see backend
+    /// ReferenceVideo's own doc comment, web-parity with
+    /// ReferenceVideoBlock.tsx. Ordered by the backend's own `sort_order`
+    /// (upload order until drag-reordered, see
+    /// ShotListViewModel.reorderReferenceVideos) — "V1"/"V2"/... is just
+    /// this array's 1-based index at render time, never stored.
+    var referenceVideos: [ReferenceVideo] = []
     /// 2026-09-11 — manually uploaded shotlist-tile cover (web-parity, see
     /// backend Section.thumbnail_url's own doc comment), overrides the
     /// auto-derived "first scene's own imageUrl" fallback when set.
     var thumbnailUrl: String?
-
-    var referenceVideoThumbnailFocusPoint: UnitPoint? {
-        guard let referenceVideoThumbnailFocusX, let referenceVideoThumbnailFocusY else { return nil }
-        return UnitPoint(x: referenceVideoThumbnailFocusX, y: referenceVideoThumbnailFocusY)
-    }
 
     enum CodingKeys: String, CodingKey {
         case id, name
@@ -1017,14 +1013,38 @@ struct SceneSection: Codable, Identifiable, Hashable {
         case timecodeFps = "timecode_fps"
         case timecodeOffsetSeconds = "timecode_offset_seconds"
         case timecodeSyncedAt = "timecode_synced_at"
-        case referenceVideoUrl = "reference_video_url"
-        case referenceVideoStatus = "reference_video_status"
-        case referenceVideoOriginalFilename = "reference_video_original_filename"
-        case referenceVideoDurationSeconds = "reference_video_duration_seconds"
-        case referenceVideoThumbnailUrl = "reference_video_thumbnail_url"
-        case referenceVideoThumbnailFocusX = "reference_video_thumbnail_focus_x"
-        case referenceVideoThumbnailFocusY = "reference_video_thumbnail_focus_y"
+        case referenceVideos = "reference_videos"
         case thumbnailUrl = "thumbnail_url"
+    }
+}
+
+/// One "Scribble Video" row — see backend ReferenceVideo's own doc comment
+/// (models.py). `url`/`thumbnailUrl` are already presigned, directly
+/// playable/displayable R2 URLs, not raw keys.
+struct ReferenceVideo: Codable, Identifiable, Hashable {
+    let id: String
+    var url: String?
+    var status: String?
+    var originalFilename: String?
+    var durationSeconds: Double?
+    var thumbnailUrl: String?
+    var thumbnailFocusX: Double?
+    var thumbnailFocusY: Double?
+    var createdAt: Date
+
+    var thumbnailFocusPoint: UnitPoint? {
+        guard let thumbnailFocusX, let thumbnailFocusY else { return nil }
+        return UnitPoint(x: thumbnailFocusX, y: thumbnailFocusY)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, url, status
+        case originalFilename = "original_filename"
+        case durationSeconds = "duration_seconds"
+        case thumbnailUrl = "thumbnail_url"
+        case thumbnailFocusX = "thumbnail_focus_x"
+        case thumbnailFocusY = "thumbnail_focus_y"
+        case createdAt = "created_at"
     }
 }
 
@@ -1145,12 +1165,14 @@ struct VideoVersion: Codable, Identifiable, Hashable {
     }
 }
 
-/// 2026-09-08 — response of `POST /projects/{id}/reference-video` (the
+/// 2026-09-08 — response of `POST /sections/{id}/reference-videos` (the
 /// "Scribble Video" upload button, see ReferenceVideoBlockView.swift).
 struct ReferenceVideoUpload: Codable {
+    let id: String
     let uploadUrl: String
 
     enum CodingKeys: String, CodingKey {
+        case id
         case uploadUrl = "upload_url"
     }
 }

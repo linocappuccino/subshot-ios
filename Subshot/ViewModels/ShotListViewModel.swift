@@ -527,60 +527,81 @@ final class ShotListViewModel: ObservableObject {
     /// finishes.
     ///
     /// 2026-09-10, Lino: "jede shotlist hat aber ihr eigenes scribble
-    /// video!" — sectionId-scoped now (was projectId), updates the matching
-    /// entry in `sections` in place instead of separate top-level published
-    /// properties.
+    /// video!" — sectionId-scoped (was projectId).
+    /// 2026-09-11 (same day) — multi-video, "man soll mehrere scribble
+    /// videos hochladen können" — appends a new `ReferenceVideo` into
+    /// `section.referenceVideos` instead of setting scalar fields on the
+    /// section itself; the new row's real id (from the presign response)
+    /// is used right away, no temp-id swap needed (same reasoning as web's
+    /// ReferenceVideoBlock.tsx: the backend row already exists by the time
+    /// createReferenceVideo returns).
     func uploadReferenceVideo(sectionId: String, fileURL: URL, filename: String, contentType: String) async {
         referenceVideoUploading = true
         defer { referenceVideoUploading = false }
-        updateSectionReferenceVideo(sectionId) {
-            $0.referenceVideoStatus = "uploading"
-            $0.referenceVideoOriginalFilename = filename
-            $0.referenceVideoThumbnailUrl = nil
-            $0.referenceVideoThumbnailFocusX = nil
-            $0.referenceVideoThumbnailFocusY = nil
-        }
+        var uploadedVideoId: String?
         do {
             let draft = try await APIClient.shared.createReferenceVideo(sectionId: sectionId, filename: filename, contentType: contentType)
+            uploadedVideoId = draft.id
             guard let uploadURL = URL(string: draft.uploadUrl) else {
                 errorMessage = "Keine Upload-URL erhalten."
                 return
             }
+            updateSectionReferenceVideos(sectionId) { videos in
+                videos.append(ReferenceVideo(
+                    id: draft.id, url: nil, status: "uploading", originalFilename: filename,
+                    durationSeconds: nil, thumbnailUrl: nil, thumbnailFocusX: nil, thumbnailFocusY: nil,
+                    createdAt: Date()
+                ))
+            }
             try await APIClient.shared.uploadVideoFile(to: uploadURL, fileURL: fileURL, contentType: contentType)
             let duration = try? await AVURLAsset(url: fileURL).load(.duration).seconds
-            let updated = try await APIClient.shared.completeReferenceVideo(sectionId: sectionId, durationSeconds: duration)
-            if let idx = sections.firstIndex(where: { $0.id == sectionId }) { sections[idx] = updated }
+            let updated = try await APIClient.shared.completeReferenceVideo(videoId: draft.id, durationSeconds: duration)
+            updateSectionReferenceVideos(sectionId) { videos in
+                if let idx = videos.firstIndex(where: { $0.id == updated.id }) { videos[idx] = updated }
+            }
         } catch {
             errorMessage = error.localizedDescription
-            updateSectionReferenceVideo(sectionId) {
-                $0.referenceVideoUrl = nil
-                $0.referenceVideoStatus = nil
-                $0.referenceVideoOriginalFilename = nil
-                $0.referenceVideoThumbnailUrl = nil
+            if let uploadedVideoId {
+                updateSectionReferenceVideos(sectionId) { videos in
+                    videos.removeAll { $0.id == uploadedVideoId }
+                }
             }
         }
     }
 
-    func deleteReferenceVideo(sectionId: String) async {
+    func deleteReferenceVideo(sectionId: String, videoId: String) async {
         do {
-            try await APIClient.shared.deleteReferenceVideo(sectionId: sectionId)
-            updateSectionReferenceVideo(sectionId) {
-                $0.referenceVideoUrl = nil
-                $0.referenceVideoStatus = nil
-                $0.referenceVideoOriginalFilename = nil
-                $0.referenceVideoDurationSeconds = nil
-                $0.referenceVideoThumbnailUrl = nil
-                $0.referenceVideoThumbnailFocusX = nil
-                $0.referenceVideoThumbnailFocusY = nil
+            try await APIClient.shared.deleteReferenceVideo(videoId: videoId)
+            updateSectionReferenceVideos(sectionId) { videos in
+                videos.removeAll { $0.id == videoId }
             }
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    private func updateSectionReferenceVideo(_ sectionId: String, _ transform: (inout SceneSection) -> Void) {
+    /// 2026-09-11 (same day, Lino: "man muss aber die videos in der
+    /// reihenfolge verschieben können wenn man in der web app oder ios app
+    /// ist... von links nach rechts ist es aber immer V1, V2") —
+    /// drag-to-reorder, optimistic update + revert-on-failure, same shape
+    /// web's reorderReferenceVideos uses.
+    func reorderReferenceVideos(sectionId: String, orderedVideoIds: [String]) async {
         guard let idx = sections.firstIndex(where: { $0.id == sectionId }) else { return }
-        transform(&sections[idx])
+        let previous = sections[idx].referenceVideos
+        let byId = Dictionary(uniqueKeysWithValues: previous.map { ($0.id, $0) })
+        sections[idx].referenceVideos = orderedVideoIds.compactMap { byId[$0] }
+        do {
+            let updated = try await APIClient.shared.reorderReferenceVideos(sectionId: sectionId, orderedVideoIds: orderedVideoIds)
+            updateSectionReferenceVideos(sectionId) { videos in videos = updated }
+        } catch {
+            errorMessage = error.localizedDescription
+            updateSectionReferenceVideos(sectionId) { videos in videos = previous }
+        }
+    }
+
+    private func updateSectionReferenceVideos(_ sectionId: String, _ transform: (inout [ReferenceVideo]) -> Void) {
+        guard let idx = sections.firstIndex(where: { $0.id == sectionId }) else { return }
+        transform(&sections[idx].referenceVideos)
     }
 
     func refreshMembers() async {
