@@ -49,6 +49,12 @@ struct ReferenceVideoBlockView: View {
     @State private var pickerItem: PhotosPickerItem?
     @State private var deleteTargetId: String?
     @State private var lightboxVideo: ReferenceVideo?
+    /// 2026-09-11 (same day, Lino: "man muss mit den 3 punkten auf dem
+    /// scribble video ein video ersetzen können") — set right before
+    /// presenting the shared photosPicker; handlePicked below branches on
+    /// it to call replaceReferenceVideo (same id/position) instead of
+    /// uploadReferenceVideo (a new row appended at the end).
+    @State private var replaceTargetId: String?
 
     private let columns = [GridItem(.adaptive(minimum: 150, maximum: 230), spacing: 10)]
 
@@ -172,6 +178,12 @@ struct ReferenceVideoBlockView: View {
                 .allowsHitTesting(false)
 
             Menu {
+                Button {
+                    replaceTargetId = video.id
+                    showingLibrary = true
+                } label: {
+                    Label(language.t("referenceVideo.replace"), systemImage: "arrow.triangle.2.circlepath")
+                }
                 Button(role: .destructive) {
                     deleteTargetId = video.id
                 } label: {
@@ -202,6 +214,7 @@ struct ReferenceVideoBlockView: View {
 
     private var addTile: some View {
         Button {
+            replaceTargetId = nil
             showingLibrary = true
         } label: {
             VStack(spacing: 8) {
@@ -228,6 +241,11 @@ struct ReferenceVideoBlockView: View {
         defer { try? FileManager.default.removeItem(at: movie.url) }
         let filename = movie.url.lastPathComponent
         let contentType = movie.url.pathExtension.lowercased() == "mov" ? "video/quicktime" : "video/mp4"
-        await viewModel.uploadReferenceVideo(sectionId: section.id, fileURL: movie.url, filename: filename, contentType: contentType)
+        if let targetId = replaceTargetId {
+            replaceTargetId = nil
+            await viewModel.replaceReferenceVideo(sectionId: section.id, videoId: targetId, fileURL: movie.url, filename: filename, contentType: contentType)
+        } else {
+            await viewModel.uploadReferenceVideo(sectionId: section.id, fileURL: movie.url, filename: filename, contentType: contentType)
+        }
     }
 }

@@ -1493,11 +1493,22 @@ final class APIClient {
     // hochladen können" — several per Shotlist now (web-parity, see
     // ReferenceVideoBlock.tsx). Gleicher presign-then-complete Ablauf wie
     // Video-Versionen oben, ohne Versionierung; jeder Call adressiert jetzt
-    // eine eigene Video-id statt die Section (kein "replace" mehr — jeder
-    // Upload legt eine neue Zeile an, Ersetzen = Löschen + neu hochladen).
+    // eine eigene Video-id statt die Section.
 
     func createReferenceVideo(sectionId: String, filename: String, contentType: String) async throws -> ReferenceVideoUpload {
         var req = try await authorizedRequest("sections/\(sectionId)/reference-videos", method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let original_filename: String; let content_type: String }
+        req.httpBody = try encoder.encode(Body(original_filename: filename, content_type: contentType))
+        return try await send(req)
+    }
+
+    /// 2026-09-11 (same day, Lino: "man muss mit den 3 punkten auf dem
+    /// scribble video ein video ersetzen können") — swaps an existing row's
+    /// content in place (same id/sort_order/V-label) instead of delete +
+    /// re-upload, which would land the replacement at the end of the grid.
+    func replaceReferenceVideo(videoId: String, filename: String, contentType: String) async throws -> ReferenceVideoUpload {
+        var req = try await authorizedRequest("reference-videos/\(videoId)/replace", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         struct Body: Encodable { let original_filename: String; let content_type: String }
         req.httpBody = try encoder.encode(Body(original_filename: filename, content_type: contentType))

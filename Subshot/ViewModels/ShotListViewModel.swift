@@ -569,6 +569,46 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
+    /// 2026-09-11 (same day, Lino: "man muss mit den 3 punkten auf dem
+    /// scribble video ein video ersetzen können") — swaps an existing
+    /// row's content in place (same id/position, same optimistic-update
+    /// shape as uploadReferenceVideo above) instead of delete + re-upload,
+    /// which would land the replacement at the end of the grid.
+    func replaceReferenceVideo(sectionId: String, videoId: String, fileURL: URL, filename: String, contentType: String) async {
+        referenceVideoUploading = true
+        defer { referenceVideoUploading = false }
+        let previous = sections.first(where: { $0.id == sectionId })?.referenceVideos.first(where: { $0.id == videoId })
+        do {
+            let draft = try await APIClient.shared.replaceReferenceVideo(videoId: videoId, filename: filename, contentType: contentType)
+            guard let uploadURL = URL(string: draft.uploadUrl) else {
+                errorMessage = "Keine Upload-URL erhalten."
+                return
+            }
+            updateSectionReferenceVideos(sectionId) { videos in
+                if let idx = videos.firstIndex(where: { $0.id == videoId }) {
+                    videos[idx] = ReferenceVideo(
+                        id: videoId, url: nil, status: "uploading", originalFilename: filename,
+                        durationSeconds: nil, thumbnailUrl: nil, thumbnailFocusX: nil, thumbnailFocusY: nil,
+                        createdAt: previous?.createdAt ?? Date()
+                    )
+                }
+            }
+            try await APIClient.shared.uploadVideoFile(to: uploadURL, fileURL: fileURL, contentType: contentType)
+            let duration = try? await AVURLAsset(url: fileURL).load(.duration).seconds
+            let updated = try await APIClient.shared.completeReferenceVideo(videoId: videoId, durationSeconds: duration)
+            updateSectionReferenceVideos(sectionId) { videos in
+                if let idx = videos.firstIndex(where: { $0.id == updated.id }) { videos[idx] = updated }
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+            if let previous {
+                updateSectionReferenceVideos(sectionId) { videos in
+                    if let idx = videos.firstIndex(where: { $0.id == videoId }) { videos[idx] = previous }
+                }
+            }
+        }
+    }
+
     func deleteReferenceVideo(sectionId: String, videoId: String) async {
         do {
             try await APIClient.shared.deleteReferenceVideo(videoId: videoId)
