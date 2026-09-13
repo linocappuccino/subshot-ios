@@ -30,53 +30,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		9D3D27472FFF7B820006AD05 /* MemberAvatar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemberAvatar.swift; sourceTree = "<group>"; };
-		9D3D27492FFFAAB00006AD05 /* NotionImportSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotionImportSheet.swift; sourceTree = "<group>"; };
-		9D65C43F3012BAD000D56768 /* AppLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguage.swift; sourceTree = "<group>"; };
-		9D65C4413012BD5000D56768 /* AppLanguageStrings+Ideas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppLanguageStrings+Ideas.swift"; sourceTree = "<group>"; };
-		9D65C4423012BD5000D56768 /* AppLanguageStrings+ProjectCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppLanguageStrings+ProjectCore.swift"; sourceTree = "<group>"; };
-		9D65C4433012BD5000D56768 /* AppLanguageStrings+Support.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppLanguageStrings+Support.swift"; sourceTree = "<group>"; };
-		9D65C4473012BD8700D56768 /* AsyncIdeaVideoThumbnail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsyncIdeaVideoThumbnail.swift; sourceTree = "<group>"; };
-		9D65C44B3012BE6400D56768 /* IdeaMediaSourceButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdeaMediaSourceButton.swift; sourceTree = "<group>"; };
-		9D65C44D3012BE6D00D56768 /* MediaKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaKind.swift; sourceTree = "<group>"; };
-		9D65C44F3012BE8300D56768 /* IdeaSlashTextEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdeaSlashTextEditor.swift; sourceTree = "<group>"; };
-		9D65C4513012C01B00D56768 /* AvatarMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarMenu.swift; sourceTree = "<group>"; };
-		9D87520A30018782003018A7 /* EmojiPickerField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPickerField.swift; sourceTree = "<group>"; };
-		9D87520C300187BD003018A7 /* ShareLinkSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareLinkSheet.swift; sourceTree = "<group>"; };
-		9DB09AD33023D940008FD00A /* emojiData.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = emojiData.json; path = "/Users/linohaltinner/Documents/GitHub/subshot-ios/Subshot/Resources/emojiData.json"; sourceTree = "<absolute>"; };
-		9DB09AD53023D9B4008FD00A /* NotificationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSettingsView.swift; sourceTree = "<group>"; };
-		9DB09AD73023D9DE008FD00A /* SceneAIImageSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneAIImageSheet.swift; sourceTree = "<group>"; };
-		9DBDC751300E965D00D81136 /* IdeaGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdeaGridView.swift; sourceTree = "<group>"; };
-		9DBDC753300E966300D81136 /* PostproductionListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostproductionListView.swift; sourceTree = "<group>"; };
-		9DBDC755300E967600D81136 /* VideoPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPanelView.swift; sourceTree = "<group>"; };
-		9DBDC757300E968C00D81136 /* IdeaEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdeaEditSheet.swift; sourceTree = "<group>"; };
-		9DBDC759300E969B00D81136 /* IdeaFeedbackSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdeaFeedbackSheet.swift; sourceTree = "<group>"; };
-		9DBDC75B300E96B300D81136 /* VideoPlayerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayerSheet.swift; sourceTree = "<group>"; };
 		9DEA065A2FFD70E900AB854B /* Subshot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Subshot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9DEA06672FFD70EA00AB854B /* SubshotTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SubshotTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		9DEA06712FFD70EA00AB854B /* SubshotUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SubshotUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		9DEA06C52FFD7B3400AB854B /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
-		9DEA06C72FFD7B3400AB854B /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
-		9DEA06C82FFD7B3400AB854B /* ClerkAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClerkAuth.swift; sourceTree = "<group>"; };
-		9DEA06CA2FFD7B3400AB854B /* SubshotApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SubshotApp.swift; path = "/Users/linohaltinner/Documents/GitHub/subshot-ios/Subshot/SubshotApp.swift"; sourceTree = "<absolute>"; };
-		9DEA06CB2FFD7B3400AB854B /* ProjectListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectListViewModel.swift; sourceTree = "<group>"; };
-		9DEA06CC2FFD7B3400AB854B /* ShotListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShotListViewModel.swift; sourceTree = "<group>"; };
-		9DEA06CE2FFD7B3400AB854B /* AsyncShotThumbnail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsyncShotThumbnail.swift; sourceTree = "<group>"; };
-		9DEA06CF2FFD7B3400AB854B /* ColorHex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorHex.swift; sourceTree = "<group>"; };
-		9DEA06D02FFD7B3400AB854B /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
-		9DEA06D12FFD7B3400AB854B /* ProjectListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectListView.swift; sourceTree = "<group>"; };
-		9DEA06D22FFD7B3400AB854B /* ShotDetailSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShotDetailSheet.swift; sourceTree = "<group>"; };
-		9DEA06D32FFD7B3400AB854B /* ShotListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShotListView.swift; sourceTree = "<group>"; };
-		9DEA06D42FFD7B3400AB854B /* TeamSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamSheet.swift; sourceTree = "<group>"; };
-		9DEA06E32FFE2F7E00AB854B /* ProjectEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectEditSheet.swift; sourceTree = "<group>"; };
-		9DEA06E42FFE2F7E00AB854B /* SceneEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneEditSheet.swift; sourceTree = "<group>"; };
-		9DEA06E72FFE445000AB854B /* LocationSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationSearch.swift; sourceTree = "<group>"; };
-		9DEA06E92FFE446600AB854B /* ProjectInfoBox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectInfoBox.swift; sourceTree = "<group>"; };
-		9DEA06EB2FFEE68B00AB854B /* SectionEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectionEditSheet.swift; sourceTree = "<group>"; };
-		9DEA06ED2FFEE69500AB854B /* SceneMapThumbnail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneMapThumbnail.swift; sourceTree = "<group>"; };
-		9DEA06EF2FFEE76800AB854B /* NotificationsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsSheet.swift; sourceTree = "<group>"; };
-		9DEA06F12FFEFB0B00AB854B /* ImageSourceButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageSourceButton.swift; sourceTree = "<group>"; };
-		9DEA06F32FFF050400AB854B /* FolderEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderEditSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -155,11 +111,6 @@
 				9DEA066A2FFD70EA00AB854B /* SubshotTests */,
 				9DEA06742FFD70EA00AB854B /* SubshotUITests */,
 				9DEA065B2FFD70E900AB854B /* Products */,
-				9DEA06C62FFD7B3400AB854B /* Models */,
-				9DEA06C92FFD7B3400AB854B /* Services */,
-				9DEA06CA2FFD7B3400AB854B /* SubshotApp.swift */,
-				9DEA06CD2FFD7B3400AB854B /* ViewModels */,
-				9DEA06D52FFD7B3400AB854B /* Views */,
 				9D65C43C3012BA5500D56768 /* Frameworks */,
 			);
 			sourceTree = "<group>";
@@ -173,81 +124,6 @@
 			);
 			name = Products;
 			sourceTree = "<group>";
-		};
-		9DEA06C62FFD7B3400AB854B /* Models */ = {
-			isa = PBXGroup;
-			children = (
-				9DEA06C52FFD7B3400AB854B /* Models.swift */,
-			);
-			name = Models;
-			path = "/Users/linohaltinner/Documents/GitHub/subshot-ios/Subshot/Models";
-			sourceTree = "<absolute>";
-		};
-		9DEA06C92FFD7B3400AB854B /* Services */ = {
-			isa = PBXGroup;
-			children = (
-				9DEA06C72FFD7B3400AB854B /* APIClient.swift */,
-				9DEA06C82FFD7B3400AB854B /* ClerkAuth.swift */,
-				9DEA06E72FFE445000AB854B /* LocationSearch.swift */,
-				9D65C43F3012BAD000D56768 /* AppLanguage.swift */,
-				9D65C4413012BD5000D56768 /* AppLanguageStrings+Ideas.swift */,
-				9D65C4423012BD5000D56768 /* AppLanguageStrings+ProjectCore.swift */,
-				9D65C4433012BD5000D56768 /* AppLanguageStrings+Support.swift */,
-				9DB09AD33023D940008FD00A /* emojiData.json */,
-			);
-			name = Services;
-			path = "/Users/linohaltinner/Documents/GitHub/subshot-ios/Subshot/Services";
-			sourceTree = "<absolute>";
-		};
-		9DEA06CD2FFD7B3400AB854B /* ViewModels */ = {
-			isa = PBXGroup;
-			children = (
-				9DEA06CB2FFD7B3400AB854B /* ProjectListViewModel.swift */,
-				9DEA06CC2FFD7B3400AB854B /* ShotListViewModel.swift */,
-			);
-			name = ViewModels;
-			path = "/Users/linohaltinner/Documents/GitHub/subshot-ios/Subshot/ViewModels";
-			sourceTree = "<absolute>";
-		};
-		9DEA06D52FFD7B3400AB854B /* Views */ = {
-			isa = PBXGroup;
-			children = (
-				9DEA06E32FFE2F7E00AB854B /* ProjectEditSheet.swift */,
-				9DEA06E42FFE2F7E00AB854B /* SceneEditSheet.swift */,
-				9DEA06CE2FFD7B3400AB854B /* AsyncShotThumbnail.swift */,
-				9DEA06CF2FFD7B3400AB854B /* ColorHex.swift */,
-				9DEA06D02FFD7B3400AB854B /* LoginView.swift */,
-				9DEA06D12FFD7B3400AB854B /* ProjectListView.swift */,
-				9DEA06D22FFD7B3400AB854B /* ShotDetailSheet.swift */,
-				9DEA06D32FFD7B3400AB854B /* ShotListView.swift */,
-				9DEA06D42FFD7B3400AB854B /* TeamSheet.swift */,
-				9DEA06E92FFE446600AB854B /* ProjectInfoBox.swift */,
-				9DEA06EB2FFEE68B00AB854B /* SectionEditSheet.swift */,
-				9DEA06ED2FFEE69500AB854B /* SceneMapThumbnail.swift */,
-				9DEA06EF2FFEE76800AB854B /* NotificationsSheet.swift */,
-				9DEA06F12FFEFB0B00AB854B /* ImageSourceButton.swift */,
-				9DEA06F32FFF050400AB854B /* FolderEditSheet.swift */,
-				9D3D27472FFF7B820006AD05 /* MemberAvatar.swift */,
-				9D3D27492FFFAAB00006AD05 /* NotionImportSheet.swift */,
-				9D87520A30018782003018A7 /* EmojiPickerField.swift */,
-				9D87520C300187BD003018A7 /* ShareLinkSheet.swift */,
-				9DBDC751300E965D00D81136 /* IdeaGridView.swift */,
-				9DBDC753300E966300D81136 /* PostproductionListView.swift */,
-				9DBDC755300E967600D81136 /* VideoPanelView.swift */,
-				9DBDC757300E968C00D81136 /* IdeaEditSheet.swift */,
-				9DBDC759300E969B00D81136 /* IdeaFeedbackSheet.swift */,
-				9DBDC75B300E96B300D81136 /* VideoPlayerSheet.swift */,
-				9D65C4473012BD8700D56768 /* AsyncIdeaVideoThumbnail.swift */,
-				9D65C44B3012BE6400D56768 /* IdeaMediaSourceButton.swift */,
-				9D65C44D3012BE6D00D56768 /* MediaKind.swift */,
-				9D65C44F3012BE8300D56768 /* IdeaSlashTextEditor.swift */,
-				9D65C4513012C01B00D56768 /* AvatarMenu.swift */,
-				9DB09AD53023D9B4008FD00A /* NotificationSettingsView.swift */,
-				9DB09AD73023D9DE008FD00A /* SceneAIImageSheet.swift */,
-			);
-			name = Views;
-			path = "/Users/linohaltinner/Documents/GitHub/subshot-ios/Subshot/Views";
-			sourceTree = "<absolute>";
 		};
 /* End PBXGroup section */
 
