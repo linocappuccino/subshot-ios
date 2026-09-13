@@ -35,12 +35,31 @@ struct ReferenceVideoLightboxView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var player: AVPlayer?
     @State private var appeared = false
+    /// 2026-09-13, Lino: "wenn man das video im portrait modus ansieht und
+    /// dann das handy dreht schliesst es das video" — the swipe-to-dismiss
+    /// DragGesture below reports its `.translation` in this view's OWN
+    /// local coordinate space, and that space's bounds literally swap
+    /// (width↔height) mid-touch as the interface rotates — a finger that
+    /// never actually moved can end up looking like a huge vertical swipe
+    /// once the frame under it has flipped shape, which was silently
+    /// triggering `dismiss()`. Two-part guard: `isLandscape` disables the
+    /// gesture for good once actually in landscape (there's no reason to
+    /// swipe-dismiss a landscape fullscreen video anyway, the × button
+    /// still works), and `rotationCooldownUntil` additionally blocks any
+    /// dismiss for a short window starting the moment a rotation is
+    /// DETECTED (device sensor fires close to instantly, well before the
+    /// ~0.3–0.5s interface-rotation animation finishes) — covers the
+    /// portrait→landscape transition itself, not just the landscape state
+    /// after it completes.
+    @State private var isLandscape = false
+    @State private var rotationCooldownUntil = Date.distantPast
 
     /// Matches web's OPEN_TRANSITION/CLOSE_TRANSITION cubic-bezier(0.16, 1,
     /// 0.3, 1) — SwiftUI's timingCurve takes the same 4 control points.
     private static let openAnimation = Animation.timingCurve(0.16, 1, 0.3, 1, duration: 0.48)
     private static let closeAnimation = Animation.timingCurve(0.4, 0, 1, 1, duration: 0.38)
     private static let closeDuration = 0.38
+    private static let rotationCooldownDuration: TimeInterval = 0.6
 
     var body: some View {
         ZStack {
@@ -53,6 +72,7 @@ struct ReferenceVideoLightboxView: View {
                     .gesture(
                         DragGesture(minimumDistance: 30)
                             .onEnded { value in
+                                guard !isLandscape, Date() >= rotationCooldownUntil else { return }
                                 let v = value.translation.height
                                 let h = value.translation.width
                                 guard abs(v) > abs(h) * 1.5, v > 80 else { return }
@@ -84,10 +104,30 @@ struct ReferenceVideoLightboxView: View {
             // for as long as this lightbox is on screen (see
             // OrientationLock's own doc comment).
             OrientationLock.shared.setAllowsLandscape(true)
+            // UIDevice orientation notifications are opt-in — nothing
+            // fires without this, so isLandscape/rotationCooldownUntil
+            // above would otherwise never update.
+            UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+            isLandscape = UIDevice.current.orientation.isLandscape
         }
         .onDisappear {
             player?.pause()
             OrientationLock.shared.setAllowsLandscape(false)
+            UIDevice.current.endGeneratingDeviceOrientationNotifications()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            rotationCooldownUntil = Date().addingTimeInterval(Self.rotationCooldownDuration)
+            let orientation = UIDevice.current.orientation
+            // .faceUp/.faceDown/.unknown (phone laid flat, or the sensor
+            // momentarily can't tell) carry no usable portrait/landscape
+            // info — keep whatever isLandscape already was rather than
+            // guessing, same idea as OrientationLock only ever getting
+            // told definite states.
+            if orientation.isLandscape {
+                isLandscape = true
+            } else if orientation.isPortrait {
+                isLandscape = false
+            }
         }
         .preferredColorScheme(.dark)
     }
