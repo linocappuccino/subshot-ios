@@ -2813,7 +2813,32 @@ struct ShotListView: View {
                     .frame(height: columnLayout ? 100 : nil)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
-            sceneHeader(scene: scene)
+            // 2026-09-13, Lino: "man kann es maximieren aber nicht mehr
+            // minimieren" — the whole-tile .onTapGesture below (its
+            // `if scene.completed { collapse }` branch) was losing the
+            // gesture race to THIS SAME VIEW's own .contextMenu +
+            // .draggable() (see sceneToDelete's doc comment for the
+            // extensively-diagnosed history of that exact combo winning
+            // over anything relying on plain tap recognition) — expanding
+            // worked fine since sceneCollapsedRow has no .draggable() of
+            // its own to compete with, but collapsing via a tap anywhere
+            // on the now-expanded tile did not. Same fix shape as
+            // dialogueRow's own long-press conflict and imKastenButton's
+            // existing doc comment on this exact codebase pattern: a
+            // nested plain Button reliably takes priority over an
+            // ancestor's onTapGesture/draggable, so completed scenes now
+            // collapse via an explicit Button wrapping just the title row
+            // instead of relying on the whole tile's ambiguous tap.
+            if scene.completed {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) { _ = expandedCompletedSceneIds.remove(scene.id) }
+                } label: {
+                    sceneHeader(scene: scene)
+                }
+                .buttonStyle(.plain)
+            } else {
+                sceneHeader(scene: scene)
+            }
             SceneTimerInfo(scene: scene)
             // Separates the header/timer block above from the content below —
             // always shown (not conditional on description existing) so the
