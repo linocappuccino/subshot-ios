@@ -2836,20 +2836,32 @@ struct ShotListView: View {
             // over anything relying on plain tap recognition) — expanding
             // worked fine since sceneCollapsedRow has no .draggable() of
             // its own to compete with, but collapsing via a tap anywhere
-            // on the now-expanded tile did not. Same fix shape as
-            // dialogueRow's own long-press conflict and imKastenButton's
-            // existing doc comment on this exact codebase pattern: a
-            // nested plain Button reliably takes priority over an
-            // ancestor's onTapGesture/draggable, so completed scenes now
-            // collapse via an explicit Button wrapping just the title row
-            // instead of relying on the whole tile's ambiguous tap.
+            // on the now-expanded tile did not.
+            //
+            // First fix attempt (b70) wrapped the title in a nested plain
+            // Button, same pattern imKastenButton's own doc comment
+            // describes as reliable — confirmed on-device to do NOTHING AT
+            // ALL here (no visual feedback whatsoever), stronger than a
+            // lost priority race: something is swallowing the touch before
+            // it ever reaches a normal-priority gesture at all. sceneTile's
+            // own RE-ATTEMPT NOTE two paragraphs above already documents
+            // .draggable() on this exact tile as having caused ScrollView-
+            // level hangs/lockups twice before — plausibly the same
+            // fragile interaction is why even a nested Button's own tap
+            // recognizer never gets a turn. `.highPriorityGesture` is
+            // SwiftUI's explicit, strongest tool for this: it's evaluated
+            // BEFORE normal-priority gestures (onTapGesture, Button, the
+            // ScrollView's own pan recognizer) get a chance to claim the
+            // touch at all, rather than relying on nesting-depth
+            // convention the way the Button attempt did.
             if scene.completed {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.25)) { _ = expandedCompletedSceneIds.remove(scene.id) }
-                } label: {
-                    sceneHeader(scene: scene)
-                }
-                .buttonStyle(.plain)
+                sceneHeader(scene: scene)
+                    .contentShape(Rectangle())
+                    .highPriorityGesture(
+                        TapGesture().onEnded {
+                            withAnimation(.easeInOut(duration: 0.25)) { _ = expandedCompletedSceneIds.remove(scene.id) }
+                        }
+                    )
             } else {
                 sceneHeader(scene: scene)
             }

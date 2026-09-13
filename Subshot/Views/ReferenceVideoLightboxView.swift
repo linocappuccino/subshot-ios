@@ -73,7 +73,15 @@ struct ReferenceVideoLightboxView: View {
     private static let openAnimation = Animation.timingCurve(0.16, 1, 0.3, 1, duration: 0.48)
     private static let closeAnimation = Animation.timingCurve(0.4, 0, 1, 1, duration: 0.38)
     private static let closeDuration = 0.38
-    private static let rotateAnimation = Animation.easeInOut(duration: 0.3)
+    /// 2026-09-13, Lino: "die dreh animation ist nicht so schön und smooth"
+    /// — a plain 0.3s easeInOut read as a hard, mechanical snap. A spring
+    /// (same shape native iOS interface rotations use) plus a touch more
+    /// time reads as noticeably gentler; AVKit's own VideoPlayer resizing
+    /// mid-animation is a known rough edge this can't fully paper over
+    /// (there's no compiler/device here to confirm how much it actually
+    /// helps), but it's the safe, well-understood lever available from
+    /// pure SwiftUI without restructuring how the frame swap itself works.
+    private static let rotateAnimation = Animation.spring(response: 0.45, dampingFraction: 0.82)
 
     /// UIDeviceOrientation.landscapeLeft/.landscapeRight are the INVERSE of
     /// the equivalent UIInterfaceOrientation names (a well-known gotcha) —
