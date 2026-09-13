@@ -28,105 +28,139 @@ import UIKit
 /// (`cubic-bezier(0.16, 1, 0.3, 1)`, 480ms), reversed on explicit close (the
 /// × button — NOT the swipe-to-dismiss gesture, which already has its own
 /// implicit motion from the drag itself and shouldn't also fade).
-/// UNVERIFIED — no compiler here, see project memory (iOS: no compiler here).
+///
+/// 2026-09-13, Lino: "wenn man ... den Bildschirm vom iphone dreht, dreht
+/// sich das video nicht mit und wird nicht fullscreen" — TWO attempts at
+/// making the app's real UIInterfaceOrientation actually rotate while this
+/// view is on screen (an AppDelegate escape hatch flipping the allowed
+/// orientation mask, see SubshotApp.swift's git history) both left the
+/// video closing itself the instant the phone rotated instead. Root cause
+/// unconfirmed (no device here to attach a debugger to), but changing the
+/// REAL interface orientation mid-presentation is exactly the kind of thing
+/// that can put a `.fullScreenCover`'s hosting/presenting view controllers
+/// through real trait-collection churn, which is a plausible way for
+/// SwiftUI to lose this view's state (including whatever keeps it
+/// presented) without any code here ever calling dismiss().
+///
+/// This version sidesteps that whole subsystem: the app's interface
+/// orientation stays locked to portrait the entire time (SubshotApp's
+/// AppDelegate never changes what it returns), and instead this view fakes
+/// the rotation purely visually — `rotationEffect` + a frame with width/
+/// height swapped, driven by `UIDevice.current.orientation` (the physical
+/// accelerometer reading, completely separate from `UIInterfaceOrientation`
+/// and the app's own orientation mask). Nothing about the window/view-
+/// controller hierarchy ever changes, so there's nothing there left to
+/// tear this view's state down. Same technique several mainstream apps use
+/// for "rotate this one video into fullscreen without letting the whole
+/// app rotate". UNVERIFIED — no compiler here, see project memory (iOS: no
+/// compiler here) — the rotation math especially needs confirming on a
+/// real device.
 struct ReferenceVideoLightboxView: View {
     let url: URL
 
     @Environment(\.dismiss) private var dismiss
     @State private var player: AVPlayer?
     @State private var appeared = false
-    /// 2026-09-13, Lino: "wenn man das video im portrait modus ansieht und
-    /// dann das handy dreht schliesst es das video" — the swipe-to-dismiss
-    /// DragGesture below reports its `.translation` in this view's OWN
-    /// local coordinate space, and that space's bounds literally swap
-    /// (width↔height) mid-touch as the interface rotates — a finger that
-    /// never actually moved can end up looking like a huge vertical swipe
-    /// once the frame under it has flipped shape, which was silently
-    /// triggering `dismiss()`. Two-part guard: `isLandscape` disables the
-    /// gesture for good once actually in landscape (there's no reason to
-    /// swipe-dismiss a landscape fullscreen video anyway, the × button
-    /// still works), and `rotationCooldownUntil` additionally blocks any
-    /// dismiss for a short window starting the moment a rotation is
-    /// DETECTED (device sensor fires close to instantly, well before the
-    /// ~0.3–0.5s interface-rotation animation finishes) — covers the
-    /// portrait→landscape transition itself, not just the landscape state
-    /// after it completes.
-    @State private var isLandscape = false
-    @State private var rotationCooldownUntil = Date.distantPast
+    /// Physical device orientation (accelerometer), NOT the app's
+    /// UIInterfaceOrientation — see this file's own doc comment above for
+    /// why those are deliberately kept separate here. `.faceUp`/`.faceDown`/
+    /// `.unknown` carry no usable rotation info and are ignored, keeping
+    /// whatever this last resolved to rather than snapping to 0°.
+    @State private var deviceOrientation: UIDeviceOrientation = .portrait
 
     /// Matches web's OPEN_TRANSITION/CLOSE_TRANSITION cubic-bezier(0.16, 1,
     /// 0.3, 1) — SwiftUI's timingCurve takes the same 4 control points.
     private static let openAnimation = Animation.timingCurve(0.16, 1, 0.3, 1, duration: 0.48)
     private static let closeAnimation = Animation.timingCurve(0.4, 0, 1, 1, duration: 0.38)
     private static let closeDuration = 0.38
-    private static let rotationCooldownDuration: TimeInterval = 0.6
+    private static let rotateAnimation = Animation.easeInOut(duration: 0.3)
+
+    /// UIDeviceOrientation.landscapeLeft/.landscapeRight are the INVERSE of
+    /// the equivalent UIInterfaceOrientation names (a well-known gotcha) —
+    /// landscapeLeft means the device was turned so its LEFT edge is now up
+    /// top, which needs the content rotated +90° (clockwise) to read
+    /// upright; landscapeRight is the mirror, -90°.
+    private var rotationDegrees: Double {
+        switch deviceOrientation {
+        case .landscapeLeft: return 90
+        case .landscapeRight: return -90
+        default: return 0
+        }
+    }
+    private var isRotated: Bool { rotationDegrees != 0 }
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            if let player {
-                VideoPlayer(player: player)
-                    .ignoresSafeArea()
+        GeometryReader { geo in
+            ZStack {
+                Color.black
+                if let player {
+                    ZStack {
+                        VideoPlayer(player: player)
+                        VStack {
+                            HStack {
+                                closeButton
+                                Spacer()
+                            }
+                            .padding(.horizontal)
+                            .padding(.top, 22)
+                            Spacer()
+                        }
+                        .opacity(appeared ? 1 : 0)
+                    }
+                    // Swapped width/height BEFORE rotating: a 90°-rotated
+                    // WxH box has a HxW bounding box, so setting this to
+                    // (screen height x screen width) up front means the
+                    // ROTATED result exactly fills the still-portrait-
+                    // shaped screen (geo.size) again — standard "fake
+                    // rotation" trick, see this file's own doc comment.
+                    .frame(
+                        width: isRotated ? geo.size.height : geo.size.width,
+                        height: isRotated ? geo.size.width : geo.size.height
+                    )
+                    .rotationEffect(.degrees(rotationDegrees))
+                    .animation(Self.rotateAnimation, value: rotationDegrees)
                     .scaleEffect(appeared ? 1 : 0.85)
                     .opacity(appeared ? 1 : 0)
                     .gesture(
                         DragGesture(minimumDistance: 30)
                             .onEnded { value in
-                                guard !isLandscape, Date() >= rotationCooldownUntil else { return }
+                                // Swipe-to-dismiss only makes sense held
+                                // upright — while "rotated" the video fills
+                                // the screen edge-to-edge with no safe
+                                // margin for an accidental swipe, and the
+                                // × button (which rotates along with
+                                // everything else above) still works.
+                                guard !isRotated else { return }
                                 let v = value.translation.height
                                 let h = value.translation.width
                                 guard abs(v) > abs(h) * 1.5, v > 80 else { return }
                                 dismiss()
                             }
                     )
-            }
-            VStack {
-                HStack {
-                    closeButton
-                    Spacer()
                 }
-                .padding(.horizontal)
-                .padding(.top, 22)
-                Spacer()
             }
-            .opacity(appeared ? 1 : 0)
+            .frame(width: geo.size.width, height: geo.size.height)
         }
+        .ignoresSafeArea()
         .onAppear {
             let p = AVPlayer(url: url)
             p.allowsExternalPlayback = false
             player = p
             p.play()
             withAnimation(Self.openAnimation) { appeared = true }
-            // 2026-09-13, Lino: "wenn man ... den Bildschirm vom iphone
-            // dreht, dreht sich das video nicht mit und wird nicht
-            // fullscreen" — the rest of the app is portrait-locked (see
-            // AppDelegate), which silently blocked this too. Opt in only
-            // for as long as this lightbox is on screen (see
-            // OrientationLock's own doc comment).
-            OrientationLock.shared.setAllowsLandscape(true)
             // UIDevice orientation notifications are opt-in — nothing
-            // fires without this, so isLandscape/rotationCooldownUntil
-            // above would otherwise never update.
+            // fires without this.
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
-            isLandscape = UIDevice.current.orientation.isLandscape
+            deviceOrientation = UIDevice.current.orientation
         }
         .onDisappear {
             player?.pause()
-            OrientationLock.shared.setAllowsLandscape(false)
             UIDevice.current.endGeneratingDeviceOrientationNotifications()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
-            rotationCooldownUntil = Date().addingTimeInterval(Self.rotationCooldownDuration)
             let orientation = UIDevice.current.orientation
-            // .faceUp/.faceDown/.unknown (phone laid flat, or the sensor
-            // momentarily can't tell) carry no usable portrait/landscape
-            // info — keep whatever isLandscape already was rather than
-            // guessing, same idea as OrientationLock only ever getting
-            // told definite states.
-            if orientation.isLandscape {
-                isLandscape = true
-            } else if orientation.isPortrait {
-                isLandscape = false
+            if orientation.isLandscape || orientation.isPortrait {
+                deviceOrientation = orientation
             }
         }
         .preferredColorScheme(.dark)

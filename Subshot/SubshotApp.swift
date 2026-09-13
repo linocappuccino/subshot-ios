@@ -13,7 +13,7 @@ import UserNotifications
 /// touches Subshot iOS source, so a glance at the Projects screen settles
 /// whether a `git pull` + rebuild actually picked up the latest commit.
 enum Config {
-    static let buildTag = "b70"
+    static let buildTag = "b71"
 }
 
 /// Registers for remote notifications so a scene-timer push (see
@@ -32,18 +32,24 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     /// iPad keeps rotating freely (it already has an adjustable-column grid
     /// that's meant to use the extra width either orientation gives it).
     ///
-    /// 2026-09-13, Lino: "wenn man die scribble videos in der App ansieht
-    /// und den Bildschirm vom iphone dreht, dreht sich das video nicht mit
-    /// und wird nicht fullscreen" — the portrait lock above applied
-    /// unconditionally, so ReferenceVideoLightboxView had no way to ever
-    /// become landscape no matter how the phone was held. OrientationLock
-    /// is the escape hatch: that lightbox flips `allowsLandscape` to true
-    /// only while it's on screen (and back to false + forces portrait again
-    /// on close), same pattern as e.g. a full-screen video player in any
-    /// other app that stays portrait everywhere else.
+    /// 2026-09-13 — tried an OrientationLock escape hatch here (flip this
+    /// mask to landscape only while ReferenceVideoLightboxView is on
+    /// screen) for "video soll beim Drehen fullscreen gehen", TWICE (b69's
+    /// gesture-conflict theory, then reconfirmed still broken) — Lino kept
+    /// seeing the lightbox itself close the instant the phone rotated.
+    /// Suspected but unconfirmed cause: actually changing the INTERFACE
+    /// orientation while a `.fullScreenCover` is on screen risks its
+    /// hosting view controller (and the presenting one behind it) going
+    /// through real trait-collection/size-class churn mid-rotation, which
+    /// can tear down SwiftUI state that depends on stable view identity —
+    /// unverifiable from here without a device, but reverted rather than
+    /// risk it again: this mask is unconditional portrait now, same as
+    /// before any of that, and ReferenceVideoLightboxView instead fakes
+    /// the rotation purely visually (rotationEffect + swapped frame) while
+    /// the real interface orientation never leaves portrait at all — see
+    /// that file's own doc comment.
     func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
-        guard UIDevice.current.userInterfaceIdiom != .pad else { return .all }
-        return OrientationLock.shared.allowsLandscape ? .allButUpsideDown : .portrait
+        UIDevice.current.userInterfaceIdiom == .pad ? .all : .portrait
     }
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
@@ -73,36 +79,6 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     /// the foreground.
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         [.banner, .sound, .badge]
-    }
-}
-
-/// See AppDelegate.application(_:supportedInterfaceOrientationsFor:)'s doc
-/// comment above — the one iPhone-wide exception to the portrait lock,
-/// toggled by ReferenceVideoLightboxView (the Scribble Video full-screen
-/// viewer) for as long as it's presented, nothing else.
-final class OrientationLock: ObservableObject {
-    static let shared = OrientationLock()
-    @Published var allowsLandscape = false
-
-    /// Flips the flag AND actively nudges UIKit to re-query
-    /// supportedInterfaceOrientationsFor right away — just setting the
-    /// Published flag doesn't retroactively rotate anything on its own,
-    /// UIKit only re-reads it on its own schedule (a device rotation
-    /// event, or this explicit ask) or when told to snap back to a given
-    /// orientation. No-op on iPad, which already rotates freely.
-    func setAllowsLandscape(_ allowed: Bool) {
-        guard UIDevice.current.userInterfaceIdiom != .pad else { return }
-        allowsLandscape = allowed
-        guard let scene = UIApplication.shared.connectedScenes
-            .first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene else { return }
-        scene.windows.first(where: \.isKeyWindow)?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
-        if !allowed {
-            // Closing the lightbox from landscape must snap straight back
-            // to portrait — the rest of the app has no landscape layout at
-            // all, so just narrowing the allowed mask again isn't enough on
-            // its own if the phone is still being held sideways.
-            scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
-        }
     }
 }
 

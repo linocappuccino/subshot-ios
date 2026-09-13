@@ -2694,6 +2694,20 @@ struct ShotListView: View {
             .animation(.easeInOut(duration: 0.25), value: collapsed)
             .modifier(ScenePulseOnElapse(scene: scene))
             .modifier(SceneTimerRunningGlow(scene: scene))
+            // 2026-09-13 — defensive: sceneDropIndicator right above this in
+            // the outer VStack deliberately inflates its own hit-test shape
+            // by 50pt in every direction (see its own doc comment: "landing
+            // anywhere in roughly the top/bottom half of a neighboring tile
+            // reaches it"), specifically so a drag can be dropped near a
+            // tile's edge, not just exactly on the thin indicator line
+            // itself. Explicit zIndex guarantees the actual card (with its
+            // own now-tappable title/collapsed-row) wins hit-testing over
+            // that inflated neighboring zone for ordinary taps, regardless
+            // of any declaration-order ambiguity between the two siblings —
+            // unconfirmed whether this was actually contributing to "kann
+            // nicht mehr minimieren"/collapsed rows not responding, but
+            // costless to add and rules the possibility out either way.
+            .zIndex(1)
         }
         // Grid mode owns its own outer horizontal padding + inter-column gap
         // (see sceneGrid) — a card shouldn't also pad itself in that case, or
