@@ -403,10 +403,11 @@ struct ShotListView: View {
     /// sceneGoodTakeButton.
     @State private var editingGoodTakeScene: Scene?
     @State private var goodTakeText = ""
-    /// Dialog-line text correction (2026-07-11) — long-press a dialogue row
-    /// > Bearbeiten (see dialogueRow's .contextMenu). Needs both the
-    /// dialogue AND its owning scene (updateDialogue looks the scene up by
-    /// id), same two-piece-state shape as editingGoodTakeScene above.
+    /// Dialog-line text correction (2026-07-11, reworked 2026-09-13) — tap a
+    /// dialogue row's text directly, or its trailing "..." menu > Bearbeiten
+    /// (see dialogueRow). Needs both the dialogue AND its owning scene
+    /// (updateDialogue looks the scene up by id), same two-piece-state shape
+    /// as editingGoodTakeScene above.
     @State private var editingDialogue: (dialogue: SceneDialogue, scene: Scene)?
     @State private var editingDialogueText = ""
     private let projectId: String
@@ -3412,11 +3413,52 @@ struct ShotListView: View {
             .buttonStyle(.plain)
             .frame(minWidth: 44, minHeight: 44)
             .contentShape(Rectangle())
-            Text(dialogue.text)
-                .font(.subheadline.italic())
-                .foregroundStyle(.secondary)
-                .strikethrough(dialogue.done)
-                .fixedSize(horizontal: false, vertical: true)
+            // 2026-09-13, Lino: "man kann dialoge nicht bearbeiten" — this
+            // row's own .contextMenu (long-press > Bearbeiten) was silently
+            // losing the gesture race to sceneTile's OWN .contextMenu +
+            // .draggable() on the ancestor VStack (see sceneToDelete's doc
+            // comment above for the extensively-diagnosed history of that
+            // exact combo winning over anything nested inside it) — a
+            // long-press anywhere on the card, dialogue row included, opened
+            // the SCENE's edit/duplicate/delete menu instead of ever
+            // reaching this row's menu. Switched to a direct tap (a plain
+            // Button, same shape as the working collapse-toggle Button just
+            // above this in sceneTile, which already proves a plain tap
+            // coexists fine with the draggable ancestor) plus an explicit
+            // tap-triggered Menu button for delete — neither depends on
+            // long-press disambiguation the way .contextMenu did.
+            Button {
+                editingDialogueText = dialogue.text
+                editingDialogue = (dialogue, scene)
+            } label: {
+                Text(dialogue.text)
+                    .font(.subheadline.italic())
+                    .foregroundStyle(.secondary)
+                    .strikethrough(dialogue.done)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            Menu {
+                Button {
+                    editingDialogueText = dialogue.text
+                    editingDialogue = (dialogue, scene)
+                } label: {
+                    Label(language.t("common.edit"), systemImage: "pencil")
+                }
+                Button(role: .destructive) {
+                    Task { await viewModel.deleteDialogue(dialogue, in: scene) }
+                } label: {
+                    Label(language.t("common.delete"), systemImage: "trash")
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+                    .frame(minWidth: 32, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
         }
         .padding(.vertical, 2)
         .padding(.horizontal, 6)
@@ -3426,19 +3468,6 @@ struct ShotListView: View {
             RoundedRectangle(cornerRadius: 1)
                 .fill(lineColor.opacity(0.5))
                 .frame(width: 2)
-        }
-        .contextMenu {
-            Button {
-                editingDialogueText = dialogue.text
-                editingDialogue = (dialogue, scene)
-            } label: {
-                Label(language.t("common.edit"), systemImage: "pencil")
-            }
-            Button(role: .destructive) {
-                Task { await viewModel.deleteDialogue(dialogue, in: scene) }
-            } label: {
-                Label(language.t("common.delete"), systemImage: "trash")
-            }
         }
     }
 

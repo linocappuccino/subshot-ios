@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import UIKit
 
 /// 2026-09-08, Lino: "wenn man darauf klickt, soll sich das video in einer
 /// lightbox öffnen (auch in der ios app)" — minimal fullscreen video-only
@@ -76,8 +77,18 @@ struct ReferenceVideoLightboxView: View {
             player = p
             p.play()
             withAnimation(Self.openAnimation) { appeared = true }
+            // 2026-09-13, Lino: "wenn man ... den Bildschirm vom iphone
+            // dreht, dreht sich das video nicht mit und wird nicht
+            // fullscreen" — the rest of the app is portrait-locked (see
+            // AppDelegate), which silently blocked this too. Opt in only
+            // for as long as this lightbox is on screen (see
+            // OrientationLock's own doc comment).
+            OrientationLock.shared.setAllowsLandscape(true)
         }
-        .onDisappear { player?.pause() }
+        .onDisappear {
+            player?.pause()
+            OrientationLock.shared.setAllowsLandscape(false)
+        }
         .preferredColorScheme(.dark)
     }
 
