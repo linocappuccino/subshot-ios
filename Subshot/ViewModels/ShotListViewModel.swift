@@ -549,13 +549,14 @@ final class ShotListViewModel: ObservableObject {
             updateSectionReferenceVideos(sectionId) { videos in
                 videos.append(ReferenceVideo(
                     id: draft.id, url: nil, status: "uploading", originalFilename: filename,
-                    durationSeconds: nil, thumbnailUrl: nil, thumbnailFocusX: nil, thumbnailFocusY: nil,
+                    durationSeconds: nil, aspectRatio: nil, thumbnailUrl: nil, thumbnailFocusX: nil, thumbnailFocusY: nil,
                     createdAt: Date()
                 ))
             }
             try await APIClient.shared.uploadVideoFile(to: uploadURL, fileURL: fileURL, contentType: contentType)
             let duration = try? await AVURLAsset(url: fileURL).load(.duration).seconds
-            let updated = try await APIClient.shared.completeReferenceVideo(videoId: draft.id, durationSeconds: duration)
+            let aspectRatio = await Self.videoAspectRatio(at: fileURL)
+            let updated = try await APIClient.shared.completeReferenceVideo(videoId: draft.id, durationSeconds: duration, aspectRatio: aspectRatio)
             updateSectionReferenceVideos(sectionId) { videos in
                 if let idx = videos.firstIndex(where: { $0.id == updated.id }) { videos[idx] = updated }
             }
@@ -588,14 +589,15 @@ final class ShotListViewModel: ObservableObject {
                 if let idx = videos.firstIndex(where: { $0.id == videoId }) {
                     videos[idx] = ReferenceVideo(
                         id: videoId, url: nil, status: "uploading", originalFilename: filename,
-                        durationSeconds: nil, thumbnailUrl: nil, thumbnailFocusX: nil, thumbnailFocusY: nil,
+                        durationSeconds: nil, aspectRatio: nil, thumbnailUrl: nil, thumbnailFocusX: nil, thumbnailFocusY: nil,
                         createdAt: previous?.createdAt ?? Date()
                     )
                 }
             }
             try await APIClient.shared.uploadVideoFile(to: uploadURL, fileURL: fileURL, contentType: contentType)
             let duration = try? await AVURLAsset(url: fileURL).load(.duration).seconds
-            let updated = try await APIClient.shared.completeReferenceVideo(videoId: videoId, durationSeconds: duration)
+            let aspectRatio = await Self.videoAspectRatio(at: fileURL)
+            let updated = try await APIClient.shared.completeReferenceVideo(videoId: videoId, durationSeconds: duration, aspectRatio: aspectRatio)
             updateSectionReferenceVideos(sectionId) { videos in
                 if let idx = videos.firstIndex(where: { $0.id == updated.id }) { videos[idx] = updated }
             }
@@ -607,6 +609,26 @@ final class ShotListViewModel: ObservableObject {
                 }
             }
         }
+    }
+
+    /// 2026-09-15, Lino: "wenn ein 16:9 video hochgeladen wird, soll es die
+    /// ganze content breite einnehmen" — reads the video track's natural
+    /// size (adjusted for `preferredTransform`, since a portrait-recorded
+    /// file's `naturalSize` is otherwise still landscape-shaped pre-
+    /// rotation) right after the upload finishes, same "read metadata off
+    /// the local file before /complete" pattern as the duration read right
+    /// above it. `nil` (unreadable track/zero height) leaves aspectRatio
+    /// unset server-side, same as a failed duration read — the tile then
+    /// just falls back to the normal grid, never full-width.
+    private static func videoAspectRatio(at url: URL) async -> Double? {
+        guard let track = try? await AVURLAsset(url: url).loadTracks(withMediaType: .video).first else { return nil }
+        guard let naturalSize = try? await track.load(.naturalSize),
+              let transform = try? await track.load(.preferredTransform) else { return nil }
+        let size = naturalSize.applying(transform)
+        let width = abs(size.width)
+        let height = abs(size.height)
+        guard height > 0 else { return nil }
+        return width / height
     }
 
     func deleteReferenceVideo(sectionId: String, videoId: String) async {

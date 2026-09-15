@@ -1515,11 +1515,11 @@ final class APIClient {
         return try await send(req)
     }
 
-    func completeReferenceVideo(videoId: String, durationSeconds: Double?) async throws -> ReferenceVideo {
+    func completeReferenceVideo(videoId: String, durationSeconds: Double?, aspectRatio: Double? = nil) async throws -> ReferenceVideo {
         var req = try await authorizedRequest("reference-videos/\(videoId)/complete", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        struct Body: Encodable { let duration_seconds: Double? }
-        req.httpBody = try encoder.encode(Body(duration_seconds: durationSeconds))
+        struct Body: Encodable { let duration_seconds: Double?; let aspect_ratio: Double? }
+        req.httpBody = try encoder.encode(Body(duration_seconds: durationSeconds, aspect_ratio: aspectRatio))
         return try await send(req)
     }
 

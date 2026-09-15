@@ -1027,6 +1027,13 @@ struct ReferenceVideo: Codable, Identifiable, Hashable {
     var status: String?
     var originalFilename: String?
     var durationSeconds: Double?
+    /// 2026-09-15, Lino: "wenn ein 16:9 video hochgeladen wird, soll es die
+    /// ganze content breite einnehmen" — width/height ratio, read off the
+    /// file client-side same as durationSeconds (see ShotListViewModel's
+    /// uploadReferenceVideo/replaceReferenceVideo) and persisted by the
+    /// backend at /complete, web-parity with ReferenceVideoBlock.tsx's own
+    /// aspect_ratio field.
+    var aspectRatio: Double?
     var thumbnailUrl: String?
     var thumbnailFocusX: Double?
     var thumbnailFocusY: Double?
@@ -1037,10 +1044,20 @@ struct ReferenceVideo: Codable, Identifiable, Hashable {
         return UnitPoint(x: thumbnailFocusX, y: thumbnailFocusY)
     }
 
+    /// Tight band around the real 16/9 ratio (≈1.778), not "any landscape
+    /// video" — singles out actual 16:9 footage for the full-width layout
+    /// (see ReferenceVideoBlockView) without turning every landscape
+    /// upload into a full-width row and defeating the grid.
+    var isSixteenByNine: Bool {
+        guard let aspectRatio else { return false }
+        return aspectRatio >= 1.65 && aspectRatio <= 1.95
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, url, status
         case originalFilename = "original_filename"
         case durationSeconds = "duration_seconds"
+        case aspectRatio = "aspect_ratio"
         case thumbnailUrl = "thumbnail_url"
         case thumbnailFocusX = "thumbnail_focus_x"
         case thumbnailFocusY = "thumbnail_focus_y"

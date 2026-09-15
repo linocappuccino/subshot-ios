@@ -58,12 +58,58 @@ struct ReferenceVideoBlockView: View {
 
     private let columns = [GridItem(.adaptive(minimum: 150, maximum: 230), spacing: 10)]
 
-    var body: some View {
-        LazyVGrid(columns: columns, spacing: 10) {
-            ForEach(Array(section.referenceVideos.enumerated()), id: \.element.id) { index, video in
-                tile(video: video, label: "V\(index + 1)")
+    /// 2026-09-15, Lino: "wenn ein 16:9 video hochgeladen wird, soll es die
+    /// ganze content breite einnehmen" — web-parity with
+    /// ReferenceVideoBlock.tsx's `sm:col-span-3` (see that file's own doc
+    /// comment on why the threshold band, not "any landscape video").
+    /// `LazyVGrid` has no column-spanning of its own, so instead of one grid
+    /// over the whole list, consecutive non-16:9 entries are chunked into
+    /// their own grid segment while each 16:9 video (or the trailing "add"
+    /// tile, which is never full-width) breaks the run and starts a new one.
+    private enum GridEntry: Identifiable {
+        case video(ReferenceVideo, label: String)
+        case add
+
+        var id: String {
+            switch self {
+            case .video(let video, _): return video.id
+            case .add: return "add"
             }
-            addTile
+        }
+
+        var isFullWidth: Bool {
+            if case .video(let video, _) = self { return video.isSixteenByNine }
+            return false
+        }
+    }
+
+    private var rows: [[GridEntry]] {
+        var entries = section.referenceVideos.enumerated().map { GridEntry.video($1, label: "V\($0 + 1)") }
+        entries.append(.add)
+        var result: [[GridEntry]] = []
+        for entry in entries {
+            if entry.isFullWidth {
+                result.append([entry])
+            } else if let firstOfLast = result.last?.first, !firstOfLast.isFullWidth {
+                result[result.count - 1].append(entry)
+            } else {
+                result.append([entry])
+            }
+        }
+        return result
+    }
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                if row.count == 1, let only = row.first, only.isFullWidth {
+                    entryView(only)
+                } else {
+                    LazyVGrid(columns: columns, spacing: 10) {
+                        ForEach(row) { entryView($0) }
+                    }
+                }
+            }
         }
         .photosPicker(isPresented: $showingLibrary, selection: $pickerItem, matching: .videos)
         .onChange(of: pickerItem) { _, newItem in
@@ -88,6 +134,16 @@ struct ReferenceVideoBlockView: View {
             if let urlString = video.url, let url = URL(string: urlString) {
                 ReferenceVideoLightboxView(url: url)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func entryView(_ entry: GridEntry) -> some View {
+        switch entry {
+        case .video(let video, let label):
+            tile(video: video, label: label)
+        case .add:
+            addTile
         }
     }
 
