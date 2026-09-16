@@ -224,6 +224,10 @@ struct ProjectDetail: Codable {
     var moduleConcept: Bool = true
     var moduleScripting: Bool = true
     var modulePostproduction: Bool = true
+    /// 2026-09-16 — web-parity (see Project.pipelineStage's own doc comment
+    /// above): server-computed ("_set_project_pipeline_stage" in main.py),
+    /// drives ShotListView's one-time initial-tab landing.
+    var pipelineStage: ProjectPipelineStage = .idea
     /// 2026-09-08 — see Project.referenceVideoUrl's own doc comment above.
     var referenceVideoUrl: String?
     var referenceVideoStatus: String?
@@ -256,6 +260,7 @@ struct ProjectDetail: Codable {
         case moduleConcept = "module_concept"
         case moduleScripting = "module_scripting"
         case modulePostproduction = "module_postproduction"
+        case pipelineStage = "pipeline_stage"
         case referenceVideoUrl = "reference_video_url"
         case referenceVideoStatus = "reference_video_status"
         case referenceVideoOriginalFilename = "reference_video_original_filename"

@@ -75,6 +75,10 @@ final class ShotListViewModel: ObservableObject {
     @Published var moduleConcept: Bool = true
     @Published var moduleScripting: Bool = true
     @Published var modulePostproduction: Bool = true
+    /// 2026-09-16 — web-parity (page.tsx's own pipelineLandingResolved
+    /// redirect): server-computed, drives ShotListView's one-time initial
+    /// tab landing once every real scene is "im Kasten".
+    @Published var pipelineStage: ProjectPipelineStage = .idea
     /// 2026-09-08 — "Scribble Video". Moved from one global slot per
     /// project (this view model's own top-level published properties) to
     /// per-Section 2026-09-10 (Lino: "jede shotlist hat aber ihr eigenes
@@ -220,6 +224,7 @@ final class ShotListViewModel: ObservableObject {
             if moduleConcept != detail.moduleConcept { moduleConcept = detail.moduleConcept }
             if moduleScripting != detail.moduleScripting { moduleScripting = detail.moduleScripting }
             if modulePostproduction != detail.modulePostproduction { modulePostproduction = detail.modulePostproduction }
+            if pipelineStage != detail.pipelineStage { pipelineStage = detail.pipelineStage }
         } catch {
             // A cancelled request (pull-to-refresh released mid-flight, or
             // the view disappearing) isn't a real failure — see

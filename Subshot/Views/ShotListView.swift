@@ -954,6 +954,23 @@ struct ShotListView: View {
             default:
                 break
             }
+            // 2026-09-16, Lino: "wenn ein Projekt geöffnet wird, soll es
+            // immer beim Pipelinestatus öffnen der gerade aktuell noch
+            // offen ist" — web-parity (see page.tsx's own
+            // pipelineLandingResolved redirect). Once every real scene is
+            // "im Kasten", pipelineStage flips to .postproduction/.done
+            // server-side, so there's nothing "open" left on Ideen/Scripting
+            // any more — land on Postproduction instead, overriding both
+            // the hardcoded .ideas default AND the remembered last-opened
+            // tab from init (a stale memory once the project has moved on).
+            // A real deep link (pendingDeepLinkKind != nil) always wins —
+            // that's an explicit destination from a notification tap, not
+            // a "where did I leave off" guess.
+            if pendingDeepLinkKind == nil,
+               isWorkflowSectionEnabled(.postproduction),
+               viewModel.pipelineStage == .postproduction || viewModel.pipelineStage == .done {
+                activeWorkflowSection = .postproduction
+            }
             if activeWorkflowSection == .scripting { collapseFullyDoneSections() }
             // 2026-08-31 — see persistLastOpened's own doc comment. Called
             // unconditionally here too (not just from the onChange above)
