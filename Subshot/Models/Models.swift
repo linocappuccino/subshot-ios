@@ -304,6 +304,10 @@ struct Scene: Codable, Identifiable, Hashable {
     /// `existing.image_generating` (see SceneEditModal.tsx).
     var imageGenerating: Bool = false
     var completed: Bool
+    /// 2026-09-16, Lino: roter X-Button neben "Im Kasten" (web-parity) —
+    /// Szene wurde NICHT gedreht, zählt aber für den Pipeline-Workflow wie
+    /// completed (Backend setzt beide immer zusammen, siehe toggleNotShot).
+    var notShot: Bool = false
     var sortOrder: Int
     var assigneeId: String?
     /// 2026-07-14, Lino: "mehrere Personen auswählen können" — replaces
@@ -353,6 +357,7 @@ struct Scene: Codable, Identifiable, Hashable {
 
     enum CodingKeys: String, CodingKey {
         case id, name, color, description, dialogue, completed, number, letter, priority, dialogues
+        case notShot = "not_shot"
         case shootingOrder = "shooting_order"
         case projectId = "project_id"
         case scheduledAt = "scheduled_at"

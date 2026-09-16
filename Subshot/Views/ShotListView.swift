@@ -2706,8 +2706,9 @@ struct ShotListView: View {
             // reused. glassEffect(in:) supplies its own frosted background,
             // refractive edge highlight, AND shape/clipping all at once —
             // no separate .background()/.clipShape() needed underneath.
-            .glassEffect(scene.completed ? .regular.tint(.green.opacity(0.35)) : .regular, in: RoundedRectangle(cornerRadius: 16))
+            .glassEffect(scene.notShot ? .regular.tint(.red.opacity(0.35)) : scene.completed ? .regular.tint(.green.opacity(0.35)) : .regular, in: RoundedRectangle(cornerRadius: 16))
             .animation(.easeInOut(duration: 0.3), value: scene.completed)
+            .animation(.easeInOut(duration: 0.3), value: scene.notShot)
             .animation(.easeInOut(duration: 0.25), value: collapsed)
             .modifier(ScenePulseOnElapse(scene: scene))
             .modifier(SceneTimerRunningGlow(scene: scene))
@@ -3038,6 +3039,7 @@ struct ShotListView: View {
                 Spacer()
                 sceneAssigneeMenu(scene: scene)
                 Spacer()
+                notShotButton(scene: scene)
                 imKastenButton(scene: scene)
             }
         }
@@ -3172,7 +3174,7 @@ struct ShotListView: View {
             // Same Liquid Glass material as regularSceneCard — see its doc
             // comment for why this differs from the folder/project tiles'
             // treatment.
-            .glassEffect(scene.completed ? .regular.tint(.green.opacity(0.35)) : .regular, in: RoundedRectangle(cornerRadius: 14))
+            .glassEffect(scene.notShot ? .regular.tint(.red.opacity(0.35)) : scene.completed ? .regular.tint(.green.opacity(0.35)) : .regular, in: RoundedRectangle(cornerRadius: 14))
             .modifier(ScenePulseOnElapse(scene: scene))
             .modifier(SceneTimerRunningGlow(scene: scene))
             // Uniform card size across the 2-column grid, format 4:5 (Lino:
@@ -3258,7 +3260,7 @@ struct ShotListView: View {
         }
         .padding(14)
         .frame(width: 320)
-        .background(scene.completed ? Color.green.opacity(0.18) : Color(.secondarySystemGroupedBackground))
+        .background(scene.notShot ? Color.red.opacity(0.18) : scene.completed ? Color.green.opacity(0.18) : Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
@@ -3357,6 +3359,41 @@ struct ShotListView: View {
         .buttonStyle(.plain)
         .frame(minWidth: 44, minHeight: 44)
         .contentShape(Rectangle())
+    }
+
+    /// 2026-09-16, web-parity: round red X button directly left of "Im
+    /// Kasten" — marks a scene as NOT actually shot (tints the card red,
+    /// see sceneCard's glassEffect) while still setting `completed` true
+    /// so the pipeline workflow (section auto-postproduction-flip right
+    /// below, same as imKastenButton's own `completing` branch) isn't
+    /// blocked by it. See ShotListViewModel.setSceneNotShot for the
+    /// symmetric-toggle semantics.
+    @ViewBuilder
+    private func notShotButton(scene: Scene) -> some View {
+        Button {
+            let markingNotShot = !scene.notShot
+            Task {
+                await viewModel.setSceneNotShot(scene, notShot: markingNotShot)
+                if markingNotShot {
+                    let section = scene.sectionId.flatMap { id in viewModel.sections.first(where: { $0.id == id }) }
+                    if isSectionFullyDone(section) {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+                            _ = collapsedSections.insert(scene.sectionId ?? unassignedSectionKey)
+                        }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "xmark")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(scene.notShot ? .red : .secondary)
+                .frame(width: 36, height: 36)
+                .background(scene.notShot ? Color.red.opacity(0.25) : Color(.tertiarySystemGroupedBackground))
+                .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(language.t("shotListView.notShot"))
+        .animation(.spring(response: 0.35, dampingFraction: 0.82), value: scene.notShot)
     }
 
     /// "Im Kasten" ("it's a wrap" — scene fully shot): tapping it toggles

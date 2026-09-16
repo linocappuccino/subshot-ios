@@ -444,6 +444,11 @@ final class APIClient {
         _ id: String, name: String? = nil, color: String? = nil,
         description: String? = nil, dialogue: String? = nil,
         scheduledAt: Date? = nil, durationMinutes: Int? = nil, completed: Bool? = nil,
+        // 2026-09-16, web-parity: roter X-Button "nicht geschossen" — see
+        // Scene.notShot's own doc comment. Caller always passes this
+        // together with `completed` in the right combination (see
+        // ShotListViewModel.toggleNotShot), backend just stores it.
+        notShot: Bool? = nil,
         assigneeId: String? = nil, clearAssignee: Bool = false,
         assigneeIds: [String]? = nil,
         sectionId: String? = nil, clearSection: Bool = false, sortOrder: Int? = nil,
@@ -473,6 +478,7 @@ final class APIClient {
             let name: String?; let color: String?; let description: String?
             let dialogue: String?; let scheduled_at: Date?
             let duration_minutes: Int?; let completed: Bool?
+            let not_shot: Bool?
             let assignee_id: String?; let clear_assignee: Bool
             let assignee_ids: [String]?
             let section_id: String?; let clear_section: Bool
@@ -489,6 +495,7 @@ final class APIClient {
             name: name, color: color, description: description,
             dialogue: dialogue, scheduled_at: scheduledAt,
             duration_minutes: durationMinutes, completed: completed,
+            not_shot: notShot,
             assignee_id: assigneeId, clear_assignee: clearAssignee,
             assignee_ids: assigneeIds,
             section_id: sectionId, clear_section: clearSection,

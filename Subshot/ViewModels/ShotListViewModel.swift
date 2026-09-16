@@ -1106,9 +1106,12 @@ final class ShotListViewModel: ObservableObject {
         #endif
         withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
             scenes[index].completed = completed
+            // "Im Kasten" is the normal/positive path — always clears
+            // notShot too, see toggleNotShot's own doc comment below.
+            scenes[index].notShot = false
         }
         do {
-            let updated = try await APIClient.shared.patchScene(scene.id, completed: completed)
+            let updated = try await APIClient.shared.patchScene(scene.id, completed: completed, notShot: false)
             if let i = scenes.firstIndex(where: { $0.id == updated.id }) {
                 scenes[i] = updated
             }
@@ -1124,6 +1127,30 @@ final class ShotListViewModel: ObservableObject {
             if scene.scheduledAt != nil, !timedScenes.isEmpty, timedScenes.allSatisfy(\.completed) {
                 showAllTimedScenesDoneConfirmation = true
             }
+        }
+    }
+
+    /// 2026-09-16 — web-parity roter X-Button "nicht geschossen" (see
+    /// Scene.notShot's own doc comment): symmetric toggle like
+    /// setSceneCompleted above, but ALWAYS moves `completed` along with it
+    /// (turning on: both true, so the pipeline workflow still advances;
+    /// turning off: both false, back to the neutral undecided state).
+    func setSceneNotShot(_ scene: Scene, notShot: Bool) async {
+        guard let index = scenes.firstIndex(where: { $0.id == scene.id }) else { return }
+        #if canImport(UIKit)
+        UINotificationFeedbackGenerator().notificationOccurred(notShot ? .warning : .success)
+        #endif
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
+            scenes[index].notShot = notShot
+            scenes[index].completed = notShot
+        }
+        do {
+            let updated = try await APIClient.shared.patchScene(scene.id, completed: notShot, notShot: notShot)
+            if let i = scenes.firstIndex(where: { $0.id == updated.id }) {
+                scenes[i] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 
