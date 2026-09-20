@@ -82,6 +82,21 @@ struct VideoPlayerSheet: View {
     }
 
     var body: some View {
+        // 2026-09-20, Lino: "das video bleibt IMMER die gleiche grösse und
+        // zwar so gross wie möglich (bildschirmbreite)... das öffnen der
+        // tastatur ändert NICHT die grösse des videos" — a plain VStack
+        // with the video as one of several siblings (as this used to be
+        // earlier the same day) lets the keyboard's safe-area inset shrink
+        // the WHOLE VStack's available height, and an aspectRatio(.fit)
+        // video happily shrinks to fit whatever's left. Fixed by splitting
+        // the layout into a FIXED top section (handlebar/topBar/video/
+        // buttons — never inside anything that can compress) and a
+        // separate flexible region below it for the comment list, with the
+        // input bar pinned via `.safeAreaInset(edge: .bottom)` instead of
+        // sitting in-flow — that's what actually rides up above the
+        // keyboard while leaving the fixed section alone; a plain trailing
+        // Spacer (the old approach) doesn't give that guarantee once total
+        // content no longer fits the screen.
         VStack(spacing: 0) {
             // Small handlebar (2026-07-21, #284: "a small handlebar
             // shows at the top") — a purely visual affordance for the
@@ -92,19 +107,13 @@ struct VideoPlayerSheet: View {
                 .frame(width: 36, height: 5)
                 .padding(.top, 6)
             topBar
-            // 2026-09-20, Lino: "soll das video eher oben sein, so hat man
-            // unten genug platz um kommentare zu schreiben... auch hier
-            // braucht es wieder abgerundete ecken beim video" — the player
-            // used to `.ignoresSafeArea()` and fill the entire sheet, with
-            // the comment panel/controls floating as an overlay on top of
-            // it. Now boxed to a rounded 16:9 card near the top instead, so
-            // the comment panel/controls below have their own real space in
-            // the black background rather than covering the video.
+            // 2026-09-20 — full screen width now (was inset 12pt each
+            // side), per "so gross wie möglich (bildschirmbreite)" —
+            // maximizes the video's size within its fixed 16:9 ratio.
             if let player {
                 VideoPlayer(player: player)
                     .aspectRatio(16.0 / 9.0, contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: 20))
-                    .padding(.horizontal, 12)
                     .padding(.top, 8)
                     // 2026-09-20, Lino: "die kommentar funktion soll IMMER
                     // geöffnet sein unter dem Video (unter den Buttons)...
@@ -113,10 +122,11 @@ struct VideoPlayerSheet: View {
                     // overlay (see controlCluster/commentListOverlay's own
                     // doc comments), so there's nothing left to "reveal"
                     // via a swipe up. Swipe DOWN to close is unchanged;
-                    // the video's own frame (fixed 16:9 aspectRatio above)
-                    // was never touched by that toggle either way, but
-                    // removing the toggle entirely makes that guarantee
-                    // structural instead of incidental.
+                    // the video's own frame (fixed 16:9 aspectRatio above,
+                    // now also structurally outside the keyboard-affected
+                    // region below) was never touched by that toggle
+                    // either way, but removing the toggle entirely makes
+                    // that guarantee structural instead of incidental.
                     .gesture(
                         DragGesture(minimumDistance: 30)
                             .onEnded { value in
@@ -152,21 +162,48 @@ struct VideoPlayerSheet: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .padding(.top, 12)
             }
-            // 2026-09-20 — controlCluster (Bild/Video/Kommentar-Zähler) and
-            // the comment list+input bar now always render together below
-            // the video, unconditionally — previously the comment panel
-            // was a toggled overlay that replaced this row when open; now
-            // both always coexist, per Lino's explicit "immer geöffnet".
+            // 2026-09-20 — controlCluster (Bild/Video/Kommentar-Zähler)
+            // always renders below the video, unconditionally — the
+            // comment panel used to be a toggled overlay that replaced
+            // this row when open; now both always coexist, per Lino's
+            // explicit "immer geöffnet".
             HStack {
                 Spacer()
                 controlCluster
             }
             .padding(.trailing, 16)
             .padding(.top, 16)
-            commentListOverlay
-                .padding(.top, 12)
+            // 2026-09-20 — the flexible region: a ScrollView (not the
+            // fixed-maxHeight box this used to be) so it actually absorbs
+            // whatever room the keyboard leaves, instead of the video
+            // above it being asked to shrink. `.scrollDismissesKeyboard`
+            // lets a swipe here also close the keyboard, on top of the
+            // explicit "Fertig" keyboard-accessory button below (Lino:
+            // "man muss die tastatur aber auch wieder schliessen können").
+            ScrollView {
+                commentListContent
+                    .padding(12)
+            }
+            .frame(maxHeight: .infinity)
+            .scrollDismissesKeyboard(.immediately)
+            .background(.black.opacity(0.5))
+        }
+        // 2026-09-20 — pinned to the bottom of the screen and rides up
+        // above the keyboard on its own (standard `safeAreaInset`
+        // behavior) — completely separate from the fixed section above,
+        // which is exactly what keeps the video's size untouched.
+        .safeAreaInset(edge: .bottom) {
             commentBar
-            Spacer(minLength: 0)
+        }
+        .toolbar {
+            // 2026-09-20, Lino: "man muss die tastatur aber auch wieder
+            // schliessen können wenn sie mal geöffnet wurde" — explicit,
+            // always-visible way to dismiss it (return-to-send doesn't
+            // count as "closing without sending").
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button(language.t("common.done")) { commentFieldFocused = false }
+            }
         }
         .background(Color.black.ignoresSafeArea())
         .onAppear {
@@ -370,65 +407,51 @@ struct VideoPlayerSheet: View {
         .accessibilityLabel(language.t("videoPlayerSheet.comments"))
     }
 
-    private var commentListOverlay: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                // 2026-09-20 — was closable (a chevron button here cleared
-                // showCommentPanel); the panel is now always open (see
-                // body's own doc comment), so there's nothing left to
-                // close — just a plain section label.
-                Text(language.t("videoPlayerSheet.comments"))
-                    .font(.caption.weight(.semibold))
+    /// 2026-09-20 — was `commentListOverlay`: owned its own ScrollView +
+    /// fixed `maxHeight: 180` + rounded card. Now just the plain content —
+    /// `body`'s own ScrollView (the flexible region between the buttons
+    /// and the bottom-pinned input bar) wraps it instead, so it can
+    /// actually grow/shrink with whatever space the keyboard leaves rather
+    /// than being capped at a fixed height.
+    private var commentListContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // 2026-09-20 — was closable (a chevron button here cleared
+            // showCommentPanel); the panel is now always open (see
+            // body's own doc comment), so there's nothing left to
+            // close — just a plain section label.
+            Text(language.t("videoPlayerSheet.comments"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.6))
+            if comments.isEmpty {
+                Text(language.t("videoPlayerSheet.noComments"))
+                    .font(.caption)
                     .foregroundStyle(.white.opacity(0.6))
-                if comments.isEmpty {
-                    Text(language.t("videoPlayerSheet.noComments"))
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.6))
-                } else {
-                    ForEach(comments.sorted(by: { ($0.timestampSeconds ?? -1) < ($1.timestampSeconds ?? -1) })) { comment in
-                        HStack(alignment: .top, spacing: 8) {
-                            // 2026-07-21, #284 — resolved/open checkbox
-                            // (mirrors web's VideoReviewModal.
-                            // toggleResolved); its own tap target, kept
-                            // separate from the seek-to-timestamp Button
-                            // below so the two never fight over the same
-                            // tap.
-                            Button {
-                                Task { await toggleResolved(comment) }
-                            } label: {
-                                Image(systemName: comment.resolved ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(comment.resolved ? .green : .white.opacity(0.6))
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.top, 1)
+            } else {
+                ForEach(comments.sorted(by: { ($0.timestampSeconds ?? -1) < ($1.timestampSeconds ?? -1) })) { comment in
+                    HStack(alignment: .top, spacing: 8) {
+                        // 2026-07-21, #284 — resolved/open checkbox
+                        // (mirrors web's VideoReviewModal.
+                        // toggleResolved); its own tap target, kept
+                        // separate from the seek-to-timestamp Button
+                        // below so the two never fight over the same
+                        // tap.
+                        Button {
+                            Task { await toggleResolved(comment) }
+                        } label: {
+                            Image(systemName: comment.resolved ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(comment.resolved ? .green : .white.opacity(0.6))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 1)
 
-                            if let ts = comment.timestampSeconds {
-                                Button {
-                                    player?.seek(to: CMTime(seconds: ts, preferredTimescale: 600))
-                                } label: {
-                                    HStack(alignment: .top, spacing: 8) {
-                                        Text(timeLabel(ts))
-                                            .font(.caption.monospacedDigit().weight(.semibold))
-                                            .foregroundStyle(.blue)
-                                        VStack(alignment: .leading, spacing: 1) {
-                                            Text(comment.authorName).font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
-                                            Text(comment.comment)
-                                                .font(.caption)
-                                                .foregroundStyle(comment.resolved ? .white.opacity(0.5) : .white)
-                                                .strikethrough(comment.resolved)
-                                        }
-                                    }
-                                }
-                            } else {
-                                // 2026-08-07 — a system notice (e.g. the
-                                // subtitle-correction "Info" comment) has no
-                                // timestamp to seek to (nil server-side, not
-                                // pinned to a moment) — plain text instead of
-                                // the seek Button above, same shape otherwise.
+                        if let ts = comment.timestampSeconds {
+                            Button {
+                                player?.seek(to: CMTime(seconds: ts, preferredTimescale: 600))
+                            } label: {
                                 HStack(alignment: .top, spacing: 8) {
-                                    Image(systemName: "info.circle")
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(.white.opacity(0.5))
+                                    Text(timeLabel(ts))
+                                        .font(.caption.monospacedDigit().weight(.semibold))
+                                        .foregroundStyle(.blue)
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(comment.authorName).font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
                                         Text(comment.comment)
@@ -438,16 +461,29 @@ struct VideoPlayerSheet: View {
                                     }
                                 }
                             }
+                        } else {
+                            // 2026-08-07 — a system notice (e.g. the
+                            // subtitle-correction "Info" comment) has no
+                            // timestamp to seek to (nil server-side, not
+                            // pinned to a moment) — plain text instead of
+                            // the seek Button above, same shape otherwise.
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "info.circle")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.white.opacity(0.5))
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(comment.authorName).font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
+                                    Text(comment.comment)
+                                        .font(.caption)
+                                        .foregroundStyle(comment.resolved ? .white.opacity(0.5) : .white)
+                                        .strikethrough(comment.resolved)
+                                }
+                            }
                         }
                     }
                 }
             }
-            .padding(12)
         }
-        .frame(maxHeight: 180)
-        .background(.black.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .padding(.horizontal)
     }
 
     /// 2026-08-09, Lino: "können wir hier einfach den avatar neben dem
