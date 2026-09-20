@@ -184,7 +184,6 @@ struct VideoPlayerSheet: View {
                     .padding(.bottom, keyboardHeight)
                     .animation(.easeOut(duration: 0.25), value: keyboardHeight)
             }
-            .ignoresSafeArea(.keyboard, edges: .bottom)
 
             // Keyboard-IMMUNE layer: handlebar/topBar/video/error. Pinned
             // to the top of the outer ZStack, which itself always spans
@@ -262,6 +261,24 @@ struct VideoPlayerSheet: View {
                 }
             )
         }
+        // 2026-09-20 (5th round), Lino, still emphatic: "das video wird in
+        // der ios app immer noch nach oben geschoben... das video darf
+        // sich NIE VERSCHIEBEN!!!" — found the actual bug in round 4's own
+        // code: `.ignoresSafeArea(.keyboard)` was applied only to the
+        // INNER "rest" VStack, not to this outer ZStack itself. That meant
+        // the ZStack's OWN proposed size (from whatever presents it — the
+        // fullScreenCover) could still shrink for the keyboard, and BOTH
+        // children — including the supposedly "immune" video layer — got
+        // proposed that smaller size regardless of being a separate ZStack
+        // child; being a separate layer only stops SIBLINGS from pushing
+        // each other, it does nothing about the shared PARENT shrinking.
+        // Moved here, to the true outermost container, so the keyboard
+        // categorically cannot change what size ANYTHING in this screen is
+        // proposed — the video layer's own manual keyboard-response
+        // (commentBar's `keyboardHeight` padding, still inside the inner
+        // VStack) is unaffected by this, those are two independent
+        // mechanisms, not in tension with each other.
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         .toolbar {
             // 2026-09-20, Lino: "man muss die tastatur aber auch wieder
             // schliessen können wenn sie mal geöffnet wurde" — explicit,
