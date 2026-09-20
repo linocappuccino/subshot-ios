@@ -122,6 +122,19 @@ struct VideoPlayerSheet: View {
         return CGSize(width: width, height: width * 9.0 / 16.0)
     }
 
+    /// 2026-09-20 (4th round), Lino: "öffnet sich nun die tastatur,
+    /// verschiebt es das video weiter nach oben über den phone rand
+    /// hinaus.. das video darfs sich in der POSITION NICHT verschieben!"
+    /// — round 3's hardcoded `.frame` fixed the SIZE, but the video was
+    /// still a sibling inside the SAME VStack as the keyboard-responsive
+    /// comment area, so the whole VStack (and everything in it, video
+    /// included) could still be pushed/translated by whatever was still
+    /// reacting to the keyboard. Fixed this round by giving the video its
+    /// own completely separate ZStack LAYER (see body below) instead of a
+    /// shared parent with anything keyboard-related — measured once here
+    /// so the OTHER layer knows how much top space to reserve.
+    @State private var topLayerHeight: CGFloat = 0
+
     init(video: Video, version: VideoVersion, projectId: String? = nil, onVersionUpdated: @escaping (VideoVersion) -> Void) {
         self.video = video
         self.version = version
@@ -131,131 +144,124 @@ struct VideoPlayerSheet: View {
     }
 
     var body: some View {
-        // 2026-09-20, Lino, emphatic on the 2nd round: "DAS VIDEO DARF DIE
-        // GRÖSSE NIE ÄNDERN egal was auf dem bildschirm passiert!" — round
-        // 1 (fixed top section + flexible ScrollView + `.safeAreaInset`)
-        // still let the keyboard shrink the video, because it still
-        // depended on SwiftUI's own implicit keyboard-avoidance to shrink
-        // the ScrollView instead — which only works as long as SwiftUI's
-        // space-redistribution algorithm decides to take space from the
-        // ScrollView first, not always guaranteed once things get tight.
-        // This round removes that dependency entirely:
-        // `.ignoresSafeArea(.keyboard, edges: .bottom)` below makes the
-        // keyboard's presence STRUCTURALLY invisible to this whole
-        // screen's layout — nothing here is proposed a smaller height when
-        // it appears, video included, full stop. `commentBar` still needs
-        // to visually rise above the keyboard, so it does that manually
-        // now (`.padding(.bottom, keyboardHeight)`, tracked via raw
-        // `UIResponder` notifications — see subscribeToKeyboard() below)
-        // instead of through any layout mechanism the video could ever be
-        // implicitly caught up in again.
-        VStack(spacing: 0) {
-            // Small handlebar (2026-07-21, #284: "a small handlebar
-            // shows at the top") — a purely visual affordance for the
-            // swipe-down-to-close gesture below, same idea as a
-            // native iOS sheet's own grabber.
-            Capsule()
-                .fill(.white.opacity(0.35))
-                .frame(width: 36, height: 5)
-                .padding(.top, 6)
-            topBar
-            // 2026-09-20 — full screen width now (was inset 12pt each
-            // side), per "so gross wie möglich (bildschirmbreite)" —
-            // maximizes the video's size within its fixed 16:9 ratio.
-            if let player {
-                VideoPlayer(player: player)
-                    // 2026-09-20 (3rd round) — hardcoded frame, not
-                    // `.aspectRatio(.fit)`, see `videoSize`'s own doc
-                    // comment on the struct for why.
-                    .frame(width: videoSize.width, height: videoSize.height)
-                    .clipShape(RoundedRectangle(cornerRadius: 20))
-                    .padding(.top, 8)
-                    // 2026-09-20, Lino: "die kommentar funktion soll IMMER
-                    // geöffnet sein unter dem Video (unter den Buttons)...
-                    // die video grösse soll sich dabei NICHT ändern" — the
-                    // comment list/bar below are no longer a toggled
-                    // overlay (see controlCluster/commentListOverlay's own
-                    // doc comments), so there's nothing left to "reveal"
-                    // via a swipe up. Swipe DOWN to close is unchanged;
-                    // the video's own frame (fixed 16:9 aspectRatio above,
-                    // now also structurally outside the keyboard-affected
-                    // region below) was never touched by that toggle
-                    // either way, but removing the toggle entirely makes
-                    // that guarantee structural instead of incidental.
-                    .gesture(
-                        DragGesture(minimumDistance: 30)
-                            .onEnded { value in
-                                let v = value.translation.height
-                                let h = value.translation.width
-                                guard abs(v) > abs(h) * 1.5, v > 80 else { return }
-                                dismiss()
-                            }
-                    )
-                    // 2026-08-05, Lino: "egal wo man auf das video klickt,
-                    // soll das video stoppen oder weiter spielen" — NOT a
-                    // `.gesture()` (a plain `.onTapGesture`/`.gesture`
-                    // modifier here would COMPETE with AVKit's own internal
-                    // tap recognizer for exclusive ownership, the exact
-                    // failure mode this file's own top-of-file doc comment
-                    // already documents for the old long-press-to-comment
-                    // gesture — it silently lost that race most of the
-                    // time). `.simultaneousGesture` explicitly does NOT
-                    // claim exclusivity, so this fires ALONGSIDE AVKit's own
-                    // tap-to-show/hide-chrome behavior instead of racing it,
-                    // and never swallows a tap that lands on the native
-                    // transport bar/scrub controls when they're visible.
-                    .simultaneousGesture(
-                        TapGesture().onEnded { togglePlayback() }
-                    )
+        // 2026-09-20 (4th round), Lino: "das video darfs sich in der
+        // POSITION NICHT verschieben! egal was passiert!" — rounds 1-3 all
+        // kept the video as a SIBLING inside one shared VStack alongside
+        // the keyboard-responsive comment area, so however that keyboard-
+        // avoidance was still reaching the tree (never fully pinned down
+        // across 3 rounds), the whole VStack — video included — could
+        // still get pushed/translated. Fixed this round by making the
+        // video (+handlebar+topBar+error) a COMPLETELY SEPARATE ZStack
+        // layer from the keyboard-responsive content, not a flow sibling
+        // of it at all — nothing that layer does can ever reach this one.
+        // `topLayerHeight` is measured (not hand-guessed) so the other
+        // layer knows how much top space to leave clear.
+        ZStack(alignment: .top) {
+            Color.black.ignoresSafeArea()
+
+            // Keyboard-responsive layer: buttons row, comment list, input
+            // bar. Free to shift/resize with the keyboard however it
+            // wants (commentBar's own bottom padding does that, same
+            // `keyboardHeight` tracking as round 2) — none of it can
+            // reach the video layer below, since they're independent
+            // ZStack children, not a shared VStack flow.
+            VStack(spacing: 0) {
+                Spacer().frame(height: topLayerHeight)
+                HStack {
+                    Spacer()
+                    controlCluster
+                }
+                .padding(.trailing, 16)
+                .padding(.top, 16)
+                ScrollView {
+                    commentListContent
+                        .padding(12)
+                }
+                .frame(maxHeight: .infinity)
+                .scrollDismissesKeyboard(.immediately)
+                .background(.black.opacity(0.5))
+                commentBar
+                    .padding(.bottom, keyboardHeight)
+                    .animation(.easeOut(duration: 0.25), value: keyboardHeight)
             }
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.caption)
-                    .foregroundStyle(.white)
-                    .padding(8)
-                    .background(.red.opacity(0.8))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .padding(.top, 12)
+            .ignoresSafeArea(.keyboard, edges: .bottom)
+
+            // Keyboard-IMMUNE layer: handlebar/topBar/video/error. Pinned
+            // to the top of the outer ZStack, which itself always spans
+            // the exact full screen — this layer's own proposed size
+            // never changes for any reason, keyboard included.
+            VStack(spacing: 0) {
+                // Small handlebar (2026-07-21, #284: "a small handlebar
+                // shows at the top") — a purely visual affordance for the
+                // swipe-down-to-close gesture below, same idea as a
+                // native iOS sheet's own grabber.
+                Capsule()
+                    .fill(.white.opacity(0.35))
+                    .frame(width: 36, height: 5)
+                    .padding(.top, 6)
+                topBar
+                // 2026-09-20 — full screen width now (was inset 12pt each
+                // side), per "so gross wie möglich (bildschirmbreite)" —
+                // maximizes the video's size within its fixed 16:9 ratio.
+                if let player {
+                    VideoPlayer(player: player)
+                        // 2026-09-20 (3rd round) — hardcoded frame, not
+                        // `.aspectRatio(.fit)`, see `videoSize`'s own doc
+                        // comment on the struct for why.
+                        .frame(width: videoSize.width, height: videoSize.height)
+                        .clipShape(RoundedRectangle(cornerRadius: 20))
+                        .padding(.top, 8)
+                        // 2026-09-20, Lino: "die kommentar funktion soll IMMER
+                        // geöffnet sein unter dem Video (unter den Buttons)...
+                        // die video grösse soll sich dabei NICHT ändern" — the
+                        // comment list/bar below are no longer a toggled
+                        // overlay (see controlCluster/commentListOverlay's own
+                        // doc comments), so there's nothing left to "reveal"
+                        // via a swipe up. Swipe DOWN to close is unchanged.
+                        .gesture(
+                            DragGesture(minimumDistance: 30)
+                                .onEnded { value in
+                                    let v = value.translation.height
+                                    let h = value.translation.width
+                                    guard abs(v) > abs(h) * 1.5, v > 80 else { return }
+                                    dismiss()
+                                }
+                        )
+                        // 2026-08-05, Lino: "egal wo man auf das video klickt,
+                        // soll das video stoppen oder weiter spielen" — NOT a
+                        // `.gesture()` (a plain `.onTapGesture`/`.gesture`
+                        // modifier here would COMPETE with AVKit's own internal
+                        // tap recognizer for exclusive ownership, the exact
+                        // failure mode this file's own top-of-file doc comment
+                        // already documents for the old long-press-to-comment
+                        // gesture — it silently lost that race most of the
+                        // time). `.simultaneousGesture` explicitly does NOT
+                        // claim exclusivity, so this fires ALONGSIDE AVKit's own
+                        // tap-to-show/hide-chrome behavior instead of racing it,
+                        // and never swallows a tap that lands on the native
+                        // transport bar/scrub controls when they're visible.
+                        .simultaneousGesture(
+                            TapGesture().onEnded { togglePlayback() }
+                        )
+                }
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.white)
+                        .padding(8)
+                        .background(.red.opacity(0.8))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .padding(.top, 12)
+                }
             }
-            // 2026-09-20 — controlCluster (Bild/Video/Kommentar-Zähler)
-            // always renders below the video, unconditionally — the
-            // comment panel used to be a toggled overlay that replaced
-            // this row when open; now both always coexist, per Lino's
-            // explicit "immer geöffnet".
-            HStack {
-                Spacer()
-                controlCluster
-            }
-            .padding(.trailing, 16)
-            .padding(.top, 16)
-            // 2026-09-20 — the flexible region: a ScrollView so the
-            // comment list itself can still grow/shrink with however much
-            // room is actually left (screen height minus the fixed
-            // section above minus commentBar's own keyboard-padded
-            // height) — but note this no longer has anything to do with
-            // protecting the video's size (see body's own doc comment);
-            // that's now structural via `.ignoresSafeArea(.keyboard)`
-            // below regardless of what this ScrollView does.
-            // `.scrollDismissesKeyboard` lets a swipe here also close the
-            // keyboard, on top of the explicit "Fertig" keyboard-accessory
-            // button below (Lino: "man muss die tastatur aber auch wieder
-            // schliessen können").
-            ScrollView {
-                commentListContent
-                    .padding(12)
-            }
-            .frame(maxHeight: .infinity)
-            .scrollDismissesKeyboard(.immediately)
-            .background(.black.opacity(0.5))
-            // 2026-09-20 — back in-flow (was `.safeAreaInset(.bottom)`),
-            // now padded manually by the tracked keyboard height instead
-            // of relying on SwiftUI's own keyboard-avoidance — see this
-            // struct's `keyboardHeight` doc comment for why.
-            commentBar
-                .padding(.bottom, keyboardHeight)
-                .animation(.easeOut(duration: 0.25), value: keyboardHeight)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { topLayerHeight = proxy.size.height }
+                        .onChange(of: proxy.size.height) { _, newValue in topLayerHeight = newValue }
+                }
+            )
         }
-        .ignoresSafeArea(.keyboard, edges: .bottom)
         .toolbar {
             // 2026-09-20, Lino: "man muss die tastatur aber auch wieder
             // schliessen können wenn sie mal geöffnet wurde" — explicit,
@@ -266,7 +272,6 @@ struct VideoPlayerSheet: View {
                 Button(language.t("common.done")) { commentFieldFocused = false }
             }
         }
-        .background(Color.black.ignoresSafeArea())
         .onAppear {
             guard let urlString = version.playbackUrl, let url = URL(string: urlString) else { return }
             let p = AVPlayer(url: url)
