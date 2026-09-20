@@ -223,6 +223,8 @@ struct ProjectListView: View {
             }
             .task { if folderId == nil { await viewModel.loadNotifications() } }
             .task { if folderId == nil { await viewModel.loadTodoSidebar() } }
+            .task { await viewModel.startRealtimeSync() }
+            .onDisappear { viewModel.stopRealtimeSync() }
             .refreshable {
                 await viewModel.load()
                 if folderId == nil { await viewModel.loadNotifications() }

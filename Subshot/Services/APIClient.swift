@@ -1132,6 +1132,18 @@ final class APIClient {
 
     // MARK: - Team
 
+    /// 2026-09-20 — needed for RealtimeClient's team-<id>-projects
+    /// subscription (see ProjectListView.swift): unlike `teamMembers`
+    /// above, which needs a team id ALREADY known from an open project's
+    /// detail, the project LIST screen itself needs "my own team id(s)"
+    /// before any project is even open. Only `.id` is decoded — matches
+    /// web's api.myTeams() (GET /teams/mine), same endpoint, just the
+    /// minimal slice this call site actually needs.
+    func myTeams() async throws -> [TeamSummary] {
+        let req = try await authorizedRequest("teams/mine")
+        return try await send(req)
+    }
+
     func members(projectId: String) async throws -> [Member] {
         let req = try await authorizedRequest("projects/\(projectId)/members")
         return try await send(req)

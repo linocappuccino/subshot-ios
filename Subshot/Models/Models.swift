@@ -752,6 +752,14 @@ struct TeamMember: Codable {
     }
 }
 
+/// 2026-09-20 — minimal slice of GET /teams/mine for RealtimeClient's
+/// team-<id>-projects subscription (see APIClient.myTeams's own doc
+/// comment). Extra JSON keys (name, owner_id, all_members_see_all_projects,
+/// ...) are simply ignored by Codable.
+struct TeamSummary: Codable {
+    let id: String
+}
+
 /// One person shown in the Projektinfo box (2026-08-09, #27) — separate
 /// from Member above (the full editor/projektleiter/owner roster); being
 /// an info member has no role, purely who's shown as the point of

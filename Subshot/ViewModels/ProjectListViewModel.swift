@@ -28,9 +28,14 @@ final class ProjectListViewModel: ObservableObject {
         self.folderId = folderId
     }
 
-    func load() async {
-        isLoading = true
-        defer { isLoading = false }
+    /// `silent: true` (added 2026-09-20 for realtime refetches, see
+    /// startRealtimeSync below) skips the isLoading flip — a background
+    /// refetch triggered by a Pusher "changed" ping shouldn't flash the
+    /// grid's loading state for an already-visible list, same reasoning as
+    /// web's projects/page.tsx `loadProjects({ silent: true })`.
+    func load(silent: Bool = false) async {
+        if !silent { isLoading = true }
+        defer { if !silent { isLoading = false } }
         do {
             projects = try await APIClient.shared.listProjects(folderId: folderId)
             folders = try await APIClient.shared.listFolders(parentFolderId: folderId)
@@ -41,6 +46,44 @@ final class ProjectListViewModel: ObservableObject {
             // shouldn't surface as "Fehler: Verbindungsfehler: cancelled".
             if !APIError.isCancellation(error) { errorMessage = error.localizedDescription }
         }
+    }
+
+    /// 2026-09-20, Lino: "das muss doch alles IMMER sofort syncen!!!" — see
+    /// RealtimeClient's own doc comment for the protocol/design. Mirrors
+    /// the backend's user-<id>-projects / team-<id>-projects channels
+    /// (app/realtime.py's broadcast_project_list_changed, and web's
+    /// subscribeToProjectListChanges in lib/realtime.ts): subscribes to
+    /// this account's own channel plus every team it belongs to, so a
+    /// project created/renamed/moved/deleted/shared on web (or another
+    /// device) shows up here without a manual pull-to-refresh. Every
+    /// ProjectListView instance (root AND each opened folder level) calls
+    /// this independently — harmless, RealtimeClient just gets one more
+    /// subscriber per channel and each instance triggers its own silent
+    /// refetch.
+    private var realtimeTokens: [(channel: String, token: UUID)] = []
+
+    func startRealtimeSync() async {
+        guard realtimeTokens.isEmpty, let userId = BackendAuth.shared.currentUser?.id else { return }
+        subscribeRealtime(channel: "user-\(userId)-projects")
+        if let teams = try? await APIClient.shared.myTeams() {
+            for team in teams {
+                subscribeRealtime(channel: "team-\(team.id)-projects")
+            }
+        }
+    }
+
+    private func subscribeRealtime(channel: String) {
+        let token = RealtimeClient.shared.subscribe(channel) { [weak self] in
+            Task { @MainActor in await self?.load(silent: true) }
+        }
+        realtimeTokens.append((channel, token))
+    }
+
+    func stopRealtimeSync() {
+        for (channel, token) in realtimeTokens {
+            RealtimeClient.shared.unsubscribe(channel, token: token)
+        }
+        realtimeTokens.removeAll()
     }
 
     @discardableResult
