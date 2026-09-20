@@ -204,7 +204,23 @@ struct VideoPlayerSheet: View {
                     commentListContent
                         .padding(12)
                 }
-                .frame(maxHeight: .infinity)
+                // 2026-09-20, Lino, with screenshots: "die kommentare
+                // müssten doch links bündig sein?! werden aber irgendwie
+                // fast in der mitte dargestellt" — root cause was
+                // commentListContent's VStack having no minHeight given to
+                // this ScrollView either: with topLayerHeight (the video,
+                // deliberately fixed/maxed — see videoSize's own doc
+                // comment, MUST NOT shrink) plus commentBar's keyboard
+                // padding both eating into this VStack's remaining space,
+                // a plain `.frame(maxHeight: .infinity)` can get squeezed
+                // toward 0pt on a small phone with the keyboard open,
+                // leaving nothing to actually scroll/tap even though the
+                // comments themselves are still there. `minHeight`
+                // guarantees at least ~2 comment rows stay usable no
+                // matter how tight it gets — the video's own size/position
+                // is untouched either way, this only ever affects the
+                // space already left over for the comment list.
+                .frame(minHeight: 120, maxHeight: .infinity)
                 .scrollDismissesKeyboard(.immediately)
                 .background(.black.opacity(0.5))
                 commentBar
@@ -553,6 +569,21 @@ struct VideoPlayerSheet: View {
     /// actually grow/shrink with whatever space the keyboard leaves rather
     /// than being capped at a fixed height.
     private var commentListContent: some View {
+        // 2026-09-20, Lino, with screenshots: comment rows showed up
+        // floating near the horizontal center instead of flush against
+        // the left edge. `VStack(alignment: .leading)`'s `alignment` only
+        // governs how ITS OWN children line up relative to EACH OTHER
+        // inside the VStack's own (content-hugging) width — it says
+        // nothing about where the VStack itself sits inside its parent.
+        // Since this VStack lives directly inside a `ScrollView` (see
+        // body above) and comments are short, it hugged a narrow width
+        // and the ScrollView then centered that narrow block within the
+        // full-width scroll area (a ScrollView centers a narrower-than-
+        // viewport child by default) — exactly the "shifted toward the
+        // middle" look in the screenshots. `.frame(maxWidth: .infinity,
+        // alignment: .leading)` forces the VStack itself to claim the
+        // ScrollView's FULL width, so its children's `.leading` alignment
+        // now has the whole width to actually align against.
         VStack(alignment: .leading, spacing: 8) {
             // 2026-09-20 — was closable (a chevron button here cleared
             // showCommentPanel); the panel is now always open (see
@@ -623,6 +654,7 @@ struct VideoPlayerSheet: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// 2026-08-09, Lino: "können wir hier einfach den avatar neben dem
