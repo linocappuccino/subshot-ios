@@ -144,6 +144,33 @@ struct VideoPlayerSheet: View {
     }
 
     var body: some View {
+        // 2026-09-20 (6th round), Lino, with a screen recording proving it
+        // this time: the X-button/handlebar/video-top all scroll clean
+        // OFF the top edge of the screen when the keyboard opens — not a
+        // subtle size/layout miscalculation, the ENTIRE content is being
+        // translated upward by something outside this view's own layout
+        // tree entirely (rounds 1-5, all pure SwiftUI-layout fixes —
+        // `.ignoresSafeArea(.keyboard)` at every level tried, a hardcoded
+        // frame, two independent ZStack layers — none of them stopped it,
+        // which only makes sense if the push happens ABOVE this view, most
+        // likely `.fullScreenCover`'s own hosting controller getting
+        // automatically resized/transformed for the keyboard by UIKit in
+        // a way no SwiftUI-side layout modifier has jurisdiction over).
+        // Changed strategy entirely this round: instead of trying to
+        // prevent whatever is causing the push, MEASURE the actual on-
+        // screen position via a `GeometryReader` in `.global` coordinate
+        // space and actively cancel out any drift with an equal-and-
+        // opposite `.offset()` — this corrects for the shift regardless
+        // of its root cause, since it reacts to the real observed
+        // position rather than assuming why it moved.
+        GeometryReader { outerGeo in
+            content
+                .offset(y: -outerGeo.frame(in: .global).minY)
+        }
+        .ignoresSafeArea()
+    }
+
+    private var content: some View {
         // 2026-09-20 (4th round), Lino: "das video darfs sich in der
         // POSITION NICHT verschieben! egal was passiert!" — rounds 1-3 all
         // kept the video as a SIBLING inside one shared VStack alongside
