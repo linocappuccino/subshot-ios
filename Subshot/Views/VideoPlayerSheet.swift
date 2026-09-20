@@ -624,10 +624,20 @@ struct VideoPlayerSheet: View {
                                         .foregroundStyle(.blue)
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(comment.authorName).font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
+                                        // 2026-09-20, Lino: "lange kommentare die über 2 zeilen
+                                        // gehen werden zentriert dargestellt" — VStack(alignment:
+                                        // .leading) only positions this Text's WHOLE bounding box
+                                        // against its siblings (the author name above it); it says
+                                        // nothing about how a SINGLE Text's own wrapped lines align
+                                        // relative to EACH OTHER once it spans multiple lines —
+                                        // Text centers those by default unless told otherwise. Same
+                                        // family of bug as commentListContent's own VStack fix
+                                        // above, one level deeper.
                                         Text(comment.comment)
                                             .font(.caption)
                                             .foregroundStyle(comment.resolved ? .white.opacity(0.5) : .white)
                                             .strikethrough(comment.resolved)
+                                            .multilineTextAlignment(.leading)
                                     }
                                 }
                             }
@@ -643,10 +653,12 @@ struct VideoPlayerSheet: View {
                                     .foregroundStyle(.white.opacity(0.5))
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(comment.authorName).font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
+                                    // Same multi-line-centering fix as the timestamped branch above.
                                     Text(comment.comment)
                                         .font(.caption)
                                         .foregroundStyle(comment.resolved ? .white.opacity(0.5) : .white)
                                         .strikethrough(comment.resolved)
+                                        .multilineTextAlignment(.leading)
                                 }
                             }
                         }
