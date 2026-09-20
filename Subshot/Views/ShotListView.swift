@@ -1435,32 +1435,35 @@ struct ShotListView: View {
             // session: opens RecMarkersSyncSheet (camera + live OCR +
             // framerate, matching Lino's reference screenshot) instead of
             // just picking a framerate blind.
-            HStack(spacing: 10) {
-                // 2026-08-31, Lino: "der start rec-markers kann breiter
-                // sein, damit der ganze text auf eine zeile passt, der
-                // text links kann dann ein wenig weniger breite kriegen" —
-                // the button's own label now always gets its full,
-                // unwrapped width via .fixedSize() so "Start Rec-Markers"
-                // never breaks onto 2 lines; this hint text yields
-                // whatever's left, truncating instead of wrapping/pushing.
+            // 2026-08-31, Lino: "der start rec-markers kann breiter
+            // sein, damit der ganze text auf eine zeile passt, der
+            // text links kann dann ein wenig weniger breite kriegen" —
+            // the button's own label used to always get its full,
+            // unwrapped width via .fixedSize(), squeezing the hint text
+            // below into whatever was left with `.lineLimit(1)` +
+            // `.minimumScaleFactor(0.8)` — a deliberate truncate-instead-
+            // of-wrap tradeoff at the time.
+            // 2026-09-20, Lino: "generell dürfen KEINE text abgeschnitten
+            // werden!" — that tradeoff no longer holds. Stacked vertically
+            // instead of sharing one row: the hint text gets the full
+            // width to wrap into (never truncates), the button sits on
+            // its own line below at full width (its own label was never
+            // the problem).
+            VStack(alignment: .leading, spacing: 8) {
                 Text(language.t("shotListView.setFramerateHint"))
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.7))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                Spacer(minLength: 8)
+                    .fixedSize(horizontal: false, vertical: true)
                 Button {
                     showingRecMarkersSync = true
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "camera.viewfinder")
                         Text(language.t("shotListView.startRecMarkers"))
-                            .lineLimit(1)
                     }
-                    .fixedSize()
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
+                    .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
                     .background(Capsule().fill(Color.accentColor))
                 }

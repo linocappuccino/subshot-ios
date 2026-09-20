@@ -268,6 +268,19 @@ struct ReferenceVideoBlockView: View {
         }
     }
 
+    // 2026-09-20, Lino: "oben ist das 'Beispielvideo als Referenz
+    // hochladen' noch komisch dargestellt und ausserdem ist der text
+    // abgeschnitten" — root cause: `.aspectRatio(16/9, contentMode: .fit)`
+    // sized this tile to match the video tiles next to it (~84-130pt tall
+    // at grid-column widths of 150-230pt), which isn't tall enough for the
+    // full "Beispielvideo als Referenz hochladen" caption to wrap into —
+    // the VStack's real content overflowed that frame with no `.clipped()`
+    // to hide it, so the text spilled past the dashed border instead of
+    // being contained by it. Unlike `readyTile` (real video thumbnails,
+    // where locking 16:9 matters), this is just a prompt button — no
+    // reason it has to match that ratio. Now sized by its own content
+    // instead (`fixedSize` on the Text + a generous `minHeight`), so the
+    // full label always fits with room to spare, never truncated.
     private var addTile: some View {
         Button {
             replaceTargetId = nil
@@ -275,13 +288,15 @@ struct ReferenceVideoBlockView: View {
         } label: {
             VStack(spacing: 8) {
                 Image(systemName: "plus")
+                    .font(.system(size: 20, weight: .semibold))
                 Text(language.t("referenceVideo.upload"))
                     .font(.caption.weight(.semibold))
                     .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity)
-            .aspectRatio(16.0 / 9.0, contentMode: .fit)
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: 110)
             .background(
                 RoundedRectangle(cornerRadius: 16)
                     .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [5]))

@@ -88,11 +88,30 @@ struct VideoPlayerSheet: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
+        VStack(spacing: 0) {
+            // Small handlebar (2026-07-21, #284: "a small handlebar
+            // shows at the top") — a purely visual affordance for the
+            // swipe-down-to-close gesture below, same idea as a
+            // native iOS sheet's own grabber.
+            Capsule()
+                .fill(.white.opacity(0.35))
+                .frame(width: 36, height: 5)
+                .padding(.top, 6)
+            topBar
+            // 2026-09-20, Lino: "soll das video eher oben sein, so hat man
+            // unten genug platz um kommentare zu schreiben... auch hier
+            // braucht es wieder abgerundete ecken beim video" — the player
+            // used to `.ignoresSafeArea()` and fill the entire sheet, with
+            // the comment panel/controls floating as an overlay on top of
+            // it. Now boxed to a rounded 16:9 card near the top instead, so
+            // the comment panel/controls below have their own real space in
+            // the black background rather than covering the video.
             if let player {
                 VideoPlayer(player: player)
-                    .ignoresSafeArea()
+                    .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 20))
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
                     // 2026-07-21, #284 — swipe down closes the player
                     // (back to the Postproduction grid), swipe up reveals
                     // the comment panel; a plain vertical-translation
@@ -134,47 +153,38 @@ struct VideoPlayerSheet: View {
                         TapGesture().onEnded { togglePlayback() }
                     )
             }
-            VStack {
-                // Small handlebar (2026-07-21, #284: "a small handlebar
-                // shows at the top") — a purely visual affordance for the
-                // swipe-down-to-close gesture above, same idea as a
-                // native iOS sheet's own grabber.
-                Capsule()
-                    .fill(.white.opacity(0.35))
-                    .frame(width: 36, height: 5)
-                    .padding(.top, 6)
-                topBar
-                Spacer()
-                if let errorMessage {
-                    Text(errorMessage)
-                        .font(.caption)
-                        .foregroundStyle(.white)
-                        .padding(8)
-                        .background(.red.opacity(0.8))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-                if !showCommentPanel {
-                    // 2026-07-26 — bottom-trailing custom cluster, well
-                    // clear of AVKit's own top-trailing AirPlay/PiP corner
-                    // (see doc comment above). Hidden while the panel is
-                    // open — the panel's own send button takes over.
-                    HStack {
-                        Spacer()
-                        controlCluster
-                    }
-                    .padding(.trailing, 16)
-                    // 2026-07-27, Lino: "die buttons unten überdecken nun
-                    // die videoplayer buttons" — AVKit's own native
-                    // transport bar (play/pause/scrub) sits right at the
-                    // bottom edge; raised well clear of it (was 8).
-                    .padding(.bottom, 56)
-                }
-                if showCommentPanel {
-                    commentListOverlay
-                    commentBar
-                }
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.white)
+                    .padding(8)
+                    .background(.red.opacity(0.8))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .padding(.top, 12)
             }
+            if !showCommentPanel {
+                // 2026-07-26 — bottom-trailing custom cluster, well
+                // clear of AVKit's own top-trailing AirPlay/PiP corner
+                // (see doc comment above). Hidden while the panel is
+                // open — the panel's own send button takes over.
+                // 2026-09-20 — now sits directly below the boxed video
+                // (not overlaid on its bottom edge anymore), so the old
+                // 56pt "clear AVKit's transport bar" padding is gone.
+                HStack {
+                    Spacer()
+                    controlCluster
+                }
+                .padding(.trailing, 16)
+                .padding(.top, 16)
+            }
+            if showCommentPanel {
+                commentListOverlay
+                    .padding(.top, 16)
+                commentBar
+            }
+            Spacer(minLength: 0)
         }
+        .background(Color.black.ignoresSafeArea())
         .onAppear {
             guard let urlString = version.playbackUrl, let url = URL(string: urlString) else { return }
             let p = AVPlayer(url: url)
@@ -276,8 +286,22 @@ struct VideoPlayerSheet: View {
                     Image(systemName: "checkmark")
                         .font(.system(size: 16, weight: .semibold))
                 } else {
+                    // 2026-09-20, Lino: "weiss man nicht was die buttons
+                    // Bild und Video machen.. irgendwie muss da ein
+                    // download symbol hin" — the "photo"/"video" glyph +
+                    // caption alone still read as generic media icons, not
+                    // as a download action. A small "arrow.down.circle.fill"
+                    // badge (both real, long-stable SF Symbols) pinned to
+                    // the corner makes the download intent unambiguous
+                    // without guessing at an exotic combined symbol name.
                     Image(systemName: "photo")
                         .font(.system(size: 16, weight: .semibold))
+                        .overlay(alignment: .bottomTrailing) {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.white, .blue)
+                                .offset(x: 7, y: 7)
+                        }
                 }
                 if !savingFrame {
                     Text(language.t("videoPlayerSheet.saveFrameShort"))
@@ -308,8 +332,16 @@ struct VideoPlayerSheet: View {
                     Image(systemName: "checkmark")
                         .font(.system(size: 16, weight: .semibold))
                 } else {
+                    // 2026-09-20 — same download badge as saveFrameButton
+                    // above, same reasoning.
                     Image(systemName: "video")
                         .font(.system(size: 16, weight: .semibold))
+                        .overlay(alignment: .bottomTrailing) {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.white, .blue)
+                                .offset(x: 7, y: 7)
+                        }
                 }
                 if !downloadingVideo {
                     Text(language.t("videoPlayerSheet.saveVideoShort"))
