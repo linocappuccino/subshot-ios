@@ -2,6 +2,7 @@ import SwiftUI
 import Combine
 import AVKit
 import Photos
+import UIKit
 
 /// Vollbild-Player fuers Video-Feedback-Tool.
 ///
@@ -72,6 +73,30 @@ struct VideoPlayerSheet: View {
     /// itself is still derived from it and still sent to the API
     /// unchanged, just no longer shown as an editable text field).
     @State private var me: Me?
+    /// 2026-09-20 (2nd follow-up), Lino, emphatic: "das video wird immer
+    /// noch kleiner wenn die tastatur erscheint! FIXEN! DAS VIDEO DARF DIE
+    /// GRÖSSE NIE ÄNDERN egal was auf dem bildschirm passiert!" — the
+    /// previous fix (fixed top section + flexible ScrollView +
+    /// `.safeAreaInset(.bottom)` for the input bar) relied on SwiftUI's
+    /// own implicit keyboard-avoidance space-redistribution, which turned
+    /// out to still shrink the video: once the keyboard reduces the
+    /// available height for the WHOLE VStack, an `.aspectRatio(.fit)`
+    /// video has no fixed minimum of its own — `.fit` means exactly
+    /// "shrink to whatever you're given," so any reduction anywhere
+    /// upstream reaches it. This time: `.ignoresSafeArea(.keyboard)` on
+    /// the ENTIRE screen (see body's own doc comment) makes it
+    /// STRUCTURALLY impossible for the keyboard to change what height
+    /// anything gets proposed, video included — full stop, no implicit
+    /// system behavior involved. The one thing that still needs to move
+    /// (`commentBar`) does so manually instead, padded by a tracked
+    /// `keyboardHeight` from raw `UIResponder` notifications (see
+    /// subscribeToKeyboard()/unsubscribeFromKeyboard() below) — a
+    /// deliberately more manual, more verbose mechanism than relying on
+    /// SwiftUI's own keyboard-avoidance, chosen specifically because that
+    /// implicit mechanism is the thing that broke the video's size in the
+    /// first place.
+    @State private var keyboardHeight: CGFloat = 0
+    @State private var keyboardObserver: NSObjectProtocol?
 
     init(video: Video, version: VideoVersion, projectId: String? = nil, onVersionUpdated: @escaping (VideoVersion) -> Void) {
         self.video = video
@@ -82,21 +107,24 @@ struct VideoPlayerSheet: View {
     }
 
     var body: some View {
-        // 2026-09-20, Lino: "das video bleibt IMMER die gleiche grösse und
-        // zwar so gross wie möglich (bildschirmbreite)... das öffnen der
-        // tastatur ändert NICHT die grösse des videos" — a plain VStack
-        // with the video as one of several siblings (as this used to be
-        // earlier the same day) lets the keyboard's safe-area inset shrink
-        // the WHOLE VStack's available height, and an aspectRatio(.fit)
-        // video happily shrinks to fit whatever's left. Fixed by splitting
-        // the layout into a FIXED top section (handlebar/topBar/video/
-        // buttons — never inside anything that can compress) and a
-        // separate flexible region below it for the comment list, with the
-        // input bar pinned via `.safeAreaInset(edge: .bottom)` instead of
-        // sitting in-flow — that's what actually rides up above the
-        // keyboard while leaving the fixed section alone; a plain trailing
-        // Spacer (the old approach) doesn't give that guarantee once total
-        // content no longer fits the screen.
+        // 2026-09-20, Lino, emphatic on the 2nd round: "DAS VIDEO DARF DIE
+        // GRÖSSE NIE ÄNDERN egal was auf dem bildschirm passiert!" — round
+        // 1 (fixed top section + flexible ScrollView + `.safeAreaInset`)
+        // still let the keyboard shrink the video, because it still
+        // depended on SwiftUI's own implicit keyboard-avoidance to shrink
+        // the ScrollView instead — which only works as long as SwiftUI's
+        // space-redistribution algorithm decides to take space from the
+        // ScrollView first, not always guaranteed once things get tight.
+        // This round removes that dependency entirely:
+        // `.ignoresSafeArea(.keyboard, edges: .bottom)` below makes the
+        // keyboard's presence STRUCTURALLY invisible to this whole
+        // screen's layout — nothing here is proposed a smaller height when
+        // it appears, video included, full stop. `commentBar` still needs
+        // to visually rise above the keyboard, so it does that manually
+        // now (`.padding(.bottom, keyboardHeight)`, tracked via raw
+        // `UIResponder` notifications — see subscribeToKeyboard() below)
+        // instead of through any layout mechanism the video could ever be
+        // implicitly caught up in again.
         VStack(spacing: 0) {
             // Small handlebar (2026-07-21, #284: "a small handlebar
             // shows at the top") — a purely visual affordance for the
@@ -173,13 +201,18 @@ struct VideoPlayerSheet: View {
             }
             .padding(.trailing, 16)
             .padding(.top, 16)
-            // 2026-09-20 — the flexible region: a ScrollView (not the
-            // fixed-maxHeight box this used to be) so it actually absorbs
-            // whatever room the keyboard leaves, instead of the video
-            // above it being asked to shrink. `.scrollDismissesKeyboard`
-            // lets a swipe here also close the keyboard, on top of the
-            // explicit "Fertig" keyboard-accessory button below (Lino:
-            // "man muss die tastatur aber auch wieder schliessen können").
+            // 2026-09-20 — the flexible region: a ScrollView so the
+            // comment list itself can still grow/shrink with however much
+            // room is actually left (screen height minus the fixed
+            // section above minus commentBar's own keyboard-padded
+            // height) — but note this no longer has anything to do with
+            // protecting the video's size (see body's own doc comment);
+            // that's now structural via `.ignoresSafeArea(.keyboard)`
+            // below regardless of what this ScrollView does.
+            // `.scrollDismissesKeyboard` lets a swipe here also close the
+            // keyboard, on top of the explicit "Fertig" keyboard-accessory
+            // button below (Lino: "man muss die tastatur aber auch wieder
+            // schliessen können").
             ScrollView {
                 commentListContent
                     .padding(12)
@@ -187,14 +220,15 @@ struct VideoPlayerSheet: View {
             .frame(maxHeight: .infinity)
             .scrollDismissesKeyboard(.immediately)
             .background(.black.opacity(0.5))
-        }
-        // 2026-09-20 — pinned to the bottom of the screen and rides up
-        // above the keyboard on its own (standard `safeAreaInset`
-        // behavior) — completely separate from the fixed section above,
-        // which is exactly what keeps the video's size untouched.
-        .safeAreaInset(edge: .bottom) {
+            // 2026-09-20 — back in-flow (was `.safeAreaInset(.bottom)`),
+            // now padded manually by the tracked keyboard height instead
+            // of relying on SwiftUI's own keyboard-avoidance — see this
+            // struct's `keyboardHeight` doc comment for why.
             commentBar
+                .padding(.bottom, keyboardHeight)
+                .animation(.easeOut(duration: 0.25), value: keyboardHeight)
         }
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         .toolbar {
             // 2026-09-20, Lino: "man muss die tastatur aber auch wieder
             // schliessen können wenn sie mal geöffnet wurde" — explicit,
@@ -216,6 +250,7 @@ struct VideoPlayerSheet: View {
             p.allowsExternalPlayback = false
             player = p
             p.play()
+            subscribeToKeyboard()
         }
         .task {
             // 2026-07-23 (#322) — authorName started every long-press comment
@@ -231,8 +266,36 @@ struct VideoPlayerSheet: View {
                 if authorName.isEmpty { authorName = fetchedMe.name ?? fetchedMe.email }
             }
         }
-        .onDisappear { player?.pause() }
+        .onDisappear {
+            player?.pause()
+            unsubscribeFromKeyboard()
+        }
         .preferredColorScheme(.dark)
+    }
+
+    /// 2026-09-20 — raw `UIResponder` keyboard notifications instead of
+    /// any SwiftUI-native keyboard-avoidance mechanism, deliberately: see
+    /// `keyboardHeight`'s own doc comment for why the implicit approach
+    /// was the actual bug. `keyboardWillChangeFrameNotification` alone
+    /// covers both show AND hide (the frame's `origin.y` lands at/beyond
+    /// the screen height when hidden, giving `max(0, ...)` a clean 0) —
+    /// no separate will-hide observer needed.
+    private func subscribeToKeyboard() {
+        guard keyboardObserver == nil else { return }
+        keyboardObserver = NotificationCenter.default.addObserver(
+            forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: .main
+        ) { notification in
+            guard let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+            let screenHeight = UIScreen.main.bounds.height
+            keyboardHeight = max(0, screenHeight - frame.origin.y)
+        }
+    }
+
+    private func unsubscribeFromKeyboard() {
+        if let keyboardObserver {
+            NotificationCenter.default.removeObserver(keyboardObserver)
+        }
+        keyboardObserver = nil
     }
 
     private var topBar: some View {
