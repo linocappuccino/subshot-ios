@@ -98,6 +98,30 @@ struct VideoPlayerSheet: View {
     @State private var keyboardHeight: CGFloat = 0
     @State private var keyboardObserver: NSObjectProtocol?
 
+    /// 2026-09-20 (3rd round), Lino, still emphatic after round 2:
+    /// "das video wird immer noch verkleinert wenn die tastatur
+    /// erscheint!... das Video MUSS immer die gleiche grösse behalten!
+    /// ohne kompromisse." Rounds 1 and 2 both tried to keep the video's
+    /// size stable by controlling how SwiftUI's LAYOUT NEGOTIATION treats
+    /// it (fixed section vs. flexible ScrollView, then
+    /// `.ignoresSafeArea(.keyboard)`) — evidently still not enough;
+    /// something in this view's tree (candidates: the `.toolbar(.keyboard)`
+    /// accessory itself, or an interaction between `.fullScreenCover` and
+    /// keyboard presentation) still reaches the video's `.aspectRatio(.fit)`
+    /// sizing, which by definition ADAPTS to whatever it's proposed.
+    /// Removing that dependency entirely this time: an explicit, hardcoded
+    /// `.frame(width:height:)` computed directly from `UIScreen.main.
+    /// bounds` (device screen size, NOT a GeometryReader's live proposed
+    /// size — that would still fluctuate with the keyboard) — this makes
+    /// the video's size a fixed number, structurally outside SwiftUI's
+    /// layout negotiation altogether, so NOTHING happening anywhere else
+    /// in the tree can change it, regardless of which exact mechanism was
+    /// actually responsible for the previous two rounds' failures.
+    private var videoSize: CGSize {
+        let width = UIScreen.main.bounds.width
+        return CGSize(width: width, height: width * 9.0 / 16.0)
+    }
+
     init(video: Video, version: VideoVersion, projectId: String? = nil, onVersionUpdated: @escaping (VideoVersion) -> Void) {
         self.video = video
         self.version = version
@@ -140,7 +164,10 @@ struct VideoPlayerSheet: View {
             // maximizes the video's size within its fixed 16:9 ratio.
             if let player {
                 VideoPlayer(player: player)
-                    .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                    // 2026-09-20 (3rd round) — hardcoded frame, not
+                    // `.aspectRatio(.fit)`, see `videoSize`'s own doc
+                    // comment on the struct for why.
+                    .frame(width: videoSize.width, height: videoSize.height)
                     .clipShape(RoundedRectangle(cornerRadius: 20))
                     .padding(.top, 8)
                     // 2026-09-20, Lino: "die kommentar funktion soll IMMER
