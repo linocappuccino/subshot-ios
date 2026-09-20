@@ -49,12 +49,6 @@ struct VideoPlayerSheet: View {
     @ObservedObject private var language = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
     @State private var player: AVPlayer?
-    /// 2026-07-26 — was two separate bools (showCommentField/
-    /// showCommentList); Lino: "drückt man [den Kommentar-Button], sieht
-    /// man die anderen Kommentare UND kann direkt einen neuen Kommentar
-    /// einfügen" — one tap now always reveals BOTH together instead of the
-    /// add-bar only being reachable via the old long-press.
-    @State private var showCommentPanel = false
     @State private var commentText = ""
     @State private var authorName = ""
     @State private var comments: [VideoComment]
@@ -112,28 +106,24 @@ struct VideoPlayerSheet: View {
                     .clipShape(RoundedRectangle(cornerRadius: 20))
                     .padding(.horizontal, 12)
                     .padding(.top, 8)
-                    // 2026-07-21, #284 — swipe down closes the player
-                    // (back to the Postproduction grid), swipe up reveals
-                    // the comment panel; a plain vertical-translation
-                    // DragGesture rather than anything library-specific
-                    // (web's VideoReviewModal has no swipe gestures at
-                    // all to port from — this is a mobile-native addition
-                    // the ticket asks for directly). Horizontal drags are
-                    // ignored (scrubbing stays the system VideoPlayer's
-                    // own built-in seek bar). The long-press-to-comment
-                    // gesture that used to live here is gone — see this
-                    // struct's own top-of-file doc comment for why.
+                    // 2026-09-20, Lino: "die kommentar funktion soll IMMER
+                    // geöffnet sein unter dem Video (unter den Buttons)...
+                    // die video grösse soll sich dabei NICHT ändern" — the
+                    // comment list/bar below are no longer a toggled
+                    // overlay (see controlCluster/commentListOverlay's own
+                    // doc comments), so there's nothing left to "reveal"
+                    // via a swipe up. Swipe DOWN to close is unchanged;
+                    // the video's own frame (fixed 16:9 aspectRatio above)
+                    // was never touched by that toggle either way, but
+                    // removing the toggle entirely makes that guarantee
+                    // structural instead of incidental.
                     .gesture(
                         DragGesture(minimumDistance: 30)
                             .onEnded { value in
                                 let v = value.translation.height
                                 let h = value.translation.width
-                                guard abs(v) > abs(h) * 1.5 else { return }
-                                if v > 80 {
-                                    dismiss()
-                                } else if v < -80 {
-                                    withAnimation { showCommentPanel = true }
-                                }
+                                guard abs(v) > abs(h) * 1.5, v > 80 else { return }
+                                dismiss()
                             }
                     )
                     // 2026-08-05, Lino: "egal wo man auf das video klickt,
@@ -162,26 +152,20 @@ struct VideoPlayerSheet: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .padding(.top, 12)
             }
-            if !showCommentPanel {
-                // 2026-07-26 — bottom-trailing custom cluster, well
-                // clear of AVKit's own top-trailing AirPlay/PiP corner
-                // (see doc comment above). Hidden while the panel is
-                // open — the panel's own send button takes over.
-                // 2026-09-20 — now sits directly below the boxed video
-                // (not overlaid on its bottom edge anymore), so the old
-                // 56pt "clear AVKit's transport bar" padding is gone.
-                HStack {
-                    Spacer()
-                    controlCluster
-                }
-                .padding(.trailing, 16)
-                .padding(.top, 16)
+            // 2026-09-20 — controlCluster (Bild/Video/Kommentar-Zähler) and
+            // the comment list+input bar now always render together below
+            // the video, unconditionally — previously the comment panel
+            // was a toggled overlay that replaced this row when open; now
+            // both always coexist, per Lino's explicit "immer geöffnet".
+            HStack {
+                Spacer()
+                controlCluster
             }
-            if showCommentPanel {
-                commentListOverlay
-                    .padding(.top, 16)
-                commentBar
-            }
+            .padding(.trailing, 16)
+            .padding(.top, 16)
+            commentListOverlay
+                .padding(.top, 12)
+            commentBar
             Spacer(minLength: 0)
         }
         .background(Color.black.ignoresSafeArea())
@@ -360,12 +344,16 @@ struct VideoPlayerSheet: View {
     /// 2026-07-26 — replaces the old broken long-press: an always-tappable
     /// button that pauses playback (so the timestamp a new comment lands
     /// on doesn't keep drifting while typing, same intent the long-press
-    /// originally had) and opens the merged list+add panel in one go.
+    /// originally had).
+    /// 2026-09-20 — the comment list/bar are no longer a toggled panel
+    /// this button opens (see body's own doc comment, always visible
+    /// below the video now) — tapping just pauses and jumps focus straight
+    /// to the input field, a quick "reply now" shortcut instead of a
+    /// show/hide action.
     private var commentButton: some View {
         Button {
             player?.pause()
-            withAnimation { showCommentPanel.toggle() }
-            if showCommentPanel { commentFieldFocused = true }
+            commentFieldFocused = true
         } label: {
             // 2026-08-09, Lino: "abgeschlossene kommentare sollen nicht auf
             // dem Player gezählt werden (nur offene kommentare sollen als
@@ -385,23 +373,13 @@ struct VideoPlayerSheet: View {
     private var commentListOverlay: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
-                // 2026-07-26 — the comment button that opens this panel
-                // hides itself while the panel is showing (see body
-                // above), so there needs to be an explicit close affordance
-                // in here instead of relying purely on the swipe-down
-                // gesture.
-                HStack {
-                    Text(language.t("videoPlayerSheet.comments"))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.6))
-                    Spacer()
-                    Button {
-                        withAnimation { showCommentPanel = false }
-                    } label: {
-                        Image(systemName: "chevron.down.circle.fill")
-                            .foregroundStyle(.white.opacity(0.6))
-                    }
-                }
+                // 2026-09-20 — was closable (a chevron button here cleared
+                // showCommentPanel); the panel is now always open (see
+                // body's own doc comment), so there's nothing left to
+                // close — just a plain section label.
+                Text(language.t("videoPlayerSheet.comments"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.6))
                 if comments.isEmpty {
                     Text(language.t("videoPlayerSheet.noComments"))
                         .font(.caption)
@@ -541,7 +519,8 @@ struct VideoPlayerSheet: View {
             updated.comments = comments
             onVersionUpdated(updated)
             commentText = ""
-            showCommentPanel = false
+            // 2026-09-20 — used to also close the (then-toggled) comment
+            // panel here; it's always open now, nothing to close.
             // 2026-08-05, Lino: "spielt das video automatisch wieder ab,
             // das ist falsch, man soll wieder auf das video klicken" —
             // used to auto-resume here; now stays paused, same as
