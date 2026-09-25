@@ -345,7 +345,13 @@ struct PostproductionListView: View {
             get: { playing.map { PlayingPostproductionVideo(video: $0.video, version: $0.version) } },
             set: { if $0 == nil { playing = nil } }
         )) { item in
-            VideoPlayerSheet(video: item.video, version: item.version, projectId: viewModel.projectId) { updated in
+            VideoPlayerSheet(
+                video: item.video,
+                version: item.version,
+                projectId: viewModel.projectId,
+                sectionStatus: sections.first(where: { $0.id == item.video.sectionId })?.postproductionStatus,
+                canEditStage: canEditStatus
+            ) { updated in
                 updateVersion(updated, videoId: item.video.id)
             }
         }
@@ -799,10 +805,32 @@ private struct PostproductionVideoTile: View {
                         .labelsHidden()
                         .font(.subheadline)
                     }
-                } else if let deadline = section.postproductionDeadline {
-                    Text(language.t("postproductionListView.deadlineWithValue").replacingOccurrences(of: "{date}", with: deadline.formatted(date: .abbreviated, time: .omitted)))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                }
+                // 2026-09-25, Lino: "in der Postproduction-Übersicht muss der
+                // momentan ausgewählte Stand rechts unten, wo auch die anderen
+                // Infos stehen, angezeigt werden" (web-parity, VideoTile's
+                // PostStageLabel) — shares the read-only deadline's row.
+                let stage = PostStage.effective(version: readyVersion, video: video, sectionStatus: section.postproductionStatus)
+                let readOnlyDeadline = canEditTitleAndDeadline ? nil : section.postproductionDeadline
+                if stage != nil || readOnlyDeadline != nil {
+                    HStack(spacing: 8) {
+                        if let readOnlyDeadline {
+                            Text(language.t("postproductionListView.deadlineWithValue").replacingOccurrences(of: "{date}", with: readOnlyDeadline.formatted(date: .abbreviated, time: .omitted)))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 8)
+                        if let stage {
+                            HStack(spacing: 5) {
+                                Circle()
+                                    .fill(stage == .abgenommen ? Color.green : Color.secondary)
+                                    .frame(width: 7, height: 7)
+                                Text(language.t(stage.labelKey))
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(stage == .abgenommen ? Color.green : Color.secondary)
+                            }
+                        }
+                    }
                 }
             } else {
                 Text(section.name)

@@ -46,6 +46,13 @@ struct VideoPlayerSheet: View {
     /// a real value. The share button hides itself when nil.
     var projectId: String? = nil
     var onVersionUpdated: (VideoVersion) -> Void
+    /// 2026-09-25 — stage timeline (web-parity, PostStageTimeline.tsx): the
+    /// section's status only drives the automatic "Abgenommen" step;
+    /// `canEditStage` = same editor+ gate as the tile's status pill.
+    var sectionStatus: PostproductionStatus? = nil
+    var canEditStage: Bool = false
+    @State private var postStage: String?
+    @State private var savingStage = false
 
     @ObservedObject private var language = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
@@ -135,12 +142,15 @@ struct VideoPlayerSheet: View {
     /// so the OTHER layer knows how much top space to reserve.
     @State private var topLayerHeight: CGFloat = 0
 
-    init(video: Video, version: VideoVersion, projectId: String? = nil, onVersionUpdated: @escaping (VideoVersion) -> Void) {
+    init(video: Video, version: VideoVersion, projectId: String? = nil, sectionStatus: PostproductionStatus? = nil, canEditStage: Bool = false, onVersionUpdated: @escaping (VideoVersion) -> Void) {
         self.video = video
         self.version = version
         self.projectId = projectId
+        self.sectionStatus = sectionStatus
+        self.canEditStage = canEditStage
         self.onVersionUpdated = onVersionUpdated
         _comments = State(initialValue: version.comments)
+        _postStage = State(initialValue: version.postStage)
     }
 
     var body: some View {
@@ -391,9 +401,16 @@ struct VideoPlayerSheet: View {
     }
 
     private var topBar: some View {
-        HStack {
+        // 2026-09-25, Lino: "oben in der Mitte immer in welchem Stadium sich
+        // das Video befindet … wie ein Zeitstrahl" — centered between the
+        // close button and an equally wide invisible spacer, so it's truly
+        // centered on screen rather than just in the leftover space.
+        HStack(spacing: 8) {
             closeButton
-            Spacer()
+            Spacer(minLength: 0)
+            stageTimeline
+            Spacer(minLength: 0)
+            Color.clear.frame(width: 34, height: 34)
         }
         .padding(.horizontal)
         .padding(.bottom)
@@ -401,6 +418,85 @@ struct VideoPlayerSheet: View {
         // was the default symmetric `.padding()` (~16pt), sitting right
         // under the handlebar; nudged down a bit further.
         .padding(.top, 22)
+    }
+
+    private var currentStage: PostStage? {
+        var local = version
+        local.postStage = postStage
+        return PostStage.effective(version: local, video: video, sectionStatus: sectionStatus)
+    }
+
+    /// Four dots joined by lines; only the CURRENT step shows its name (a
+    /// phone's width can't fit all four labels next to the close button —
+    /// same compromise as web's phone layout). Editors tap a dot to set
+    /// that stage; "Abgenommen" is never tappable, it follows the status.
+    private var stageTimeline: some View {
+        let active = currentStage.flatMap { PostStage.allCases.firstIndex(of: $0) } ?? -1
+        return HStack(spacing: 0) {
+            ForEach(Array(PostStage.allCases.enumerated()), id: \.element) { index, stage in
+                if index > 0 {
+                    Rectangle()
+                        .fill(index <= active ? Color.white.opacity(0.7) : Color.white.opacity(0.2))
+                        .frame(width: 14, height: 1)
+                }
+                let isCurrent = index == active
+                let reached = index <= active
+                let approved = stage == .abgenommen
+                Button {
+                    setStage(stage)
+                } label: {
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(reached ? (approved ? Color.green : Color.white) : Color.clear)
+                            .overlay(Circle().stroke(reached ? Color.clear : Color.white.opacity(0.35), lineWidth: 1))
+                            .frame(width: 8, height: 8)
+                        if isCurrent {
+                            Text(language.t(stage.labelKey))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(approved ? Color.green : Color.white)
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                // allowsHitTesting, not .disabled — a disabled plain button
+                // would render dimmed, and read-only viewers should see the
+                // timeline at full contrast.
+                .allowsHitTesting(canEditStage && !approved && !savingStage)
+                .accessibilityLabel(language.t(stage.labelKey))
+            }
+        }
+    }
+
+    private func setStage(_ stage: PostStage) {
+        guard canEditStage, stage != .abgenommen, stage.rawValue != postStage, !savingStage else { return }
+        let previous = postStage
+        // Optimistic, rolled back on failure. Only `postStage` is merged into
+        // the version handed back up — the PATCH response isn't presigned
+        // (see APIClient.setVideoVersionStage).
+        postStage = stage.rawValue
+        var merged = version
+        merged.comments = comments
+        merged.postStage = stage.rawValue
+        onVersionUpdated(merged)
+        savingStage = true
+        Task {
+            do {
+                _ = try await APIClient.shared.setVideoVersionStage(version.id, stage: stage.rawValue)
+            } catch {
+                postStage = previous
+                var reverted = version
+                reverted.comments = comments
+                reverted.postStage = previous
+                onVersionUpdated(reverted)
+                errorMessage = language.t("postStage.setFailed")
+            }
+            savingStage = false
+        }
     }
 
     /// 2026-08-06, Lino: "können wir da den x button schöner machen um das
@@ -736,6 +832,7 @@ struct VideoPlayerSheet: View {
             comments.append(comment)
             var updated = version
             updated.comments = comments
+            updated.postStage = postStage
             onVersionUpdated(updated)
             commentText = ""
             // 2026-09-20 — used to also close the (then-toggled) comment
@@ -839,6 +936,7 @@ struct VideoPlayerSheet: View {
             comments[index] = updated
             var updatedVersion = version
             updatedVersion.comments = comments
+            updatedVersion.postStage = postStage
             onVersionUpdated(updatedVersion)
         } catch {
             errorMessage = error.localizedDescription

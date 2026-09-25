@@ -1501,6 +1501,17 @@ final class APIClient {
         return try await send(req)
     }
 
+    /// 2026-09-25 — PATCH /video-versions/{id}/stage (web: api.setVideoVersionStage).
+    /// The response is NOT presigned (no playback/thumbnail URLs) — callers
+    /// merge only `postStage` into their existing version, never replace it.
+    func setVideoVersionStage(_ id: String, stage: String) async throws -> VideoVersion {
+        var req = try await authorizedRequest("video-versions/\(id)/stage", method: "PATCH")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let stage: String }
+        req.httpBody = try encoder.encode(Body(stage: stage))
+        return try await send(req)
+    }
+
     func deleteVideoVersion(_ id: String) async throws {
         let req = try await authorizedRequest("video-versions/\(id)", method: "DELETE")
         try await sendNoContent(req)

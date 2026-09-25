@@ -1083,6 +1083,33 @@ struct ReferenceVideo: Codable, Identifiable, Hashable {
     }
 }
 
+/// 2026-09-25, Lino: "Rohschnitt > Feinschnitt > Color Grading > Abgenommen"
+/// als Zeitstrahl oben im Player, pro Version waehlbar — same model as web's
+/// lib/types.ts POST_STAGES/effectivePostStage. Only the first three are
+/// stored (VideoVersion.postStage); `.abgenommen` follows the section's
+/// "abgeschlossen" status automatically for the newest ready version.
+enum PostStage: String, CaseIterable {
+    case rohschnitt, feinschnitt, colorGrading = "color_grading", abgenommen
+
+    var labelKey: String {
+        switch self {
+        case .rohschnitt: return "postStage.rohschnitt"
+        case .feinschnitt: return "postStage.feinschnitt"
+        case .colorGrading: return "postStage.colorGrading"
+        case .abgenommen: return "postStage.abgenommen"
+        }
+    }
+
+    static func effective(version: VideoVersion?, video: Video, sectionStatus: PostproductionStatus?) -> PostStage? {
+        guard let version else { return nil }
+        if sectionStatus == .abgeschlossen,
+           video.versions.last(where: { $0.status == "ready" })?.id == version.id {
+            return .abgenommen
+        }
+        return version.postStage.flatMap(PostStage.init(rawValue:))
+    }
+}
+
 enum PostproductionStatus: String, Codable, CaseIterable {
     case wartend, inBearbeitung = "in_bearbeitung", wartetAufFeedback = "wartet_auf_feedback"
     case abgeschlossen, abgelehnt
@@ -1185,9 +1212,14 @@ struct VideoVersion: Codable, Identifiable, Hashable {
     /// or for an 'uploading' version, same "still processing" gap web has.
     var thumbnailUrl: String?
     var comments: [VideoComment] = []
+    /// 2026-09-25 (web-parity, PostStageTimeline.tsx) — "rohschnitt" /
+    /// "feinschnitt" / "color_grading", nil for old versions. "abgenommen"
+    /// is never stored, see PostStage.effective.
+    var postStage: String?
 
     enum CodingKeys: String, CodingKey {
         case id, status, comments
+        case postStage = "post_stage"
         case videoId = "video_id"
         case versionNumber = "version_number"
         case originalFilename = "original_filename"

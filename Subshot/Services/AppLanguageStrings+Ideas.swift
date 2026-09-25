@@ -98,6 +98,11 @@ extension AppLanguage {
             "postproductionStatus.wartetAufFeedback": "Wartet auf Feedback",
             "postproductionStatus.abgeschlossen": "Abgeschlossen",
             "postproductionStatus.abgelehnt": "Abgelehnt",
+            "postStage.rohschnitt": "Rohschnitt",
+            "postStage.feinschnitt": "Feinschnitt",
+            "postStage.colorGrading": "Color Grading",
+            "postStage.abgenommen": "Abgenommen",
+            "postStage.setFailed": "Stadium konnte nicht gespeichert werden.",
 
             // PostproductionListView.swift
             "postproductionListView.navTitle": "Postproduction",
@@ -262,6 +267,11 @@ extension AppLanguage {
             "postproductionStatus.wartetAufFeedback": "Awaiting feedback",
             "postproductionStatus.abgeschlossen": "Completed",
             "postproductionStatus.abgelehnt": "Rejected",
+            "postStage.rohschnitt": "Rough cut",
+            "postStage.feinschnitt": "Fine cut",
+            "postStage.colorGrading": "Color grading",
+            "postStage.abgenommen": "Approved",
+            "postStage.setFailed": "Could not save the stage.",
 
             // PostproductionListView.swift
             "postproductionListView.navTitle": "Postproduction",
