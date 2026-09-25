@@ -463,6 +463,17 @@ struct VideoPlayerSheet: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                // 2026-09-25, Lino: "über dem aktivierten Workflow klein
+                // 'Working on'" (web-parity) — overlaid into the reserved top
+                // padding below, so switching stages never changes the bar's
+                // height. Not shown for "Abgenommen" (nothing in work).
+                .overlay(alignment: .top) {
+                    if isCurrent && !approved {
+                        WorkingOnKicker()
+                            .offset(y: -8)
+                            .allowsHitTesting(false)
+                    }
+                }
                 // allowsHitTesting, not .disabled — a disabled plain button
                 // would render dimmed, and read-only viewers should see the
                 // timeline at full contrast.
@@ -470,6 +481,7 @@ struct VideoPlayerSheet: View {
                 .accessibilityLabel(language.t(stage.labelKey))
             }
         }
+        .padding(.top, 8)
     }
 
     private func setStage(_ stage: PostStage) {
@@ -941,5 +953,19 @@ struct VideoPlayerSheet: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+/// Tiny "Working on" caption above the current (not yet approved) post stage —
+/// player timeline + postproduction tile, mirrors web's PostStageTimeline.tsx.
+/// Deliberately English in every UI language (Lino's wording).
+struct WorkingOnKicker: View {
+    var body: some View {
+        Text(verbatim: "WORKING ON")
+            .font(.system(size: 8, weight: .medium))
+            .tracking(0.6)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .fixedSize()
     }
 }

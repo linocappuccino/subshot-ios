@@ -821,13 +821,19 @@ private struct PostproductionVideoTile: View {
                         }
                         Spacer(minLength: 8)
                         if let stage {
-                            HStack(spacing: 5) {
-                                Circle()
-                                    .fill(stage == .abgenommen ? Color.green : Color.secondary)
-                                    .frame(width: 7, height: 7)
-                                Text(language.t(stage.labelKey))
-                                    .font(.caption.weight(.medium))
-                                    .foregroundStyle(stage == .abgenommen ? Color.green : Color.secondary)
+                            VStack(alignment: .trailing, spacing: 2) {
+                                // "Working on" caption (web-parity); kept but
+                                // hidden when approved so tile heights match.
+                                WorkingOnKicker()
+                                    .opacity(stage == .abgenommen ? 0 : 1)
+                                HStack(spacing: 5) {
+                                    Circle()
+                                        .fill(stage == .abgenommen ? Color.green : Color.secondary)
+                                        .frame(width: 7, height: 7)
+                                    Text(language.t(stage.labelKey))
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(stage == .abgenommen ? Color.green : Color.secondary)
+                                }
                             }
                         }
                     }
