@@ -36,6 +36,7 @@ struct IdeaBoardScreen: View {
                     switch message["type"] as? String {
                     case "close": dismiss()
                     case "deleted": dismiss()
+                    case "ready": loading = false
                     default: break
                     }
                 }
@@ -52,6 +53,11 @@ struct IdeaBoardScreen: View {
         }
         .preferredColorScheme(.dark)
         .task { await prepare() }
+        // safety net: never leave the spinner over a working board
+        .task {
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            loading = false
+        }
         .onDisappear {
             // approval / scenes / title may have changed on the board
             Task { await viewModel.load(resetGeneration: false, includeSecondary: true) }
@@ -98,6 +104,7 @@ struct BoardWebView: UIViewRepresentable {
         web.scrollView.contentInsetAdjustmentBehavior = .never
         web.allowsBackForwardNavigationGestures = false
         web.load(URLRequest(url: url))
+        context.coordinator.observe(web)
         return web
     }
 
@@ -109,7 +116,17 @@ struct BoardWebView: UIViewRepresentable {
 
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         let parent: BoardWebView
+        private var urlObservation: NSKeyValueObservation?
         init(_ parent: BoardWebView) { self.parent = parent }
+
+        /// the auth page redirects client-side (history.replaceState) — no didFinish for the idea URL,
+        /// but webView.url changes, so watch that too
+        func observe(_ web: WKWebView) {
+            urlObservation = web.observe(\.url, options: [.new]) { [weak self] view, _ in
+                guard view.url?.path.hasPrefix("/embed/idea") == true else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { self?.parent.loading = false }
+            }
+        }
 
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
             guard let body = message.body as? [String: Any] else { return }
