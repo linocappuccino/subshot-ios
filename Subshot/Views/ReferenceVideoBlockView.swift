@@ -100,7 +100,27 @@ struct ReferenceVideoBlockView: View {
     }
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 10) {
+            // 2026-10-12, Lino: "kann das feld 'add scribble video' kleiner sein? wenn man keines hat,
+            // muss das nicht so präsent sein, ein kleiner button würde reichen" (web parity)
+            if section.referenceVideos.isEmpty {
+                Button {
+                    replaceTargetId = nil
+                    showingLibrary = true
+                } label: {
+                    Label(language.t("referenceVideo.upload"), systemImage: "plus")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule().strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4]))
+                                .foregroundStyle(.tertiary)
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.referenceVideoUploading)
+            } else {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 if row.count == 1, let only = row.first, only.isFullWidth {
                     entryView(only)
@@ -109,6 +129,7 @@ struct ReferenceVideoBlockView: View {
                         ForEach(row) { entryView($0) }
                     }
                 }
+            }
             }
         }
         .photosPicker(isPresented: $showingLibrary, selection: $pickerItem, matching: .videos)
