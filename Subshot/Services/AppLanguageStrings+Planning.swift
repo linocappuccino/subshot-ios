@@ -100,6 +100,7 @@ extension AppLanguage {
             "rounds.badge": "Runde {used}",
             "rounds.limitTitle": "Vereinbarte Runden für dieses Video",
             "rounds.projectDefault": "Wie Projekt-Standard",
+            "ideaBoard.loadFailed": "Das Board konnte nicht geöffnet werden.",
         ],
         "en": [
             "shotlistProgress.shot": "scenes in the can",
@@ -196,6 +197,7 @@ extension AppLanguage {
             "rounds.badge": "Round {used}",
             "rounds.limitTitle": "Agreed rounds for this video",
             "rounds.projectDefault": "Project default",
+            "ideaBoard.loadFailed": "Couldn't open the board.",
         ],
     ]
 }

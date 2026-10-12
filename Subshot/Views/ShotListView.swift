@@ -3763,8 +3763,8 @@ private struct ShotListSheetsAndAlerts: ViewModifier {
             // #276 — the Ideas page's bottom-right FAB's own "just created,
             // now open it" sheet; independent of IdeaGridView's own
             // editingIdea (that one's for tapping an EXISTING tile).
-            .sheet(item: $ideaCreatedByFAB) { idea in
-                IdeaEditSheet(idea: idea, viewModel: viewModel)
+            .fullScreenCover(item: $ideaCreatedByFAB) { idea in
+                IdeaBoardScreen(idea: idea, viewModel: viewModel)
             }
             .sheet(item: $assigneeSheetScene) { scene in
                 SceneAssigneeSheet(scene: scene, viewModel: viewModel)

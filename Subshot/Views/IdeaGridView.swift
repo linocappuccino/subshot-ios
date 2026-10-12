@@ -114,8 +114,9 @@ struct IdeaGridView: View {
             }
         }
         .padding(.horizontal, 16)
-        .sheet(item: $editingIdea) { idea in
-            IdeaEditSheet(idea: idea, viewModel: viewModel)
+        // 2026-10-12 — the real web idea board (IdeaBoardScreen) instead of the old text editor
+        .fullScreenCover(item: $editingIdea) { idea in
+            IdeaBoardScreen(idea: idea, viewModel: viewModel)
         }
         .task {
             if let initialSelectedIdeaId, let idea = viewModel.ideas.first(where: { $0.id == initialSelectedIdeaId }) {
