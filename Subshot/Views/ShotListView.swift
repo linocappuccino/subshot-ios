@@ -471,6 +471,8 @@ struct ShotListView: View {
     /// entering a section always starts on the narrative view, matching
     /// the web app exactly.
     @State private var shotOrderMode = false
+    /// 2026-10-12 — the shot-list "am Set" sheets (Drehorte, Zeitplan, Callsheet, Optimieren)
+    @State private var planningSheet: PlanningSheet?
     /// 2026-07-23 (#323, Lino: swiping to another section still worked even
     /// when a project only has Postproduction active) — module_concept/
     /// module_scripting/module_postproduction (see ShotListViewModel.load)
@@ -773,6 +775,9 @@ struct ShotListView: View {
                                 .pickerStyle(.segmented)
                                 .padding(.horizontal, 16)
                                 .padding(.bottom, 4)
+                                // 2026-10-12 — web parity: Drehorte, Zeitplan, Callsheet,
+                                // Drehreihenfolge optimieren for the open shotlist
+                                planningBar(section: section)
                                 sectionGroup(section: section)
                             }
                         }
@@ -893,6 +898,22 @@ struct ShotListView: View {
             onConfirmReset: resetMarkers
         ))
         .navigationTitle(projectName)
+        .sheet(item: $planningSheet) { sheet in
+            switch sheet {
+            case .places(let sectionId):
+                SceneLocationsSheet(viewModel: viewModel, sectionId: sectionId)
+            case .schedule(let sectionId):
+                LiveScheduleSheet(
+                    projectId: projectId,
+                    planScenes: sectionId.flatMap { id in viewModel.sections.first { $0.id == id } }.map { viewModel.scenesInShootingOrder(in: $0) } ?? [],
+                    onPlanned: { await viewModel.load(resetGeneration: false, includeSecondary: true) }
+                )
+            case .callsheet:
+                CallsheetSheet(projectId: projectId, projectName: projectName)
+            case .optimize(let sectionId):
+                ShootingOrderSheet(viewModel: viewModel, sectionId: sectionId, onApplied: { shotOrderMode = true })
+            }
+        }
         .navigationBarTitleDisplayMode(.inline)
         // 2026-08-31, Lino: "mit dem < button der ganz oben links schon
         // ist, kommt man eine stufe zurück (zur shotlist übersicht)" —
@@ -1925,10 +1946,11 @@ struct ShotListView: View {
                                 .foregroundStyle(.primary)
                                 .lineLimit(2)
                                 .multilineTextAlignment(.leading)
+                            // 2026-10-12, Lino: "wie viel szenen von wie viel szenen schon
+                            // geschossen / erledigt wurden" — ring + "7/12 im Kasten" + bar
+                            let progress = viewModel.progress(in: section)
+                            ShotlistProgressView(done: progress.done, total: progress.total)
                             HStack(spacing: 8) {
-                                Text("\(viewModel.scenes(in: section).count) \(language.t("scriptOverview.sceneCount"))")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
                                 if openCommentCount > 0 {
                                     Label("\(openCommentCount)", systemImage: "bubble.left.fill")
                                         .font(.caption.weight(.semibold))
@@ -2997,37 +3019,9 @@ struct ShotListView: View {
                         }
                     }
                 }
-                if let address = scene.locationAddress, let lat = scene.locationLat, let lng = scene.locationLng {
-                    HStack(alignment: .top, spacing: 10) {
-                        SceneMapThumbnail(lat: lat, lng: lng, size: 56)
-                        // 2026-07-14, Lino: "adressen text soll immer
-                        // linksbündig sein" — explicit leading alignment +
-                        // a full-width leading frame, so a wrapped 2-line
-                        // address can't end up reading as centered/ragged
-                        // next to the fixed-width map thumbnail. Still read
-                        // as "Blocksatz" (justified) 2026-07-15 — added
-                        // fixedSize(horizontal:false, vertical:true):
-                        // without it, a lineLimit(2) Text that only NEEDS 1
-                        // line at this width can get its content
-                        // redistributed/stretched across the full 2-line
-                        // budget by SwiftUI's line-breaking instead of
-                        // collapsing to one short line, which reads as
-                        // artificially wide word gaps — the actual
-                        // "Blocksatz" symptom, not a plain alignment miss
-                        // (multilineTextAlignment was already correct).
-                        // HStack alignment also pinned to .top (was
-                        // default .center) so a short 1-line address
-                        // doesn't vertically center-shift against the
-                        // fixed-size map thumbnail.
-                        Text(address)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
+                // 2026-10-12 — web parity: the scene's Drehort as a coloured 📍 pill (full address →
+                // Google Maps, chevron → pick another place of this shotlist) + weather at its start
+                sceneplaceAndWeather(scene)
             }
             // Separates the content above from the bottom action row below —
             // reads as its own little strip (good take / assignee / im Kasten).
@@ -4374,6 +4368,102 @@ struct SceneAssigneeSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(language.t("common.done")) { dismiss() }
                 }
+            }
+        }
+    }
+}
+
+// MARK: - 2026-10-12 — shot-list "am Set" features (web parity)
+
+enum PlanningSheet: Identifiable {
+    case places(String)
+    case schedule(String?)
+    case callsheet
+    case optimize(String)
+
+    var id: String {
+        switch self {
+        case .places(let s): return "places-\(s)"
+        case .schedule(let s): return "schedule-\(s ?? "")"
+        case .callsheet: return "callsheet"
+        case .optimize(let s): return "optimize-\(s)"
+        }
+    }
+}
+
+extension ShotListView {
+    /// Drehort · Zeitplan · Callsheet · Drehreihenfolge optimieren — one row of capsules under the
+    /// Szenen/Shot-Reihenfolge switch of the open shotlist
+    func planningBar(section: SceneSection) -> some View {
+        let places = viewModel.places(in: section)
+        let placeLabel = section.locationAddress.map(ShotlistPlace.short) ?? language.t("places.button")
+        let extra = places.count - (section.locationAddress != nil ? 1 : 0)
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                planningChip(icon: "mappin.circle.fill", tint: places.first?.color ?? .secondary,
+                             title: placeLabel + (extra > 0 ? "  +\(extra)" : "")) {
+                    planningSheet = .places(section.id)
+                }
+                planningChip(icon: "clock", tint: .primary, title: language.t("schedule.button")) {
+                    planningSheet = .schedule(section.id)
+                }
+                planningChip(icon: "list.clipboard", tint: .primary, title: language.t("callsheet.button")) {
+                    planningSheet = .callsheet
+                }
+                planningChip(icon: "sparkles", tint: .primary, title: language.t("optimize.button")) {
+                    planningSheet = .optimize(section.id)
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .padding(.bottom, 6)
+    }
+
+    private func planningChip(icon: String, tint: Color, title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon).foregroundStyle(tint)
+                Text(title).lineLimit(1)
+            }
+            .font(.subheadline.weight(.medium))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(Color(.secondarySystemBackground), in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+extension ShotListView {
+    @ViewBuilder
+    func sceneplaceAndWeather(_ scene: Scene) -> some View {
+        let section = viewModel.sections.first { $0.id == scene.sectionId }
+        let address = viewModel.placeAddress(of: scene, in: section)
+        let places = viewModel.places(in: section)
+        let weather = viewModel.sceneWeather[scene.id]
+        if address != nil || weather != nil {
+            HStack(alignment: .top, spacing: 8) {
+                if let address {
+                    let color = places.first { $0.address == address }?.color
+                    if let section {
+                        PlacePill(address: address, color: color, muted: scene.locationAddress == nil) {
+                            ForEach(places) { p in
+                                Button {
+                                    Task { await viewModel.assignPlace(p, to: [scene.id], in: section) }
+                                } label: {
+                                    Label(p.short + (p.isDefault ? " · " + language.t("places.default") : "") + (p.address == address ? "  ✓" : ""),
+                                          systemImage: "mappin.circle.fill")
+                                }
+                            }
+                            Divider()
+                            Button(language.t("places.manage")) { planningSheet = .places(section.id) }
+                        }
+                    } else {
+                        PlacePill(address: address, color: color)
+                    }
+                }
+                Spacer(minLength: 0)
+                if let weather { WeatherPill(weather: weather) }
             }
         }
     }

@@ -62,18 +62,18 @@ final class APIClient {
     /// Set by the app at launch to `{ try await Clerk.shared.session?.getToken() }`.
     var tokenProvider: (() async throws -> String?)?
 
-    private let decoder: JSONDecoder = {
+    let decoder: JSONDecoder = {
         let d = JSONDecoder()
         d.dateDecodingStrategy = .iso8601WithFractionalSeconds
         return d
     }()
-    private let encoder: JSONEncoder = {
+    let encoder: JSONEncoder = {
         let e = JSONEncoder()
         e.dateEncodingStrategy = .iso8601
         return e
     }()
 
-    private func authorizedRequest(_ path: String, method: String = "GET") async throws -> URLRequest {
+    func authorizedRequest(_ path: String, method: String = "GET") async throws -> URLRequest {
         guard let token = try await tokenProvider?(), !token.isEmpty else {
             throw APIError.notAuthenticated
         }
@@ -121,7 +121,7 @@ final class APIClient {
         return req
     }
 
-    private func send<T: Decodable>(_ req: URLRequest) async throws -> T {
+    func send<T: Decodable>(_ req: URLRequest) async throws -> T {
         let (data, response) = try await perform(req)
         guard let http = response as? HTTPURLResponse else {
             throw APIError.network(URLError(.badServerResponse))
@@ -137,7 +137,7 @@ final class APIClient {
         }
     }
 
-    private func sendNoContent(_ req: URLRequest) async throws {
+    func sendNoContent(_ req: URLRequest) async throws {
         let (data, response) = try await perform(req)
         guard let http = response as? HTTPURLResponse else {
             throw APIError.network(URLError(.badServerResponse))
@@ -148,7 +148,7 @@ final class APIClient {
         }
     }
 
-    private func perform(_ req: URLRequest) async throws -> (Data, URLResponse) {
+    func perform(_ req: URLRequest) async throws -> (Data, URLResponse) {
         do {
             return try await URLSession.shared.data(for: req)
         } catch {

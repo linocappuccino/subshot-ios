@@ -64,6 +64,7 @@ final class AppLanguage: ObservableObject {
             projectCoreStrings,
             ideasStrings,
             supportStrings,
+            planningStrings,
         ]
     }
 

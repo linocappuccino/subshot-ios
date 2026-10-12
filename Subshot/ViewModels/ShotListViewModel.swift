@@ -35,6 +35,8 @@ final class ShotListViewModel: ObservableObject {
     }
     private var shotsBySceneId: [String?: [Shot]] = [:]
     @Published var isLoading = false
+    /// 2026-10-12 — weather at each scene's start time and place (see ShotListViewModel+Planning)
+    @Published var sceneWeather: [String: SceneWeather] = [:]
     @Published var errorMessage: String?
     /// Bumped on every load() call (2026-07-15, Lino: "wenn man die seite
     /// öffnet oder refreshed... sollen die info und projektinfo kacheln
@@ -247,6 +249,9 @@ final class ShotListViewModel: ObservableObject {
         if let fetchedAnnotations = await annotationsTask, fetchedAnnotations != annotations {
             annotations = fetchedAnnotations
         }
+        // 2026-10-12 — weather per scene (Open-Meteo on the server, cached there for 30 min) —
+        // only on the "full" ticks, it changes slowly
+        if includeSecondary { await loadSceneWeather() }
         // 2026-09-08 (iOS parity pass) — see canDeleteComments' own doc
         // comment. Gated on includeSecondary same as members/ideas/
         // annotations above — team-admin status doesn't need rechecking on
