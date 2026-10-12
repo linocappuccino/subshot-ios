@@ -45,6 +45,12 @@ struct PostproductionListView: View {
     /// "video data stays local to this screen" precedent the old
     /// VideoPanelView already established.
     @State private var sectionVideos: [String: [Video]] = [:]
+    /// 2026-10-12 — web parity: Fassungen + licences per video, technical check per version,
+    /// feedback rounds per video (internal page only)
+    @State private var extras: [String: VideoExtras] = [:]
+    @State private var qc: [String: VideoQC] = [:]
+    @State private var rounds: FeedbackRounds?
+    @State private var qcFor: Video?
     @State private var isLoadingVideos = true
     @State private var errorMessage: String?
 
@@ -207,6 +213,19 @@ struct PostproductionListView: View {
                             onChangeAssignee: { userId in
                                 guard let video = tile.video else { return }
                                 Task { await updateVideoAssignee(video, sectionId: tile.section.id, userId: userId) }
+                            },
+                            extras: tile.video.map { extras[$0.id] ?? .empty },
+                            onExtrasChange: { x in if let id = tile.video?.id { extras[id] = x } },
+                            onError: { errorMessage = $0 },
+                            qc: tile.video.flatMap { v in v.versions.last(where: { $0.status == "ready" }).flatMap { qc[$0.id] } },
+                            onOpenQC: canEditStatus ? Optional({ qcFor = tile.video }) : nil,
+                            rounds: tile.video.flatMap { rounds?.videos[$0.id] },
+                            onSetRoundLimit: !canEditStatus ? nil : { (limit: Int?) in
+                                guard let id = tile.video?.id else { return }
+                                Task {
+                                    do { try await APIClient.shared.setVideoRoundLimit(videoId: id, limit: limit) } catch { errorMessage = error.localizedDescription }
+                                    rounds = try? await APIClient.shared.feedbackRounds(projectId: viewModel.projectId)
+                                }
                             }
                         )
                     }
@@ -296,9 +315,19 @@ struct PostproductionListView: View {
         // guards the deep-link auto-open so it still only ever fires once,
         // even though this task can legitimately re-run more than once now
         // (e.g. a section genuinely added/removed later).
+        .sheet(item: $qcFor) { video in
+            let version = video.versions.last(where: { $0.status == "ready" })
+            QCSheet(title: video.title, qc: version.flatMap { qc[$0.id] }, versionId: version?.id) {
+                guard let id = version?.id else { return }
+                try? await APIClient.shared.rerunVideoQC(versionId: id)
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                await loadExtras()
+            }
+        }
         .task(id: sections.map(\.id)) {
             guard !sections.isEmpty else { return }
             await loadAllVideos()
+            await loadExtras()
             if !didAutoOpenInitialVideo, let initialVideoId,
                let video = sectionVideos.values.flatMap({ $0 }).first(where: { $0.id == initialVideoId }),
                let version = video.versions.last(where: { $0.status == "ready" }) {
@@ -400,6 +429,18 @@ struct PostproductionListView: View {
     /// each one resolves via `for await`, which resumes on this function's
     /// own calling context — safe, no concurrent-mutation risk despite the
     /// child tasks themselves running in parallel.
+    /// 2026-10-12 — Fassungen, technical check, feedback rounds (all extra info: failures stay silent)
+    private func loadExtras() async {
+        let pid = viewModel.projectId
+        let target = UserDefaults.standard.object(forKey: "subshot.qcTarget.\(pid)") as? Double ?? -14
+        async let x = try? APIClient.shared.videoExtras(projectId: pid)
+        async let q = try? APIClient.shared.videoQC(projectId: pid, target: target)
+        async let r = try? APIClient.shared.feedbackRounds(projectId: pid)
+        if let x = await x, x != extras { extras = x }
+        if let q = await q, q != qc { qc = q }
+        if let r = await r, r != rounds { rounds = r }
+    }
+
     private func loadAllVideos() async {
         isLoadingVideos = true
         defer { isLoadingVideos = false }
@@ -607,6 +648,13 @@ private struct PostproductionVideoTile: View {
     /// `editable={canEditStatus}` rather than assuming from the question's
     /// wording alone.
     let onChangeAssignee: (String?) -> Void
+    var extras: VideoExtras? = nil
+    var onExtrasChange: ((VideoExtras) -> Void)? = nil
+    var onError: ((String) -> Void)? = nil
+    var qc: VideoQC? = nil
+    var onOpenQC: (() -> Void)? = nil
+    var rounds: FeedbackRounds.VideoRounds? = nil
+    var onSetRoundLimit: ((Int?) -> Void)? = nil
 
     @State private var deadline: Date
     /// 2026-08-06, Lino: "wenn man feste oder lange auf ein video ... drückt,
@@ -621,8 +669,18 @@ private struct PostproductionVideoTile: View {
         section: SceneSection, video: Video?, members: [Member], canEditStatus: Bool, canEditTitleAndDeadline: Bool, uploading: Bool,
         onTapUpload: @escaping () -> Void, onPlay: @escaping (Video, VideoVersion) -> Void, onEditTitle: @escaping () -> Void,
         onStatusChange: @escaping (PostproductionStatus) -> Void, onDeadlineChange: @escaping (Date?) -> Void,
-        onDeleteVideo: @escaping () -> Void, onChangeAssignee: @escaping (String?) -> Void
+        onDeleteVideo: @escaping () -> Void, onChangeAssignee: @escaping (String?) -> Void,
+        extras: VideoExtras? = nil, onExtrasChange: ((VideoExtras) -> Void)? = nil, onError: ((String) -> Void)? = nil,
+        qc: VideoQC? = nil, onOpenQC: (() -> Void)? = nil,
+        rounds: FeedbackRounds.VideoRounds? = nil, onSetRoundLimit: ((Int?) -> Void)? = nil
     ) {
+        self.extras = extras
+        self.onExtrasChange = onExtrasChange
+        self.onError = onError
+        self.qc = qc
+        self.onOpenQC = onOpenQC
+        self.rounds = rounds
+        self.onSetRoundLimit = onSetRoundLimit
         self.section = section
         self.video = video
         self.members = members
@@ -786,6 +844,10 @@ private struct PostproductionVideoTile: View {
                 // together; editorPill now anchors the row's leading edge,
                 // a Spacer pushes statusPill all the way to the trailing
                 // edge.
+                // 2026-10-12 — the Fassungen right on the tile (web parity)
+                if let extras, let onExtrasChange {
+                    FassungenChipsRow(videoId: video.id, extras: extras, canEdit: canEditStatus, onChange: onExtrasChange, onError: { onError?($0) })
+                }
                 HStack(spacing: 8) {
                     editorPill
                     Spacer(minLength: 8)
@@ -812,29 +874,26 @@ private struct PostproductionVideoTile: View {
                 // PostStageLabel) — shares the read-only deadline's row.
                 let stage = PostStage.effective(version: readyVersion, video: video, sectionStatus: section.postproductionStatus)
                 let readOnlyDeadline = canEditTitleAndDeadline ? nil : section.postproductionDeadline
-                if stage != nil || readOnlyDeadline != nil {
-                    HStack(spacing: 8) {
-                        if let readOnlyDeadline {
-                            Text(language.t("postproductionListView.deadlineWithValue").replacingOccurrences(of: "{date}", with: readOnlyDeadline.formatted(date: .abbreviated, time: .omitted)))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                if let readOnlyDeadline {
+                    Text(language.t("postproductionListView.deadlineWithValue").replacingOccurrences(of: "{date}", with: readOnlyDeadline.formatted(date: .abbreviated, time: .omitted)))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                // 2026-10-12, Lino: "working on ... gib dem mehr platz" — its own line at the very
+                // bottom: "WORKING ON" left, the stage right (web parity)
+                if let stage {
+                    Divider().opacity(0.6)
+                    HStack {
+                        WorkingOnKicker()
+                            .opacity(stage == .abgenommen ? 0 : 1)
                         Spacer(minLength: 8)
-                        if let stage {
-                            VStack(alignment: .trailing, spacing: 2) {
-                                // "Working on" caption (web-parity); kept but
-                                // hidden when approved so tile heights match.
-                                WorkingOnKicker()
-                                    .opacity(stage == .abgenommen ? 0 : 1)
-                                HStack(spacing: 5) {
-                                    Circle()
-                                        .fill(stage == .abgenommen ? Color.green : Color.secondary)
-                                        .frame(width: 7, height: 7)
-                                    Text(language.t(stage.labelKey))
-                                        .font(.caption.weight(.medium))
-                                        .foregroundStyle(stage == .abgenommen ? Color.green : Color.secondary)
-                                }
-                            }
+                        HStack(spacing: 5) {
+                            Circle()
+                                .fill(stage == .abgenommen ? Color.green : Color.primary.opacity(0.8))
+                                .frame(width: 7, height: 7)
+                            Text(language.t(stage.labelKey))
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(stage == .abgenommen ? Color.green : Color.primary.opacity(0.85))
                         }
                     }
                 }
@@ -971,6 +1030,20 @@ private struct PostproductionVideoTile: View {
             if !uploading, let readyVersion {
                 versionAndCommentBadge(readyVersion)
             }
+        }
+        .overlay(alignment: .topLeading) {
+            // 2026-10-12 — technical check + feedback rounds (internal only, web parity)
+            HStack(spacing: 4) {
+                if let qc, qc.status != "none" {
+                    Button { onOpenQC?() } label: { QCBadge(qc: qc) }
+                        .buttonStyle(.plain)
+                        .disabled(onOpenQC == nil)
+                }
+                if let rounds, rounds.used > 0 || rounds.limit != nil {
+                    RoundsBadge(rounds: rounds, canEdit: onSetRoundLimit != nil) { onSetRoundLimit?($0) }
+                }
+            }
+            .padding(6)
         }
     }
 
