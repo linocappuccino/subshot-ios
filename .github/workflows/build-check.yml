@@ -3,7 +3,7 @@ name: iOS build check
 # show up before the app is opened in Xcode.
 on:
   push:
-    branches: [main]
+    branches: [master, main]
   workflow_dispatch:
 jobs:
   build:
