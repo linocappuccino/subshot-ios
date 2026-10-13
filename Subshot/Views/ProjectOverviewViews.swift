@@ -104,9 +104,13 @@ struct PipelineRingsBadge: View {
     }
 }
 
-/// the client's logo on a small white plate
+/// the client's logo — 2026-10-13, Lino: "der Logo-Rand wird rechteckig angezeigt, müsste quadratisch
+/// sein … Logos mit transparentem Hintergrund und leichtem Schatten, damit sie sich von der Kachel
+/// abheben": no plate any more, the logo itself (its own transparency) in a square box, with a soft
+/// shadow that follows its shape
 struct ClientLogoBadge: View {
     let url: String
+    var size: CGFloat = 34
 
     var body: some View {
         AsyncImage(url: URL(string: url)) { phase in
@@ -116,11 +120,9 @@ struct ClientLogoBadge: View {
                 Color.clear
             }
         }
-        .frame(maxWidth: 52, maxHeight: 18)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-        .background(.white.opacity(0.95), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .shadow(color: .black.opacity(0.4), radius: 4, y: 2)
+        .frame(width: size, height: size)
+        .shadow(color: .black.opacity(0.55), radius: 3, y: 1.5)
+        .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
     }
 }
 
