@@ -1043,28 +1043,34 @@ private struct PostproductionVideoTile: View {
                     RoundsBadge(rounds: rounds, canEdit: onSetRoundLimit != nil) { onSetRoundLimit?($0) }
                 }
             }
-            .padding(6)
+            .padding(10)
         }
     }
 
     private func versionAndCommentBadge(_ version: VideoVersion) -> some View {
         let openCount = version.comments.filter { !$0.resolved }.count
+        // 2026-10-12, Lino: "die versions zahl geht immer leicht über die rundung hinaus" — inset
+        // far enough from the thumbnail's rounded corner, compact rounded badge
         return HStack(spacing: 4) {
-            Text("v\(version.versionNumber)")
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.8))
-                .padding(.horizontal, 8)
+            Text("V\(version.versionNumber)")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .padding(.horizontal, 7)
                 .padding(.vertical, 3)
-                .background(.black.opacity(0.5), in: Capsule())
+                .background(.black.opacity(0.55), in: Capsule())
+                .overlay(Capsule().strokeBorder(.white.opacity(0.15), lineWidth: 0.5))
             if openCount > 0 {
-                Text("💬 \(openCount)")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.8))
-                    .padding(.horizontal, 8)
+                Label("\(openCount)", systemImage: "bubble.left.fill")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .labelStyle(.titleAndIcon)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7)
                     .padding(.vertical, 3)
-                    .background(.black.opacity(0.5), in: Capsule())
+                    .background(.black.opacity(0.55), in: Capsule())
+                    .overlay(Capsule().strokeBorder(.white.opacity(0.15), lineWidth: 0.5))
             }
         }
-        .padding(6)
+        .padding(10)
     }
 }
