@@ -25,6 +25,12 @@ struct IdeaBoardScreen: View {
     @State private var url: URL?
     @State private var failed = false
     @State private var loading = true
+    /// 2026-10-13, Lino: "herumgezoomed und jetzt wurde der bildschirm schwarz und ich kann nichts
+    /// mehr machen" — iOS killed the web content process (memory). Reload automatically; if it keeps
+    /// dying, show a native reload/close choice (the web header with ✕ is gone in that state).
+    @State private var crashes: [Date] = []
+    @State private var reloadToken = 0
+    @State private var crashed = false
 
     static let webBase = URL(string: "https://app.subshot.ch")!
 
@@ -32,7 +38,7 @@ struct IdeaBoardScreen: View {
         ZStack {
             Color(red: 0x16 / 255, green: 0x16 / 255, blue: 0x16 / 255).ignoresSafeArea()
             if let url {
-                BoardWebView(url: url, loading: $loading) { message in
+                BoardWebView(url: url, loading: $loading, reloadToken: reloadToken, onCrash: handleCrash) { message in
                     switch message["type"] as? String {
                     case "close": dismiss()
                     case "deleted": dismiss()
@@ -42,7 +48,19 @@ struct IdeaBoardScreen: View {
                 }
                 .ignoresSafeArea(edges: .bottom)
             }
-            if failed {
+            if crashed {
+                VStack(spacing: 14) {
+                    Text(language.t("ideaBoard.crashed")).multilineTextAlignment(.center).foregroundStyle(.secondary)
+                    Button(language.t("ideaBoard.reload")) {
+                        crashed = false
+                        loading = true
+                        reloadToken += 1
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Button(language.t("planning.close")) { dismiss() }
+                }
+                .padding(32)
+            } else if failed {
                 VStack(spacing: 12) {
                     Text(language.t("ideaBoard.loadFailed")).foregroundStyle(.secondary)
                     Button(language.t("planning.close")) { dismiss() }
@@ -50,6 +68,19 @@ struct IdeaBoardScreen: View {
             } else if loading {
                 ProgressView().tint(.white)
             }
+        }
+        .overlay(alignment: .bottomLeading) {
+            // always reachable, even if the page itself hangs or went blank
+            Button { dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .frame(width: 34, height: 34)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .padding(.leading, 14)
+            .padding(.bottom, 6)
+            .opacity(loading || crashed || failed ? 1 : 0.55)
         }
         .preferredColorScheme(.dark)
         .task { await prepare() }
@@ -61,6 +92,17 @@ struct IdeaBoardScreen: View {
         .onDisappear {
             // approval / scenes / title may have changed on the board
             Task { await viewModel.load(resetGeneration: false, includeSecondary: true) }
+        }
+    }
+
+    private func handleCrash() {
+        let now = Date()
+        crashes = crashes.filter { now.timeIntervalSince($0) < 60 } + [now]
+        if crashes.count >= 3 {
+            crashed = true
+        } else {
+            loading = true
+            reloadToken += 1
         }
     }
 
@@ -84,6 +126,8 @@ struct IdeaBoardScreen: View {
 struct BoardWebView: UIViewRepresentable {
     let url: URL
     @Binding var loading: Bool
+    var reloadToken: Int = 0
+    var onCrash: () -> Void = {}
     let onMessage: ([String: Any]) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -112,16 +156,32 @@ struct BoardWebView: UIViewRepresentable {
         return web
     }
 
-    func updateUIView(_ web: WKWebView, context: Context) {}
+    func updateUIView(_ web: WKWebView, context: Context) {
+        context.coordinator.parent = self
+        if context.coordinator.reloadToken != reloadToken {
+            context.coordinator.reloadToken = reloadToken
+            // the session cookie survives, so the auth page goes straight on to the board
+            web.load(URLRequest(url: url))
+        }
+    }
 
     static func dismantleUIView(_ web: WKWebView, coordinator: Coordinator) {
         web.configuration.userContentController.removeScriptMessageHandler(forName: "subshot")
     }
 
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, UIScrollViewDelegate {
-        let parent: BoardWebView
+        var parent: BoardWebView
+        var reloadToken: Int
         private var urlObservation: NSKeyValueObservation?
-        init(_ parent: BoardWebView) { self.parent = parent }
+        init(_ parent: BoardWebView) {
+            self.parent = parent
+            self.reloadToken = parent.reloadToken
+        }
+
+        /// iOS killed the page (memory) — the web view is blank now
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            DispatchQueue.main.async { self.parent.onCrash() }
+        }
 
         /// the auth page redirects client-side (history.replaceState) — no didFinish for the idea URL,
         /// but webView.url changes, so watch that too

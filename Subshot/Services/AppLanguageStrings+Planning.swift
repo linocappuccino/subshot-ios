@@ -101,6 +101,8 @@ extension AppLanguage {
             "rounds.limitTitle": "Vereinbarte Runden für dieses Video",
             "rounds.projectDefault": "Wie Projekt-Standard",
             "ideaBoard.loadFailed": "Das Board konnte nicht geöffnet werden.",
+            "ideaBoard.crashed": "Das Board musste neu geladen werden (zu wenig Speicher).",
+            "ideaBoard.reload": "Board neu laden",
         ],
         "en": [
             "shotlistProgress.shot": "scenes in the can",
@@ -198,6 +200,8 @@ extension AppLanguage {
             "rounds.limitTitle": "Agreed rounds for this video",
             "rounds.projectDefault": "Project default",
             "ideaBoard.loadFailed": "Couldn't open the board.",
+            "ideaBoard.crashed": "The board had to be reloaded (out of memory).",
+            "ideaBoard.reload": "Reload board",
         ],
     ]
 }
