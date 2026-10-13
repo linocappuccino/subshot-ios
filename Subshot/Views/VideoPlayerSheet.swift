@@ -142,6 +142,11 @@ struct VideoPlayerSheet: View {
     /// so the OTHER layer knows how much top space to reserve.
     @State private var topLayerHeight: CGFloat = 0
 
+    /// 2026-10-13, Lino: "im Player müssen 9:16-Videos immer im Vollbild dargestellt werden, ABER die
+    /// ganzen Kommentar- und anderen Funktionen müssen immer noch direkt auf dem Video erreichbar
+    /// sein" — read from the video track once it's loaded (no aspect info on VideoVersion)
+    @State private var isPortrait = false
+
     init(video: Video, version: VideoVersion, projectId: String? = nil, sectionStatus: PostproductionStatus? = nil, canEditStage: Bool = false, onVersionUpdated: @escaping (VideoVersion) -> Void) {
         self.video = video
         self.version = version
@@ -174,10 +179,27 @@ struct VideoPlayerSheet: View {
         // of its root cause, since it reacts to the real observed
         // position rather than assuming why it moved.
         GeometryReader { outerGeo in
-            content
-                .offset(y: -outerGeo.frame(in: .global).minY)
+            Group {
+                if isPortrait {
+                    portraitContent
+                } else {
+                    content
+                }
+            }
+            .offset(y: -outerGeo.frame(in: .global).minY)
         }
         .ignoresSafeArea()
+        .task(id: version.id) { await detectOrientation() }
+    }
+
+    private func detectOrientation() async {
+        guard let urlString = version.playbackUrl, let url = URL(string: urlString) else { return }
+        let asset = AVURLAsset(url: url)
+        guard let track = try? await asset.loadTracks(withMediaType: .video).first,
+              let (size, transform) = try? await track.load(.naturalSize, .preferredTransform) else { return }
+        let r = size.applying(transform)
+        let portrait = abs(r.height) > abs(r.width) * 1.15
+        if portrait != isPortrait { isPortrait = portrait }
     }
 
     private var content: some View {
@@ -967,5 +989,222 @@ struct WorkingOnKicker: View {
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .fixedSize()
+    }
+}
+
+// MARK: - 9:16 full screen
+
+/// 2026-10-13, Lino: "9:16-Videos immer im Vollbild — aber Kommentare und alle Funktionen direkt auf
+/// dem Video erreichbar": the video fills the screen (its own fixed frame, a layer of its own, so
+/// the keyboard can never move or shrink it — same rule as the landscape layout), everything else
+/// floats on top of it: close + stage timeline at the top, the action buttons on the right (like
+/// TikTok), comments on a dark gradient at the bottom with a scrubber (AVKit's own transport bar
+/// would sit under the comments) and the comment field. Landscape videos keep `content`.
+extension VideoPlayerSheet {
+    fileprivate static var windowInsets: UIEdgeInsets {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first { $0.isKeyWindow }
+        return window?.safeAreaInsets ?? UIEdgeInsets(top: 47, left: 0, bottom: 34, right: 0)
+    }
+
+    var portraitContent: some View {
+        let screen = UIScreen.main.bounds.size
+        let insets = Self.windowInsets
+        // as large as possible at 9:16 — full width on every iPhone (the screen is taller than 16:9)
+        let width = min(screen.width, screen.height * 9.0 / 16.0)
+        let height = width * 16.0 / 9.0
+        return ZStack(alignment: .top) {
+            Color.black
+
+            if let player {
+                // a bare player layer (no AVKit chrome — it would pop up on pause under the overlays;
+                // the scrubber below replaces its transport bar)
+                PlayerLayerView(player: player)
+                    .frame(width: width, height: height)
+                    .clipShape(RoundedRectangle(cornerRadius: insets.top > 30 ? 28 : 0, style: .continuous))
+                    .position(x: screen.width / 2, y: screen.height / 2)
+                    .allowsHitTesting(false)
+                // tap anywhere = play/pause, swipe down = close (under the overlays' own buttons)
+                Color.clear
+                    .contentShape(Rectangle())
+                    .frame(width: screen.width, height: screen.height)
+                    .onTapGesture { togglePlayback() }
+                    .gesture(
+                        DragGesture(minimumDistance: 30)
+                            .onEnded { value in
+                                let v = value.translation.height
+                                guard abs(v) > abs(value.translation.width) * 1.5, v > 80 else { return }
+                                dismiss()
+                            }
+                    )
+            }
+
+            VStack(spacing: 0) {
+                // top: grabber, close, stage timeline — on a soft gradient for legibility
+                VStack(spacing: 0) {
+                    Capsule()
+                        .fill(.white.opacity(0.5))
+                        .frame(width: 36, height: 5)
+                        .padding(.top, 6)
+                    topBar
+                }
+                .padding(.top, insets.top)
+                .background(
+                    LinearGradient(colors: [.black.opacity(0.55), .clear], startPoint: .top, endPoint: .bottom)
+                        .allowsHitTesting(false)
+                )
+
+                HStack {
+                    Spacer()
+                    VStack(spacing: 12) {
+                        saveFrameButton
+                        videoDownloadButton
+                        commentButton
+                    }
+                }
+                .padding(.trailing, 12)
+                .padding(.top, 4)
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.white)
+                        .padding(8)
+                        .background(.red.opacity(0.8))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .padding(.top, 8)
+                }
+
+                Spacer(minLength: 0)
+
+                // bottom: comments + scrubber + input, on a gradient over the video
+                VStack(spacing: 6) {
+                    ScrollView {
+                        commentListContent
+                            .shadow(color: .black.opacity(0.6), radius: 2, y: 1)
+                            .padding(.horizontal, 14)
+                            .padding(.top, 10)
+                    }
+                    .frame(maxHeight: keyboardHeight > 0 ? 140 : screen.height * 0.26)
+                    .scrollDismissesKeyboard(.immediately)
+                    if let player {
+                        PortraitScrubber(player: player, markers: comments.compactMap(\.timestampSeconds))
+                            .padding(.horizontal, 14)
+                    }
+                    commentBar
+                }
+                .padding(.bottom, keyboardHeight > 0 ? keyboardHeight : insets.bottom)
+                .background(
+                    LinearGradient(colors: [.clear, .black.opacity(0.55), .black.opacity(0.8)], startPoint: .top, endPoint: .bottom)
+                        .allowsHitTesting(false)
+                )
+                .animation(.easeOut(duration: 0.25), value: keyboardHeight)
+            }
+            .frame(width: screen.width, height: screen.height)
+        }
+        .frame(width: screen.width, height: screen.height)
+        .ignoresSafeArea(.keyboard, edges: .bottom)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button(language.t("common.done")) { commentFieldFocused = false }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+}
+
+/// AVPlayerLayer without any controls
+private struct PlayerLayerView: UIViewRepresentable {
+    let player: AVPlayer
+
+    final class LayerView: UIView {
+        override class var layerClass: AnyClass { AVPlayerLayer.self }
+        var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+    }
+
+    func makeUIView(context: Context) -> LayerView {
+        let v = LayerView()
+        v.backgroundColor = .black
+        v.playerLayer.videoGravity = .resizeAspect
+        v.playerLayer.player = player
+        return v
+    }
+
+    func updateUIView(_ uiView: LayerView, context: Context) {
+        if uiView.playerLayer.player !== player { uiView.playerLayer.player = player }
+    }
+}
+
+/// a slim scrubber with the comments as dots (portrait full-screen layout)
+private struct PortraitScrubber: View {
+    let player: AVPlayer
+    let markers: [Double]
+    @State private var time: Double = 0
+    @State private var duration: Double = 0
+    @State private var dragging = false
+    @State private var observer: Any?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(Self.label(time))
+                .font(.caption2.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.white.opacity(0.85))
+                .frame(width: 38, alignment: .leading)
+            GeometryReader { geo in
+                let w = geo.size.width
+                let ratio = duration > 0 ? min(1, max(0, time / duration)) : 0
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.white.opacity(0.25)).frame(height: dragging ? 6 : 4)
+                    Capsule().fill(.white).frame(width: w * ratio, height: dragging ? 6 : 4)
+                    ForEach(Array(markers.enumerated()), id: \.offset) { _, t in
+                        if duration > 0 {
+                            Circle().fill(Color.yellow).frame(width: 6, height: 6)
+                                .offset(x: w * min(1, t / duration) - 3)
+                        }
+                    }
+                    Circle().fill(.white).frame(width: dragging ? 16 : 12, height: dragging ? 16 : 12)
+                        .shadow(color: .black.opacity(0.4), radius: 2)
+                        .offset(x: w * ratio - (dragging ? 8 : 6))
+                }
+                .frame(height: 24)
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { v in
+                            guard duration > 0 else { return }
+                            dragging = true
+                            time = min(duration, max(0, Double(v.location.x / w) * duration))
+                            player.seek(to: CMTime(seconds: time, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+                        }
+                        .onEnded { _ in dragging = false }
+                )
+            }
+            .frame(height: 24)
+            Text(Self.label(duration))
+                .font(.caption2.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.white.opacity(0.6))
+                .frame(width: 38, alignment: .trailing)
+        }
+        .animation(.easeOut(duration: 0.15), value: dragging)
+        .onAppear {
+            observer = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main) { t in
+                if !dragging { time = t.seconds.isFinite ? t.seconds : 0 }
+                if let d = player.currentItem?.duration.seconds, d.isFinite, d > 0 { duration = d }
+            }
+        }
+        .onDisappear {
+            if let observer { player.removeTimeObserver(observer) }
+            observer = nil
+        }
+    }
+
+    static func label(_ s: Double) -> String {
+        guard s.isFinite, s >= 0 else { return "0:00" }
+        let total = Int(s.rounded(.down))
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }
