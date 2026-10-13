@@ -102,6 +102,10 @@ struct BoardWebView: UIViewRepresentable {
         // the board pans/zooms itself — no rubber-banding of the page around it
         web.scrollView.bounces = false
         web.scrollView.contentInsetAdjustmentBehavior = .never
+        // the page itself must never move (iOS scrolled it up when a text field got focus, so the
+        // idea header disappeared) — the board pans/zooms on its own
+        web.scrollView.isScrollEnabled = false
+        web.scrollView.delegate = context.coordinator
         web.allowsBackForwardNavigationGestures = false
         web.load(URLRequest(url: url))
         context.coordinator.observe(web)
@@ -114,7 +118,7 @@ struct BoardWebView: UIViewRepresentable {
         web.configuration.userContentController.removeScriptMessageHandler(forName: "subshot")
     }
 
-    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, UIScrollViewDelegate {
         let parent: BoardWebView
         private var urlObservation: NSKeyValueObservation?
         init(_ parent: BoardWebView) { self.parent = parent }
@@ -139,6 +143,13 @@ struct BoardWebView: UIViewRepresentable {
                 DispatchQueue.main.async { self.parent.loading = false }
             }
         }
+
+        func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            if scrollView.contentOffset != .zero { scrollView.contentOffset = .zero }
+        }
+
+        /// no pinch-zoom of the whole page (the board has its own zoom)
+        func viewForZooming(in scrollView: UIScrollView) -> UIView? { nil }
 
         /// links that leave the app (Google Maps, inspiration sites, downloads …) open in Safari
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
