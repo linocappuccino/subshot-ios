@@ -119,6 +119,8 @@ struct IdeaGridView: View {
             IdeaBoardScreen(idea: idea, viewModel: viewModel)
         }
         .task {
+            // 2026-10-13 — warm the board web view in the background (faster first open)
+            BoardWebPool.shared.prewarm()
             if let initialSelectedIdeaId, let idea = viewModel.ideas.first(where: { $0.id == initialSelectedIdeaId }) {
                 editingIdea = idea
             }
