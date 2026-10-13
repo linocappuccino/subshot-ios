@@ -206,6 +206,11 @@ struct ShotListView: View {
     /// session) still needs no camera at all, see continueTimecodeTracking.
     @State private var showingRecMarkersSync = false
     @State private var markerFeedback: String?
+    /// 2026-10-13, Lino: "Take-Bewertung direkt beim Markieren" — the take just marked, rateable for a
+    /// few seconds (✓ good / ✗ NG / ★ / note); id arrives once the server has saved it
+    @State private var lastTake: (sectionId: String, timecode: String, markerId: String?, rating: String?)?
+    @State private var takeNoteDraft = ""
+    @State private var editingTakeNote = false
     @State private var isExportingEDL = false
     @State private var edlExportURL: URL?
     @State private var isPresentingEDLShare = false
@@ -1274,12 +1279,35 @@ struct ShotListView: View {
             try? await Task.sleep(nanoseconds: 1_600_000_000)
             if markerFeedback?.hasSuffix(timecode) == true { withAnimation { markerFeedback = nil } }
         }
+        withAnimation { lastTake = (section.id, timecode, nil, nil) }
         Task {
             do {
-                _ = try await APIClient.shared.createSceneMarker(sectionId: section.id, timecode: timecode, fps: fps)
+                let marker = try await APIClient.shared.createSceneMarker(sectionId: section.id, timecode: timecode, fps: fps)
+                if lastTake?.timecode == timecode { lastTake?.markerId = marker.id }
             } catch {
                 markerErrorMessage = error.localizedDescription
             }
+        }
+        // the rating strip goes away again after a few seconds unless it's being used
+        Task {
+            try? await Task.sleep(nanoseconds: 6_000_000_000)
+            if lastTake?.timecode == timecode, !editingTakeNote { withAnimation { lastTake = nil } }
+        }
+    }
+
+    /// ✓ good (green) / ✗ NG (red) / ★ favourite (yellow) — Resolve marker colours
+    private func rateLastTake(_ rating: String, note: String? = nil) {
+        guard let take = lastTake, let markerId = take.markerId else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        withAnimation { lastTake?.rating = rating }
+        Task {
+            do {
+                _ = try await APIClient.shared.rateSceneMarker(sectionId: take.sectionId, markerId: markerId, rating: rating == "note" ? nil : rating, note: note)
+            } catch {
+                markerErrorMessage = error.localizedDescription
+            }
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            if lastTake?.markerId == markerId, !editingTakeNote { withAnimation { lastTake = nil } }
         }
     }
 
@@ -1721,6 +1749,10 @@ struct ShotListView: View {
             // here (see markClip's own doc comment): this button must stay
             // instantly tappable, repeatedly, for a fast real on-set take
             // sequence.
+            if let take = lastTake {
+                takeRatingStrip(take)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
             Button {
                 markClip()
             } label: {
@@ -1738,6 +1770,47 @@ struct ShotListView: View {
             .disabled(markerTargetSection == nil)
         }
         .padding(.bottom, 20)
+    }
+
+    /// the rating strip right above "Mark Clip": ✓ Good · ✗ NG · ★ · Notiz
+    private func takeRatingStrip(_ take: (sectionId: String, timecode: String, markerId: String?, rating: String?)) -> some View {
+        HStack(spacing: 8) {
+            ForEach([("good", "checkmark", Color.green, "takeRating.good"), ("ng", "xmark", Color.red, "takeRating.ng"), ("fav", "star.fill", Color.yellow, "takeRating.fav")], id: \.0) { r in
+                Button {
+                    rateLastTake(r.0)
+                } label: {
+                    Label(language.t(r.3), systemImage: r.1)
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 9)
+                        .foregroundStyle(take.rating == r.0 ? Color.black : Color.white)
+                        .background(Capsule().fill(take.rating == r.0 ? r.2 : r.2.opacity(0.35)))
+                }
+                .buttonStyle(.plain)
+            }
+            Button {
+                takeNoteDraft = ""
+                editingTakeNote = true
+            } label: {
+                Image(systemName: "square.and.pencil")
+                    .font(.subheadline.weight(.semibold))
+                    .padding(9)
+                    .foregroundStyle(.white)
+                    .background(Circle().fill(Color.white.opacity(0.2)))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(6)
+        .background(.ultraThinMaterial, in: Capsule())
+        .disabled(take.markerId == nil)
+        .opacity(take.markerId == nil ? 0.6 : 1)
+        .alert(language.t("takeRating.noteTitle"), isPresented: $editingTakeNote) {
+            TextField(language.t("takeRating.notePlaceholder"), text: $takeNoteDraft)
+            Button(language.t("common.save")) { rateLastTake(take.rating ?? "note", note: takeNoteDraft) }
+            Button(language.t("common.cancel"), role: .cancel) { withAnimation { lastTake = nil } }
+        } message: {
+            Text(take.timecode)
+        }
     }
 
     private var addSceneButton: some View {

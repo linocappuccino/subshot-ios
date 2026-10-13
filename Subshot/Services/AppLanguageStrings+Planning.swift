@@ -103,6 +103,11 @@ extension AppLanguage {
             "ideaBoard.loadFailed": "Das Board konnte nicht geöffnet werden.",
             "ideaBoard.crashed": "Das Board musste neu geladen werden (zu wenig Speicher).",
             "ideaBoard.reload": "Board neu laden",
+            "takeRating.good": "Good",
+            "takeRating.ng": "NG",
+            "takeRating.fav": "Favorit",
+            "takeRating.noteTitle": "Notiz zum Take",
+            "takeRating.notePlaceholder": "z. B. Fokus sitzt, Ton sauber",
         ],
         "en": [
             "shotlistProgress.shot": "scenes in the can",
@@ -202,6 +207,11 @@ extension AppLanguage {
             "ideaBoard.loadFailed": "Couldn't open the board.",
             "ideaBoard.crashed": "The board had to be reloaded (out of memory).",
             "ideaBoard.reload": "Reload board",
+            "takeRating.good": "Good",
+            "takeRating.ng": "NG",
+            "takeRating.fav": "Favourite",
+            "takeRating.noteTitle": "Take note",
+            "takeRating.notePlaceholder": "e.g. focus OK, clean sound",
         ],
     ]
 }

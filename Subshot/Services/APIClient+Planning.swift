@@ -73,4 +73,15 @@ extension APIClient {
         let req = try await authorizedRequest("sections/\(sectionId)/shooting-order/suggest")
         return try await send(req)
     }
+
+    // MARK: Take rating (2026-10-13)
+
+    /// ✓ good / ✗ ng / ★ fav (nil = keep, "none" = unrated) + optional note (the marker's text)
+    func rateSceneMarker(sectionId: String, markerId: String, rating: String?, note: String? = nil) async throws -> SceneMarker {
+        var req = try await authorizedRequest("sections/\(sectionId)/markers/\(markerId)", method: "PATCH")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let rating: String?; let note: String? }
+        req.httpBody = try encoder.encode(Body(rating: rating, note: note))
+        return try await send(req)
+    }
 }
