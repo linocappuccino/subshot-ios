@@ -415,11 +415,20 @@ struct ProjectListView: View {
                     // comment in SubshotApp.swift) — only rendered on this
                     // root Projects screen, same one-per-screen scoping as
                     // the bell/avatar above.
+                    // 2026-10-13, Lino: "die versions zahl geht immer leicht über die rundung
+                    // hinaus" — on iOS 26 the tag and the avatar share one rounded glass capsule
+                    // and the text touched its left edge; now its own small pill, inset from it
                     Text(Config.buildTag)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.primary.opacity(0.08), in: Capsule())
+                        .fixedSize()
                     AvatarMenu()
                 }
+                .padding(.leading, 8)
             }
         }
     }
