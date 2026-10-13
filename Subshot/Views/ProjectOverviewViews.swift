@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 // 2026-10-13, Lino: "Folgendes umsetzen (auch in der iOS App was passt): Suche und Filter, Pipeline-
 // Fortschritt auf der Kachel, nächster Termin, Kundenlogo, Archiv, Kalenderansicht, Speicher pro
