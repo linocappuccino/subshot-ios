@@ -72,6 +72,12 @@ struct ProjectListView: View {
     @State private var editingFolder: ProjectFolder?
     @State private var showingNotifications = false
     @State private var showingTodoSidebar = false
+    // 2026-10-13 — Projektübersicht: search + step filter + archive across every folder, calendar
+    @ObservedObject private var overview = ProjectOverviewStore.shared
+    @State private var query = ""
+    @State private var stepFilter = "all"
+    @State private var showArchive = false
+    @State private var showingCalendar = false
     /// Blue outline on a folder tile being dragged over — shown for BOTH a
     /// project being filed into it AND another folder being nested into it
     /// (Lino, 2026-07-11: "wenn man ein Projekt oder Ordner über einen
@@ -214,12 +220,53 @@ struct ProjectListView: View {
     // this view entirely ("unable to type-check in reasonable time") — the
     // combination of nested conditionals in .toolbar plus five .sheet
     // modifiers in a single chain was too much for it to solve at once.
+    private var isFiltering: Bool {
+        folderId == nil && (!query.trimmingCharacters(in: .whitespaces).isEmpty || stepFilter != "all" || showArchive)
+    }
+
+    /// search / step filter / archive: a flat list over every folder (no sorting, Lino)
+    private var filteredProjects: [Project] {
+        let source = showArchive ? overview.archivedProjects : overview.allProjects
+        let q = query.trimmingCharacters(in: .whitespaces)
+        return source.filter { p in
+            if !showArchive, stepFilter != "all", overview.meta[p.id]?.currentStep != stepFilter { return false }
+            if q.isEmpty { return true }
+            let hay = "\(p.name) \(p.clientName ?? "") \(p.emoji ?? "")"
+            return hay.range(of: q, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        }
+    }
+
+    private func openProject(_ projectId: String) {
+        if let p = (overview.allProjects + overview.archivedProjects + viewModel.projects).first(where: { $0.id == projectId }) {
+            path.append(p)
+            return
+        }
+        Task {
+            await overview.loadAll()
+            await overview.loadArchived()
+            if let p = (overview.allProjects + overview.archivedProjects).first(where: { $0.id == projectId }) { path.append(p) }
+        }
+    }
+
     private var gridScreen: some View {
         gridContent
             .toolbar { toolbarContent }
+            .modifier(RootSearch(enabled: folderId == nil, query: $query, prompt: language.t("overview.search")))
             .task {
                 await viewModel.load()
                 await restoreLastOpenedProjectIfNeeded()
+            }
+            .task { await overview.loadMeta() }
+            .onChange(of: isFiltering) { _, on in
+                if on { Task { if showArchive { await overview.loadArchived() } else { await overview.loadAll() } } }
+            }
+            .onChange(of: showArchive) { _, on in
+                if on { Task { await overview.loadArchived() } }
+            }
+            .sheet(isPresented: $showingCalendar) {
+                ProjectCalendarSheet { pid in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { openProject(pid) }
+                }
             }
             .task { if folderId == nil { await viewModel.loadNotifications() } }
             .task { if folderId == nil { await viewModel.loadTodoSidebar() } }
@@ -227,6 +274,8 @@ struct ProjectListView: View {
             .onDisappear { viewModel.stopRealtimeSync() }
             .refreshable {
                 await viewModel.load()
+                await overview.loadMeta()
+                if isFiltering { await overview.loadAll(); await overview.loadArchived() }
                 if folderId == nil { await viewModel.loadNotifications() }
                 if folderId == nil { await viewModel.loadTodoSidebar() }
             }
@@ -240,15 +289,44 @@ struct ProjectListView: View {
 
     private var gridContent: some View {
         ScrollView {
-            LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(viewModel.folders) { folder in
-                    folderTile(folder)
-                }
-                ForEach(viewModel.projects) { project in
-                    projectTile(project)
-                }
+            if folderId == nil {
+                OverviewFilterBar(step: $stepFilter, archive: $showArchive, counts: overview.counts)
+                    .padding(.top, 8)
             }
-            .padding(16)
+            if isFiltering {
+                if showArchive {
+                    Text(language.t("overview.archiveHint"))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 10)
+                }
+                LazyVGrid(columns: columns, spacing: 16) {
+                    ForEach(filteredProjects) { project in
+                        projectTile(project)
+                    }
+                }
+                .padding(16)
+                if filteredProjects.isEmpty {
+                    Text(language.t(showArchive && query.isEmpty ? "overview.archiveEmpty" : "overview.noResults"))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                        .padding(.top, 40)
+                }
+            } else {
+                LazyVGrid(columns: columns, spacing: 16) {
+                    ForEach(viewModel.folders) { folder in
+                        folderTile(folder)
+                    }
+                    ForEach(viewModel.projects) { project in
+                        projectTile(project)
+                    }
+                }
+                .padding(16)
+            }
         }
         .background(Color(.systemGroupedBackground))
         // 2026-08-05, Lino: "Startseite der app, mach den hintergrund auch
@@ -265,7 +343,9 @@ struct ProjectListView: View {
         .navigationTitle(folderName ?? "Subshot")
         .navigationBarTitleDisplayMode(.inline)
         .overlay {
-            if viewModel.isLoading && viewModel.projects.isEmpty && viewModel.folders.isEmpty {
+            if isFiltering {
+                EmptyView()
+            } else if viewModel.isLoading && viewModel.projects.isEmpty && viewModel.folders.isEmpty {
                 ProgressView()
             } else if viewModel.projects.isEmpty && viewModel.folders.isEmpty {
                 ContentUnavailableView(
@@ -403,6 +483,12 @@ struct ProjectListView: View {
                         }
                 }
             }
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button { showingCalendar = true } label: {
+                    Image(systemName: "calendar").frame(width: 30, height: 30)
+                }
+                .accessibilityLabel(language.t("overview.calendar"))
+            }
             // 2026-07-21, Lino: "oben soll man auf seinen avatar klicken
             // koennen dann geht ein dialog auf bei dem man sich von der app
             // ausloggen kann, und die sprache der app aendern kann" — same
@@ -445,7 +531,8 @@ struct ProjectListView: View {
                 thumbnailPath: project.thumbnailUrl,
                 fallbackIcon: "film.stack",
                 emoji: project.emoji,
-                pipelineStage: project.pipelineStage
+                pipelineStage: project.pipelineStage,
+                meta: overview.meta[project.id]
             )
         }
         .buttonStyle(.plain)
@@ -467,6 +554,17 @@ struct ProjectListView: View {
         .contextMenu {
             Button { editingProject = project } label: {
                 Label(language.t("common.edit"), systemImage: "pencil")
+            }
+            let isArchived = overview.meta[project.id]?.archived ?? showArchive
+            Button {
+                Task {
+                    if await overview.setArchived(project, !isArchived) {
+                        UINotificationFeedbackGenerator().notificationOccurred(.success)
+                        await viewModel.load(silent: true)
+                    }
+                }
+            } label: {
+                Label(language.t(isArchived ? "overview.restoreAction" : "overview.archiveAction"), systemImage: isArchived ? "tray.and.arrow.up" : "archivebox")
             }
             Button(role: .destructive) {
                 Task { await viewModel.delete(project) }
@@ -503,7 +601,8 @@ struct ProjectListView: View {
                 thumbnailPath: project.thumbnailUrl,
                 fallbackIcon: "film.stack",
                 emoji: project.emoji,
-                pipelineStage: project.pipelineStage
+                pipelineStage: project.pipelineStage,
+                meta: overview.meta[project.id]
             )
             .frame(width: tileSizes[project.id]?.width, height: tileSizes[project.id]?.height)
         }
@@ -592,7 +691,7 @@ struct ProjectListView: View {
 
     /// `pipelineStage` is nil for folder tiles (they have no pipeline of
     /// their own) — only project tiles pass one, see projectTile below.
-    private func tileBody(title: String, subtitle: String?, color: String, thumbnailPath: String?, fallbackIcon: String, emoji: String? = nil, thumbnailFocusPoint: UnitPoint? = nil, pipelineStage: ProjectPipelineStage? = nil) -> some View {
+    private func tileBody(title: String, subtitle: String?, color: String, thumbnailPath: String?, fallbackIcon: String, emoji: String? = nil, thumbnailFocusPoint: UnitPoint? = nil, pipelineStage: ProjectPipelineStage? = nil, meta: ProjectMeta? = nil) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             // Color.clear + .aspectRatio + .overlay, not relying on the
             // ZStack sizing itself from its content — the same bulletproof
@@ -675,6 +774,13 @@ struct ProjectListView: View {
                 // own refractive edge highlight natively. The picked-color
                 // glow (the two .shadow() calls below) is a separate cue
                 // (which project/folder this is), kept alongside the glass.
+                // 2026-10-13 — Projektübersicht: pipeline rings top-left, client logo bottom-right
+                .overlay(alignment: .topLeading) {
+                    if let meta, !meta.steps.isEmpty { PipelineRingsBadge(meta: meta).padding(7) }
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    if let url = meta?.clientLogoUrl { ClientLogoBadge(url: url).padding(7) }
+                }
                 .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
                 .shadow(color: thumbnailPath != nil ? Color(hex: color).opacity(0.55) : .clear, radius: 10)
                 .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
@@ -698,7 +804,9 @@ struct ProjectListView: View {
             // trick needed anymore now that it's sitting on the tile's
             // plain (non-photo) footer area rather than over an arbitrary
             // photo.
-            if let pipelineStage {
+            if let meta {
+                ProjectTileFooter(meta: meta)
+            } else if let pipelineStage {
                 Text(pipelineStage.label)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(pipelineStage.tintColor)
@@ -712,6 +820,21 @@ struct ProjectListView: View {
         }
     }
 
+}
+
+/// `.searchable` only on the root screen (searches every folder)
+private struct RootSearch: ViewModifier {
+    let enabled: Bool
+    @Binding var query: String
+    let prompt: String
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.searchable(text: $query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: prompt)
+        } else {
+            content
+        }
+    }
 }
 
 /// All five .sheet(...) modifiers for the grid screen, split out into their
