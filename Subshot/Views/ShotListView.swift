@@ -2009,9 +2009,13 @@ struct ShotListView: View {
                     } label: {
                         VStack(alignment: .leading, spacing: 6) {
                             if let thumbnailUrl {
-                                AsyncShotThumbnail(path: thumbnailUrl, size: nil, lockAspectRatio: true)
+                                // 2026-10-13, Lino: "bei der Shotlist-Übersicht muss das Thumbnail
+                                // ausgefüllt sein" — was a 16:9/9:16 fit box inside the 100 pt frame
+                                // (black bars); now the image fills the whole frame, cropped
+                                Color.clear
                                     .frame(maxWidth: .infinity)
                                     .frame(height: 100)
+                                    .overlay { AsyncShotThumbnail(path: thumbnailUrl, size: nil, lockAspectRatio: false) }
                                     .clipShape(RoundedRectangle(cornerRadius: 12))
                             }
                             Text(section.name)
