@@ -27,6 +27,8 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
             build 2>&1 | tee build.log | grep -E "error:|warning: .*deprecated|BUILD (SUCCEEDED|FAILED)" || true
           grep -q "BUILD SUCCEEDED" build.log
+      - name: Bundled fonts
+        run: find ~/Library/Developer/Xcode/DerivedData -path "*Subshot.app/*" -iname "*.ttf" | sed 's#.*Subshot.app/#Subshot.app/#'
       - name: Errors
         if: failure()
         run: grep -n "error:" build.log | head -80 || true

@@ -2,6 +2,24 @@ import SwiftUI
 import Combine
 import ClerkKit
 import ClerkKitUI
+import CoreText
+
+/// 2026-10-13, Lino: "der Schriftzug SUBSHOT sollte die Font ANTON sein" — Fonts/Anton-Regular.ttf
+/// was bundled but never registered (no UIAppFonts entry), so Font.custom silently fell back to the
+/// system font. Registered at runtime instead (no Info.plist change needed).
+enum AppFonts {
+    static let registered: Bool = {
+        if UIFont(name: "Anton-Regular", size: 12) != nil { return true }
+        guard let url = Bundle.main.url(forResource: "Anton-Regular", withExtension: "ttf")
+            ?? Bundle.main.url(forResource: "Anton-Regular", withExtension: "ttf", subdirectory: "Fonts") else { return false }
+        return CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil) || UIFont(name: "Anton-Regular", size: 12) != nil
+    }()
+
+    static func anton(_ size: CGFloat) -> Font {
+        _ = registered
+        return .custom("Anton-Regular", size: size)
+    }
+}
 
 /// Login screen. Clerk's own AuthView (sheet) still handles the actual sign-in/sign-up form,
 /// Google, etc. — this screen is the branded entry point in front of it.
@@ -37,7 +55,7 @@ struct LoginView: View {
                     icon
                         .padding(.bottom, 26)
                     Text("Subshot")
-                        .font(.custom("Anton-Regular", size: 48))
+                        .font(AppFonts.anton(48))
                         .textCase(.uppercase)
                         .tracking(appeared ? 1.5 : 14)
                         .foregroundStyle(.white)
