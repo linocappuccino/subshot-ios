@@ -6,7 +6,7 @@ import Foundation
 extension AppLanguage {
     static let planningStrings: [String: [String: String]] = [
         "de": [
-            "shotlistProgress.shot": "Szenen im Kasten",
+            "shotlistProgress.shot": "Ticked off",
             "shotlistProgress.empty": "noch leer",
             "places.button": "Drehort",
             "places.title": "Drehorte",
@@ -39,8 +39,8 @@ extension AppLanguage {
             "schedule.suggestTitle": "Damit ihr aufholt:",
             "schedule.cut": "streichen",
             "schedule.shorten": "oder {scenes} Szenen um je {n} Min. kürzen",
-            "schedule.statusDone": "im Kasten",
-            "schedule.statusNotShot": "nicht gedreht",
+            "schedule.statusDone": "Ticked off",
+            "schedule.statusNotShot": "Cancelled",
             "schedule.statusCurrent": "läuft",
             "schedule.autoTitle": "Tagesplan erstellen",
             "schedule.autoHint": "Aus Dauer und Shot-Reihenfolge der offenen Shotlist: Startzeiten nacheinander ab der gewählten Uhrzeit (ohne Dauer: 30 Min.).",
@@ -110,7 +110,7 @@ extension AppLanguage {
             "takeRating.notePlaceholder": "z. B. Fokus sitzt, Ton sauber",
         ],
         "en": [
-            "shotlistProgress.shot": "scenes in the can",
+            "shotlistProgress.shot": "Ticked off",
             "shotlistProgress.empty": "still empty",
             "places.button": "Location",
             "places.title": "Locations",
@@ -143,8 +143,8 @@ extension AppLanguage {
             "schedule.suggestTitle": "To catch up:",
             "schedule.cut": "cut",
             "schedule.shorten": "or shorten {scenes} scenes by {n} min each",
-            "schedule.statusDone": "in the can",
-            "schedule.statusNotShot": "not shot",
+            "schedule.statusDone": "Ticked off",
+            "schedule.statusNotShot": "Cancelled",
             "schedule.statusCurrent": "running",
             "schedule.autoTitle": "Create day plan",
             "schedule.autoHint": "From duration and shot order of the open shotlist: start times back to back from the chosen time (no duration: 30 min).",
