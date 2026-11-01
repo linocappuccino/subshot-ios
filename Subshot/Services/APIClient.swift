@@ -1080,15 +1080,20 @@ final class APIClient {
             throw APIError.server(status: (response as? HTTPURLResponse)?.statusCode ?? 0, message: "Image fetch failed")
         }
         if let maxPixelSize {
-            let options: [CFString: Any] = [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-            ]
-            if let source = CGImageSourceCreateWithData(data as CFData, nil),
-               let cgThumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
+            // 2026-11-01: downsample + decode on a background thread (never on the main thread while scrolling)
+            let thumb: UIImage? = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+                let options: [CFString: Any] = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceShouldCacheImmediately: true,
+                ]
+                let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+                guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions),
+                      let cgThumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
                 return UIImage(cgImage: cgThumbnail)
-            }
+            }.value
+            if let thumb { return thumb }
             // Falls through to a full-resolution decode below — a corrupt/
             // unsupported-by-ImageIO source is exceedingly rare, better to
             // still show SOMETHING than fail the whole fetch over a

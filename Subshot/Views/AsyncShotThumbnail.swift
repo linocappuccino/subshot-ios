@@ -35,7 +35,11 @@ struct AsyncShotThumbnail: View {
     /// concurrent authenticated network requests until the app becomes
     /// unresponsive (the reported scroll freeze). NSCache is thread-safe and
     /// evicts under memory pressure on its own.
-    private static let cache = NSCache<NSString, UIImage>()
+    private static let cache: NSCache<NSString, UIImage> = {
+        let c = NSCache<NSString, UIImage>()
+        c.countLimit = 60 // 2026-11-01: ≈ 60 × 3.5 MB at most for the downsampled cards (plus eviction under pressure)
+        return c
+    }()
 
     var body: some View {
         Group {
@@ -54,7 +58,9 @@ struct AsyncShotThumbnail: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 6))
-        .task(id: path) {
+        // 2026-11-01 (Lino: «auf der Shotlist ruckelt es, wenn das nächste Bild in den Screen kommt»): keyed by the
+        // R2 object (URL without the signature query) — a new signature for the same image no longer reloads it
+        .task(id: Self.cacheKey(path)) {
             await load()
         }
     }
@@ -77,8 +83,28 @@ struct AsyncShotThumbnail: View {
         }
     }
 
+    /// Warm the shared cache for images that are about to scroll in (2026-11-01). Sequential, background
+    /// priority, skips what is cached; the cache evicts on its own under memory pressure.
+    static func prefetch(_ paths: [String], points: CGFloat = 430) async {
+        let maxPixelSize = points * UITraitCollection.current.displayScale
+        for path in paths.prefix(24) {
+            if Task.isCancelled { return }
+            let key = cacheKey(path) as NSString
+            if cache.object(forKey: key) != nil { continue }
+            if let img = try? await APIClient.shared.fetchImage(path: path, maxPixelSize: maxPixelSize) {
+                cache.setObject(img, forKey: key)
+            }
+        }
+    }
+
+    /// cache key = the R2 object itself: scheme + host + path, without the presigned query string
+    static func cacheKey(_ path: String) -> String {
+        guard let c = URLComponents(string: path), c.host != nil else { return path }
+        return "\(c.scheme ?? "")://\(c.host ?? "")\(c.path)"
+    }
+
     private func load() async {
-        let key = path as NSString
+        let key = Self.cacheKey(path) as NSString
         if let cached = Self.cache.object(forKey: key) {
             image = cached
             return
@@ -99,7 +125,9 @@ struct AsyncShotThumbnail: View {
         // but is still just one grid tile on a phone/iPad screen, never a
         // full-bleed hero image — 900pt covers that comfortably at any
         // real device width used in this app.
-        let targetPoints = size ?? 900
+        // 2026-11-01: big cards are at most one phone width (~430 pt) — 900 pt × 3 asked ImageIO for ~2700 px, i.e.
+        // the full 2752-px original (≈17 MB per decoded image); now ≈1300 px (≈3.5 MB) for the cards
+        let targetPoints = size ?? 430
         // UITraitCollection.current.displayScale, not UIScreen.main.scale
         // (deprecated in iOS 26) — see SceneMapThumbnail's identical note.
         let maxPixelSize = targetPoints * UITraitCollection.current.displayScale

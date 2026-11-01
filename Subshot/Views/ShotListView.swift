@@ -814,6 +814,11 @@ struct ShotListView: View {
             .padding(.bottom, 16)
             .animation(.easeInOut(duration: 0.25), value: activeWorkflowSection)
         }
+        // 2026-11-01 (stutter when the next card scrolls in): decode the scene images ahead of time, in the
+        // background, into the shared thumbnail cache — same size the cards ask for
+        .task(id: viewModel.scenes.compactMap(\.imageUrl).map(AsyncShotThumbnail.cacheKey)) {
+            await AsyncShotThumbnail.prefetch(viewModel.scenes.compactMap(\.imageUrl))
+        }
         // 2026-08-30 — leaving the Skript-Tab always resets back to the
         // selection overview (web-parity: goToIdeas() does the same) so a
         // future visit never silently reopens whatever section was last
