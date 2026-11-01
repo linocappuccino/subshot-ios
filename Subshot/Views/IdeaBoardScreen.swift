@@ -172,8 +172,11 @@ struct IdeaBoardScreen: View {
     @State private var crashes: [Date] = []
     @State private var crashed = false
     @State private var usedTicket = false
+    /// 2026-11-01 (out of memory on big boards): after the first crash the board reloads in
+    /// «Speichersparmodus» (?lite=1 — only the small R2 image versions) instead of trying the same thing 3×
+    @State private var lite = false
 
-    private var ideaPath: String { "/embed/idea/\(viewModel.projectId)/\(idea.id)" }
+    private var ideaPath: String { "/embed/idea/\(viewModel.projectId)/\(idea.id)" + (lite ? "?lite=1" : "") }
 
     var body: some View {
         ZStack {
@@ -250,7 +253,9 @@ struct IdeaBoardScreen: View {
 
     /// straight to the board (the web session is there, or we find out via a /sign-in redirect)
     private func openBoard() {
-        BoardWebPool.shared.open(BoardWebPool.base.appendingPathComponent(String(ideaPath.dropFirst())))
+        var c = URLComponents(url: BoardWebPool.base.appendingPathComponent("embed/idea/\(viewModel.projectId)/\(idea.id)"), resolvingAgainstBaseURL: false)
+        if lite { c?.queryItems = [URLQueryItem(name: "lite", value: "1")] }
+        if let url = c?.url { BoardWebPool.shared.open(url) } else { failed = true }
     }
 
     private func signInWithTicket() async {
@@ -273,7 +278,13 @@ struct IdeaBoardScreen: View {
     private func handleCrash() {
         let now = Date()
         crashes = crashes.filter { now.timeIntervalSince($0) < 60 } + [now]
-        if crashes.count >= 3 {
+        if !lite {
+            // first crash: straight into the memory-saving mode (the web page shows a short note)
+            lite = true
+            crashes = [now]
+            loading = true
+            openBoard()
+        } else if crashes.count >= 2 {
             crashed = true
         } else {
             loading = true
