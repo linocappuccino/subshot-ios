@@ -297,6 +297,8 @@ struct Scene: Codable, Identifiable, Hashable {
     var scheduledAt: Date?
     var durationMinutes: Int?
     var imageUrl: String?
+    /// 2026-11-01 — ≤800-px WebP display version in R2 (nil until rendered); imageUrl = original (download / full screen)
+    var imageThumbUrl: String?
     /// Persistent AI-image-generation lock (2026-07-16) — survives sheet
     /// close/reopen and app relaunch, unlike a local-only "just tapped"
     /// flag, since the actual RunPod job runs well after this scene's
@@ -363,6 +365,7 @@ struct Scene: Codable, Identifiable, Hashable {
         case scheduledAt = "scheduled_at"
         case durationMinutes = "duration_minutes"
         case imageUrl = "image_url"
+        case imageThumbUrl = "image_thumb_url"
         case imageGenerating = "image_generating"
         case sortOrder = "sort_order"
         case assigneeId = "assignee_id"
@@ -666,6 +669,8 @@ struct Shot: Codable, Identifiable, Hashable {
     let projectId: String
     var sceneId: String?
     var imageUrl: String?
+    /// 2026-11-01 — ≤800-px display version (see Scene.imageThumbUrl)
+    var imageThumbUrl: String?
     var description: String?
     var durationSeconds: Int?
     var cameraAngle: String?
@@ -690,6 +695,7 @@ struct Shot: Codable, Identifiable, Hashable {
         case projectId = "project_id"
         case sceneId = "scene_id"
         case imageUrl = "image_url"
+        case imageThumbUrl = "image_thumb_url"
         case durationSeconds = "duration_seconds"
         case cameraAngle = "camera_angle"
         case sortOrder = "sort_order"

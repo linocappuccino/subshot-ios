@@ -816,8 +816,8 @@ struct ShotListView: View {
         }
         // 2026-11-01 (stutter when the next card scrolls in): decode the scene images ahead of time, in the
         // background, into the shared thumbnail cache — same size the cards ask for
-        .task(id: viewModel.scenes.compactMap(\.imageUrl).map(AsyncShotThumbnail.cacheKey)) {
-            await AsyncShotThumbnail.prefetch(viewModel.scenes.compactMap(\.imageUrl))
+        .task(id: viewModel.scenes.compactMap { $0.imageThumbUrl ?? $0.imageUrl }.map(AsyncShotThumbnail.cacheKey)) {
+            await AsyncShotThumbnail.prefetch(viewModel.scenes.compactMap { $0.imageThumbUrl ?? $0.imageUrl })
         }
         // 2026-08-30 — leaving the Skript-Tab always resets back to the
         // selection overview (web-parity: goToIdeas() does the same) so a
@@ -2941,7 +2941,7 @@ struct ShotListView: View {
     @ViewBuilder
     private func sceneTile(scene: Scene, columnLayout: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let imageUrl = scene.imageUrl {
+            if let imageUrl = scene.imageThumbUrl ?? scene.imageUrl { // 800-px display version (2026-11-01)
                 AsyncShotThumbnail(path: imageUrl, size: nil, lockAspectRatio: true)
                     .frame(maxWidth: .infinity)
                     // Fixed image height in column layout (same value
@@ -3216,7 +3216,7 @@ struct ShotListView: View {
         VStack(alignment: .leading, spacing: 6) {
             sceneDropIndicator(before: scene, showsVisual: false)
             VStack(alignment: .leading, spacing: 8) {
-                if let imageUrl = scene.imageUrl {
+                if let imageUrl = scene.imageThumbUrl ?? scene.imageUrl { // 800-px display version (2026-11-01)
                     AsyncShotThumbnail(path: imageUrl, size: nil, lockAspectRatio: true)
                         .frame(maxWidth: .infinity)
                         .frame(height: 100)
@@ -3328,7 +3328,7 @@ struct ShotListView: View {
     @ViewBuilder
     private func sceneContextMenuPreview(scene: Scene) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let imageUrl = scene.imageUrl {
+            if let imageUrl = scene.imageThumbUrl ?? scene.imageUrl { // 800-px display version (2026-11-01)
                 AsyncShotThumbnail(path: imageUrl, size: nil, lockAspectRatio: true)
                     .frame(maxWidth: .infinity)
                     .frame(height: 160)
@@ -4103,7 +4103,7 @@ private struct ShotCard: View {
                 // dargestellt werden (auch kein bild symbol)" — the camera-
                 // icon placeholder box is gone entirely now; a shot with no
                 // image just doesn't reserve any space for one.
-                if let imageUrl = shot.imageUrl {
+                if let imageUrl = shot.imageThumbUrl ?? shot.imageUrl {
                     AsyncShotThumbnail(path: imageUrl, size: nil)
                         .frame(height: 180)
                         .frame(maxWidth: .infinity)
