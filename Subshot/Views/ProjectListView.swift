@@ -795,7 +795,10 @@ struct ProjectListView: View {
             Text((thumbnailPath != nil && emoji?.isEmpty == false) ? "\(emoji!) \(title)" : title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
-                .lineLimit(1)
+                // 2026-11-01, Lino: full titles (web parity) — up to 3 lines instead of «…» after one
+                .lineLimit(3)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
             // 2026-08-05, Lino: "der pipeline status vom projekt kann nun
             // unter den projektname auf der projektübersicht" — moved off
             // the thumbnail's top-leading corner (see #319's own doc

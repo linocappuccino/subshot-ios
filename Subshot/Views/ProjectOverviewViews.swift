@@ -108,21 +108,23 @@ struct PipelineRingsBadge: View {
 /// sein … Logos mit transparentem Hintergrund und leichtem Schatten, damit sie sich von der Kachel
 /// abheben": no plate any more, the logo itself (its own transparency) in a square box, with a soft
 /// shadow that follows its shape
+/// 2026-11-01, Lino (web parity, ClientLogoImage): square, rounded, the logo FILLS the square (cover, centered),
+/// no white frame / plate, subtle shadow — 44×44, corner radius 10, bottom right on the tile.
 struct ClientLogoBadge: View {
     let url: String
-    var size: CGFloat = 34
+    var size: CGFloat = 44
 
     var body: some View {
         AsyncImage(url: URL(string: url)) { phase in
             if let image = phase.image {
-                image.resizable().scaledToFit()
+                image.resizable().scaledToFill()
             } else {
                 Color.clear
             }
         }
         .frame(width: size, height: size)
-        .shadow(color: .black.opacity(0.55), radius: 3, y: 1.5)
-        .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
+        .clipShape(RoundedRectangle(cornerRadius: size * 10 / 44, style: .continuous))
+        .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
     }
 }
 
