@@ -32,6 +32,9 @@ extension AppLanguage {
             "ideaGrid.newIdeaTitle": "Neue Idee",
             "ideaGrid.duplicateIdea": "Idee duplizieren",
             "ideaGrid.deleteIdea": "Idee löschen",
+            "ideaGrid.deleteConfirmTitle": "Idee „{title}“ wirklich löschen?",
+            "ideaGrid.deleteConfirmScenes": "Dabei werden auch {n} Szenen in der Shotliste gelöscht.",
+            "ideaGrid.deleteKeepScenes": "Idee löschen, Szenen behalten",
             "ideaTile.approvedOn": "Angenommen am {date}",
 
             // IdeaEditSheet.swift
@@ -203,6 +206,9 @@ extension AppLanguage {
             "ideaGrid.newIdeaTitle": "New idea",
             "ideaGrid.duplicateIdea": "Duplicate idea",
             "ideaGrid.deleteIdea": "Delete idea",
+            "ideaGrid.deleteConfirmTitle": "Really delete the idea “{title}”?",
+            "ideaGrid.deleteConfirmScenes": "This also deletes {n} scenes in the shot list.",
+            "ideaGrid.deleteKeepScenes": "Delete idea, keep scenes",
             "ideaTile.approvedOn": "Approved on {date}",
 
             // IdeaEditSheet.swift

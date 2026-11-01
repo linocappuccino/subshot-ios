@@ -24,6 +24,20 @@ enum APIError: Error, LocalizedError {
             // as garbled JSON here. Falls back to the old raw format for a
             // genuinely non-JSON body (e.g. a plain-text 502 from a proxy),
             // same fallback web's own parsing has.
+            // 2026-11-01 (web parity): a full storage gets its own clear message instead of the raw detail
+            if status == 413, let data = message.data(using: .utf8),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               json["error"] as? String == "storage_limit_reached" {
+                if json["scope"] as? String == "trial" {
+                    return "Speicher voll. In der Testphase sind 1 GB inklusive. Erstelle ein Team, um mehr Speicher zu bekommen."
+                }
+                let gb = { (v: Any?) -> String in
+                    let bytes = (v as? NSNumber)?.doubleValue ?? 0
+                    return String(format: "%.1f", bytes / 1_073_741_824)
+                }
+                let used = gb(json["used_bytes"]), limit = gb(json["limit_bytes"])
+                return "Speicher voll (\(used) von \(limit) GB). Dein Team-Besitzer kann den Speicher unter Team erweitern."
+            }
             if let data = message.data(using: .utf8),
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let detail = json["detail"] as? String {
@@ -718,8 +732,24 @@ final class APIClient {
         return try await send(req)
     }
 
-    func deleteIdea(_ id: String) async throws {
-        let req = try await authorizedRequest("ideas/\(id)", method: "DELETE")
+    /// 2026-11-01 (web parity, 2026-10-29) — how many shot-list scenes go with the idea, for the delete dialog.
+    struct IdeaDeleteInfo: Decodable {
+        let scenes: Int
+        let sectionId: String?
+        enum CodingKeys: String, CodingKey {
+            case scenes
+            case sectionId = "section_id"
+        }
+    }
+
+    func ideaDeleteInfo(_ id: String) async throws -> IdeaDeleteInfo {
+        let req = try await authorizedRequest("ideas/\(id)/delete-info")
+        return try await send(req)
+    }
+
+    /// `keepScenes` (2026-11-01, «Idee löschen, Szenen behalten»): the idea goes, its shot-list scenes stay.
+    func deleteIdea(_ id: String, keepScenes: Bool = false) async throws {
+        let req = try await authorizedRequest(keepScenes ? "ideas/\(id)?keep_scenes=true" : "ideas/\(id)", method: "DELETE")
         try await sendNoContent(req)
     }
 

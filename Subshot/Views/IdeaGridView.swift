@@ -11,6 +11,9 @@ struct IdeaGridView: View {
     @ObservedObject var viewModel: ShotListViewModel
     @ObservedObject private var language = AppLanguage.shared
     @State private var editingIdea: Idea?
+    /// 2026-11-01, Lino (web parity): «Idee „…" wirklich löschen? Dabei werden auch N Szenen gelöscht.»
+    @State private var pendingDelete: Idea?
+    @State private var pendingDeleteScenes = 0
     /// 2026-07-23 (#324) — set only when this view was reached via a
     /// notification's deep link (see ShotListView's pendingDeepLinkKind);
     /// consumed exactly once by .task below, mirrors web's autoOpenIdeaId
@@ -102,7 +105,11 @@ struct IdeaGridView: View {
                                             Label(language.t("ideaGrid.duplicateIdea"), systemImage: "plus.square.on.square")
                                         }
                                         Button(role: .destructive) {
-                                            Task { await viewModel.deleteIdea(idea) }
+                                            Task {
+                                                // ask the server how many shot-list scenes would go with it (0 if that fails)
+                                                pendingDeleteScenes = (try? await APIClient.shared.ideaDeleteInfo(idea.id))?.scenes ?? 0
+                                                pendingDelete = idea
+                                            }
                                         } label: {
                                             Label(language.t("ideaGrid.deleteIdea"), systemImage: "trash")
                                         }
@@ -114,6 +121,25 @@ struct IdeaGridView: View {
             }
         }
         .padding(.horizontal, 16)
+        .alert(
+            language.t("ideaGrid.deleteConfirmTitle").replacingOccurrences(of: "{title}", with: pendingDelete?.title ?? ""),
+            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+            presenting: pendingDelete
+        ) { idea in
+            Button(language.t("common.delete"), role: .destructive) {
+                Task { await viewModel.deleteIdea(idea) }
+            }
+            if pendingDeleteScenes > 0 {
+                Button(language.t("ideaGrid.deleteKeepScenes")) {
+                    Task { await viewModel.deleteIdea(idea, keepScenes: true) }
+                }
+            }
+            Button(language.t("common.cancel"), role: .cancel) {}
+        } message: { _ in
+            if pendingDeleteScenes > 0 {
+                Text(language.t("ideaGrid.deleteConfirmScenes").replacingOccurrences(of: "{n}", with: "\(pendingDeleteScenes)"))
+            }
+        }
         // 2026-10-12 — the real web idea board (IdeaBoardScreen) instead of the old text editor
         .fullScreenCover(item: $editingIdea) { idea in
             IdeaBoardScreen(idea: idea, viewModel: viewModel)
@@ -213,10 +239,13 @@ private struct IdeaTileView: View {
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 4) {
+                HStack(alignment: .top, spacing: 4) {
+                    // 2026-11-01, Lino: full titles (web parity) — up to 3 lines instead of «…» after one
                     Text(idea.title)
                         .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
+                        .lineLimit(3)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                     // 2026-08-09, Lino: "die ideen kacheln (der punkt)
                     // müssen die farbe wechseln wenn die idee intern
                     // abgenommen oder abgelehnt wurde oder noch offen ist"
@@ -231,11 +260,13 @@ private struct IdeaTileView: View {
                         Circle()
                             .fill(internalReviewDotColor)
                             .frame(width: 6, height: 6)
+                            .padding(.top, 6)
                     }
                     if approved {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.caption)
                             .foregroundStyle(.green)
+                            .padding(.top, 2)
                     }
                 }
                 // 2026-07-17, Lino: "es braucht ein Datum und Uhrzeit WANN

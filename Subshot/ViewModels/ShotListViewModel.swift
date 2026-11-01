@@ -345,10 +345,12 @@ final class ShotListViewModel: ObservableObject {
         }
     }
 
-    func deleteIdea(_ idea: Idea) async {
+    func deleteIdea(_ idea: Idea, keepScenes: Bool = false) async {
         do {
-            try await APIClient.shared.deleteIdea(idea.id)
+            try await APIClient.shared.deleteIdea(idea.id, keepScenes: keepScenes)
             ideas.removeAll { $0.id == idea.id }
+            // the idea's shot-list scenes went with it (unless kept) — reload so the shot list matches the server
+            if !keepScenes, idea.sectionId != nil { await load(resetGeneration: false, includeSecondary: false) }
         } catch {
             errorMessage = error.localizedDescription
         }
