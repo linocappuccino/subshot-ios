@@ -5,6 +5,10 @@ name: Devlog screenshots
 # Output: artifact "devlog-screenshots" with one PNG per devlog slot (ios-<feature>-<n>.png) + skipped.txt.
 on:
   workflow_dispatch:
+  # GitHub only dispatches workflows that exist on the default branch — until this is merged,
+  # a push to the devlog branch runs it.
+  push:
+    branches: [devlog-test-login]
 jobs:
   screenshots:
     runs-on: macos-26
