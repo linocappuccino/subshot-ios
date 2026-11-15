@@ -88,9 +88,16 @@ jobs:
           print("\n".join(sorted(os.listdir("screenshots"))))
           PY
           cat screenshots/skipped.txt 2>/dev/null || true
+          xcrun xcresulttool get test-results summary --path devlog.xcresult | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["result"]); [print("FAIL:", f.get("failureText")) for f in d.get("testFailures", [])]'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: devlog-screenshots
           path: screenshots/
           if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: devlog-raw-results
+          path: raw/
+          if-no-files-found: ignore
