@@ -1,0 +1,76 @@
+name: Devlog screenshots
+# Real iPad simulator screenshots for the Subshot devlog (SubshotUITests/DevlogScreenshotTests).
+# Signs in as the fixed test account via the app's DEBUG-only -SubshotTestTicket launch argument;
+# the 2-minute ticket comes from POST https://subshot.ch/debug/test-ticket (secret DEBUG_TICKET_SECRET).
+# Output: artifact "devlog-screenshots" with one PNG per devlog slot (ios-<feature>-<n>.png) + skipped.txt.
+on:
+  workflow_dispatch:
+jobs:
+  screenshots:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode
+        run: |
+          LATEST=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$LATEST" ]; then sudo xcode-select -s "$LATEST"; fi
+          xcodebuild -version
+      - name: iPad simulator
+        run: |
+          UDID=$(xcrun simctl list devices available | grep -E "iPad Pro 13-inch" | head -1 | grep -oE "[0-9A-F-]{36}")
+          if [ -z "$UDID" ]; then UDID=$(xcrun simctl list devices available | grep -E "iPad" | head -1 | grep -oE "[0-9A-F-]{36}"); fi
+          echo "Using $(xcrun simctl list devices | grep $UDID)"
+          echo "SIM_UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          # no permission alerts over the screenshots (Visual Timecode asks for the camera)
+          xcrun simctl privacy "$UDID" grant camera com.linocappuccino.subshot.Subshot || true
+          xcrun simctl privacy "$UDID" grant photos com.linocappuccino.subshot.Subshot || true
+      - name: Build for testing (Debug)
+        # Ad-hoc signed, NOT CODE_SIGNING_ALLOWED=NO: an unsigned simulator app has no keychain
+        # access, Clerk can't keep its client token, and every session token call answers
+        # "signed_out" (found 2026-11-15) → empty Projects screen.
+        run: |
+          set -o pipefail
+          xcodebuild -project Subshot.xcodeproj -scheme Subshot -configuration Debug \
+            -destination "platform=iOS Simulator,id=$SIM_UDID" -derivedDataPath dd \
+            -skipPackagePluginValidation -skipMacroValidation \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= -only-testing:SubshotUITests \
+            build-for-testing 2>&1 | tee build.log | grep -E "error:|TEST BUILD (SUCCEEDED|FAILED)" || true
+          grep -q "TEST BUILD SUCCEEDED" build.log
+      - name: Run screenshot test
+        env:
+          DEBUG_TICKET_SECRET: ${{ secrets.DEBUG_TICKET_SECRET }}
+        run: |
+          set +x
+          # fetch the ticket right before the run (it lives 2 minutes); never print it
+          TEST_RUNNER_SUBSHOT_TEST_TICKET=$(curl -sf -X POST https://subshot.ch/debug/test-ticket \
+            -H "X-Debug-Secret: $DEBUG_TICKET_SECRET" | python3 -c 'import json,sys; print(json.load(sys.stdin)["ticket"])') || true
+          if [ -z "$TEST_RUNNER_SUBSHOT_TEST_TICKET" ]; then echo "::warning::no test ticket (secret/endpoint) — only the sign-in screen will be captured"; fi
+          export TEST_RUNNER_SUBSHOT_TEST_TICKET
+          echo "::add-mask::$TEST_RUNNER_SUBSHOT_TEST_TICKET"
+          xcodebuild test-without-building -xctestrun $(ls dd/Build/Products/*.xctestrun | head -1) \
+            -destination "platform=iOS Simulator,id=$SIM_UDID" -only-testing:SubshotUITests \
+            -resultBundlePath devlog.xcresult 2>&1 | grep -E "SHOT |SKIPPED |Test Case|TEST (SUCCEEDED|FAILED)" || true
+      - name: Export PNGs
+        if: always()
+        run: |
+          mkdir -p raw screenshots
+          xcrun xcresulttool export attachments --path devlog.xcresult --output-path raw
+          python3 - <<'PY'
+          import json, os, re, shutil
+          for test in json.load(open("raw/manifest.json")):
+              for a in test.get("attachments", []):
+                  name = re.sub(r"_\d+_[0-9A-F-]{36}(?=\.\w+$)", "", a["suggestedHumanReadableName"])
+                  if name.startswith(("ios-", "skipped")):
+                      shutil.copy(os.path.join("raw", a["exportedFileName"]), os.path.join("screenshots", name))
+          print("\n".join(sorted(os.listdir("screenshots"))))
+          PY
+          cat screenshots/skipped.txt 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: devlog-screenshots
+          path: screenshots/
+          if-no-files-found: warn
