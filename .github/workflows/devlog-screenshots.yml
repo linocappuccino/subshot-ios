@@ -22,16 +22,30 @@ jobs:
           xcodebuild -version
       - name: iPad simulator
         run: |
-          UDID=$(xcrun simctl list devices available | grep -E "iPad Pro 13-inch" | head -1 | grep -oE "[0-9A-F-]{36}")
-          if [ -z "$UDID" ]; then UDID=$(xcrun simctl list devices available | grep -E "iPad" | head -1 | grep -oE "[0-9A-F-]{36}"); fi
-          echo "Using $(xcrun simctl list devices | grep $UDID)"
+          # iPad (prefer Pro 13") on the NEWEST installed iOS runtime
+          read UDID OSVER < <(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          d = json.load(sys.stdin)["devices"]
+          best = None
+          for rt, devs in d.items():
+              if ".iOS-" not in rt: continue
+              ver = tuple(int(x) for x in rt.split(".iOS-")[1].split("-"))
+              for dev in devs:
+                  if "iPad" not in dev["name"]: continue
+                  key = (ver, "iPad Pro 13" in dev["name"])
+                  if best is None or key > best[0]: best = (key, dev["udid"], ".".join(map(str, ver)))
+          print(best[1], best[2])')
+          echo "Using iOS $OSVER: $(xcrun simctl list devices | grep $UDID)"
           echo "SIM_UDID=$UDID" >> "$GITHUB_ENV"
+          echo "SIM_OS=$OSVER" >> "$GITHUB_ENV"
           xcrun simctl boot "$UDID" || true
           xcrun simctl bootstatus "$UDID" -b
           # no permission alerts over the screenshots (Visual Timecode asks for the camera)
           xcrun simctl privacy "$UDID" grant camera com.linocappuccino.subshot.Subshot || true
           xcrun simctl privacy "$UDID" grant photos com.linocappuccino.subshot.Subshot || true
       - name: Build for testing (Debug)
+        # Deployment target = the simulator's iOS (the runner may lag behind the app's 26.5; this
+        # build is only for screenshots, never shipped).
         # Ad-hoc signed, NOT CODE_SIGNING_ALLOWED=NO: an unsigned simulator app has no keychain
         # access, Clerk can't keep its client token, and every session token call answers
         # "signed_out" (found 2026-11-15) → empty Projects screen.
@@ -41,8 +55,9 @@ jobs:
             -destination "platform=iOS Simulator,id=$SIM_UDID" -derivedDataPath dd \
             -skipPackagePluginValidation -skipMacroValidation \
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= -only-testing:SubshotUITests \
+            IPHONEOS_DEPLOYMENT_TARGET="$SIM_OS" \
             build-for-testing 2>&1 | tee build.log | grep -E "error:|TEST BUILD (SUCCEEDED|FAILED)" || true
-          grep -q "TEST BUILD SUCCEEDED" build.log
+          grep -q "TEST BUILD SUCCEEDED" build.log || { grep -A15 "Unable to find a destination" build.log; exit 1; }
       - name: Run screenshot test
         env:
           DEBUG_TICKET_SECRET: ${{ secrets.DEBUG_TICKET_SECRET }}
@@ -61,6 +76,7 @@ jobs:
         if: always()
         run: |
           mkdir -p raw screenshots
+          [ -d devlog.xcresult ] || { echo "no test results"; exit 0; }
           xcrun xcresulttool export attachments --path devlog.xcresult --output-path raw
           python3 - <<'PY'
           import json, os, re, shutil
