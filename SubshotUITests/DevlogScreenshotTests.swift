@@ -252,7 +252,7 @@ final class DevlogScreenshotTests: XCTestCase {
     /// fresh install, but then the app opens straight into the project (no Projects screen).
     private func makeApp(ticket: String?, section: Int = 0, restoreProject: Bool = false) -> XCUIApplication {
         let a = XCUIApplication()
-        a.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+        a.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-UITestNoAnimations", "YES",
                              // page a project opens on: 0 ideas, 1 shot list (ShotListView.lastOpenedWorkflowSectionKey)
                              "-lastOpenedWorkflowSection", String(section)]
         if restoreProject { a.launchArguments += ["-lastOpenedProjectId", demoProjectId] }

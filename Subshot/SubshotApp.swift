@@ -54,6 +54,14 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        #if DEBUG
+        // UI tests (devlog screenshots): -UITestNoAnimations YES switches UIKit animations off —
+        // the scene timers' endless pulse kept the slow CI runner from ever going idle, so its
+        // screenshot requests timed out.
+        if UserDefaults.standard.bool(forKey: "UITestNoAnimations") {
+            UIView.setAnimationsEnabled(false)
+        }
+        #endif
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
             guard granted else { return }
             DispatchQueue.main.async {
