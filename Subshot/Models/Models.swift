@@ -1090,18 +1090,28 @@ struct ReferenceVideo: Codable, Identifiable, Hashable {
 }
 
 /// 2026-09-25, Lino: "Rohschnitt > Feinschnitt > Color Grading > Abgenommen"
+/// 2026-11-16 — «Color grading» became «Untertitel» (web/API store "untertitel" now); old
+/// versions still carrying "color_grading" read as Untertitel too (see `init(stored:)`).
 /// als Zeitstrahl oben im Player, pro Version waehlbar — same model as web's
 /// lib/types.ts POST_STAGES/effectivePostStage. Only the first three are
 /// stored (VideoVersion.postStage); `.abgenommen` follows the section's
 /// "abgeschlossen" status automatically for the newest ready version.
 enum PostStage: String, CaseIterable {
-    case rohschnitt, feinschnitt, colorGrading = "color_grading", abgenommen
+    case rohschnitt, feinschnitt, untertitel, abgenommen
+
+    /// Stored value → stage. "color_grading" (before 2026-11-16) maps to `.untertitel`;
+    /// an unknown value gives nil (no stage shown) instead of a crash or an empty label.
+    init?(stored: String?) {
+        guard let stored else { return nil }
+        if stored == "color_grading" { self = .untertitel; return }
+        self.init(rawValue: stored)
+    }
 
     var labelKey: String {
         switch self {
         case .rohschnitt: return "postStage.rohschnitt"
         case .feinschnitt: return "postStage.feinschnitt"
-        case .colorGrading: return "postStage.colorGrading"
+        case .untertitel: return "postStage.untertitel"
         case .abgenommen: return "postStage.abgenommen"
         }
     }
@@ -1112,7 +1122,7 @@ enum PostStage: String, CaseIterable {
            video.versions.last(where: { $0.status == "ready" })?.id == version.id {
             return .abgenommen
         }
-        return version.postStage.flatMap(PostStage.init(rawValue:))
+        return PostStage(stored: version.postStage)
     }
 }
 
@@ -1219,7 +1229,7 @@ struct VideoVersion: Codable, Identifiable, Hashable {
     var thumbnailUrl: String?
     var comments: [VideoComment] = []
     /// 2026-09-25 (web-parity, PostStageTimeline.tsx) — "rohschnitt" /
-    /// "feinschnitt" / "color_grading", nil for old versions. "abgenommen"
+    /// "feinschnitt" / "untertitel" (formerly "color_grading"), nil for old versions. "abgenommen"
     /// is never stored, see PostStage.effective.
     var postStage: String?
 

@@ -103,7 +103,7 @@ extension AppLanguage {
             "postproductionStatus.abgelehnt": "Abgelehnt",
             "postStage.rohschnitt": "Rohschnitt",
             "postStage.feinschnitt": "Feinschnitt",
-            "postStage.colorGrading": "Color Grading",
+            "postStage.untertitel": "Untertitel",
             "postStage.abgenommen": "Abgenommen",
             "postStage.setFailed": "Stadium konnte nicht gespeichert werden.",
 
@@ -275,7 +275,7 @@ extension AppLanguage {
             "postproductionStatus.abgelehnt": "Rejected",
             "postStage.rohschnitt": "Rough cut",
             "postStage.feinschnitt": "Fine cut",
-            "postStage.colorGrading": "Color grading",
+            "postStage.untertitel": "Subtitles",
             "postStage.abgenommen": "Approved",
             "postStage.setFailed": "Could not save the stage.",
 
