@@ -36,7 +36,7 @@ final class DevlogScreenshotTests: XCTestCase {
         } else {
             skip("ios-sign-in-account-1", "no sign-in button (already signed in?)")
         }
-        app.terminate()
+        // no app.terminate(): launch() restarts the app itself, and terminate failed on the CI runner
 
         // 2) Signed in as the test account.
         guard let ticket = testTicket() else {
@@ -111,7 +111,7 @@ final class DevlogScreenshotTests: XCTestCase {
 
         // Storyboard / shot list — relaunch straight into the scripting page (the Clerk session
         // survives the relaunch, so no new ticket is needed) and open the project again.
-        app.terminate()
+        // no app.terminate(): launch() restarts the app itself, and terminate failed on the CI runner
         app = makeApp(ticket: nil, section: 1)
         app.launch()
         let tile2 = app.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@", demoProject)).firstMatch
@@ -215,7 +215,7 @@ final class DevlogScreenshotTests: XCTestCase {
 
         // Idea board LAST: its embedded web sign-in creates another Clerk session, and the
         // backend's max-3-sessions guard may then end the app's own session.
-        app.terminate()
+        // no app.terminate(): launch() restarts the app itself, and terminate failed on the CI runner
         app = makeApp(ticket: nil, section: 0)
         app.launch()
         let tile3 = app.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@", demoProject)).firstMatch
