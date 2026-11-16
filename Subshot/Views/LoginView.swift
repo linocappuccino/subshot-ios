@@ -35,6 +35,8 @@ enum AppFonts {
 ///   the icon's displays).
 struct LoginView: View {
     @ObservedObject private var language = AppLanguage.shared
+    /// seat protection (2026-11-16): «opened on another device» notice after a kick
+    @ObservedObject private var sessionGuard = SessionGuard.shared
     @State private var authIsPresented = false
     @State private var appeared = false
     /// letterbox bars open shortly after launch
@@ -75,6 +77,12 @@ struct LoginView: View {
                         .opacity(appeared ? 1 : 0)
                         .animation(.easeOut(duration: 0.8).delay(1.0), value: appeared)
                     Spacer()
+                    if sessionGuard.kickedNotice {
+                        kickedNotice
+                            .padding(.horizontal, 36)
+                            .padding(.bottom, 16)
+                            .transition(.opacity)
+                    }
                     signInButton
                         .padding(.horizontal, 36)
                         .padding(.bottom, max(geo.safeAreaInsets.bottom, 20) + 36)
@@ -188,6 +196,24 @@ struct LoginView: View {
     }
 
     // MARK: Button
+
+    /// 2026-11-16 — shown when this device's session was ended because the same account signed in
+    /// on another device (backend seat protection, GET /auth/kicked).
+    private var kickedNotice: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "person.crop.circle.badge.exclamationmark")
+                .font(.title3)
+                .foregroundStyle(.orange)
+            Text(language.t("loginView.kicked"))
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.9))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: 520, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.white.opacity(0.08)))
+        .accessibilityIdentifier("loginView.kicked")
+    }
 
     private var signInButton: some View {
         Button {

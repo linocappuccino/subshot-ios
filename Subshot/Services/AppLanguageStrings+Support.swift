@@ -43,6 +43,7 @@ extension AppLanguage {
             // run through t() either).
             "loginView.tagline": "Shots planen. Am Set abhaken.",
             "loginView.signInButton": "Anmelden",
+            "loginView.kicked": "Dein Account wurde auf einem anderen Gerät geöffnet. Jede Person braucht einen eigenen Seat.",
 
             // ShotListViewModel.swift — found while auditing the ViewModel
             // layer per this pass's instructions (see its own doc comments
@@ -87,6 +88,7 @@ extension AppLanguage {
 
             "loginView.tagline": "Plan shots. Check them off on set.",
             "loginView.signInButton": "Sign in",
+            "loginView.kicked": "Your account was opened on another device. Each person needs their own seat.",
 
             "shotListViewModel.unnamedScene": "Untitled scene",
             "shotListViewModel.sceneDeletedUndoLabel": "Scene \u{201C}{name}\u{201D} deleted",

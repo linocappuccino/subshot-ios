@@ -140,6 +140,7 @@ final class APIClient {
         guard let http = response as? HTTPURLResponse else {
             throw APIError.network(URLError(.badServerResponse))
         }
+        try await endSessionOn401(http, req)
         guard (200..<300).contains(http.statusCode) else {
             let message = String(data: data, encoding: .utf8) ?? ""
             throw APIError.server(status: http.statusCode, message: message)
@@ -156,10 +157,20 @@ final class APIClient {
         guard let http = response as? HTTPURLResponse else {
             throw APIError.network(URLError(.badServerResponse))
         }
+        try await endSessionOn401(http, req)
         guard (200..<300).contains(http.statusCode) else {
             let message = String(data: data, encoding: .utf8) ?? ""
             throw APIError.server(status: http.statusCode, message: message)
         }
+    }
+
+    /// 2026-11-16 (seat protection) — a 401 on a request that carried our Bearer token means the
+    /// session is gone (revoked: the account signed in on another device) → SessionGuard sends the
+    /// app to the sign-in screen; callers get `.notAuthenticated` (no raw 401 in an alert).
+    private func endSessionOn401(_ http: HTTPURLResponse, _ req: URLRequest) async throws {
+        guard http.statusCode == 401, req.value(forHTTPHeaderField: "Authorization") != nil else { return }
+        await SessionGuard.shared.sessionEnded(sessionId: nil)
+        throw APIError.notAuthenticated
     }
 
     func perform(_ req: URLRequest) async throws -> (Data, URLResponse) {

@@ -13,7 +13,7 @@ import UserNotifications
 /// touches Subshot iOS source, so a glance at the Projects screen settles
 /// whether a `git pull` + rebuild actually picked up the latest commit.
 enum Config {
-    static let buildTag = "b109"
+    static let buildTag = "b110"
 }
 
 /// Registers for remote notifications so a scene-timer push (see
@@ -137,11 +137,14 @@ struct SubshotApp: App {
 struct RootView: View {
     @Environment(Clerk.self) private var clerk
     @StateObject private var backendAuth = BackendAuth.shared
+    @StateObject private var sessionGuard = SessionGuard.shared
 
     var body: some View {
         Group {
             if clerk.isLoaded {
-                if clerk.user != nil {
+                // a session the server revoked (seat protection) counts as signed out at once,
+                // even while Clerk's local state still holds it
+                if clerk.user != nil && clerk.session?.id != sessionGuard.endedSessionId {
                     ProjectListView()
                         .environmentObject(backendAuth)
                         .task { await backendAuth.refreshMe() }
@@ -152,5 +155,6 @@ struct RootView: View {
                 ProgressView()
             }
         }
+        .onChange(of: clerk.session?.id) { _, newId in sessionGuard.signedIn(sessionId: newId) }
     }
 }
