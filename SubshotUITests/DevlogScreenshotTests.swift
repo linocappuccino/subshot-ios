@@ -15,6 +15,9 @@ import XCTest
 /// the simulator); the simulator itself runs in English so SF Symbol labels are predictable.
 final class DevlogScreenshotTests: XCTestCase {
     private let demoProject = "Alpenbahn"
+    /// its id — ShotListView only restores the page (-lastOpenedWorkflowSection) for the project
+    /// in lastOpenedProjectId, and a fresh install has none
+    private let demoProjectId = "c15ead5c-1d16-4f9b-ac97-547fb244e7a4"
     /// approved idea AND shot-list section of the demo project (has scenes, shots, ticked-off takes)
     private let demoSection = "Panoramafahrt im Morgenlicht"
     /// a scene in that section with image, description and shots
@@ -26,7 +29,14 @@ final class DevlogScreenshotTests: XCTestCase {
         continueAfterFailure = true
     }
 
-    func testDevlogScreenshots() throws {
+    // Four phases, ONE launch each: on the GitHub macos-26 runner XCUITest fails to terminate a
+    // running app ("Failed to terminate …:0") — so CI runs every phase as its own xcodebuild call
+    // and stops the app with `simctl terminate` in between. Every signed-in phase signs in with
+    // its own one-time ticket (the app is reinstalled per call, the session doesn't carry over):
+    // in CI the test fetches it (DEBUG_TICKET_SECRET); locally pass a fresh SUBSHOT_TEST_TICKET
+    // per phase.
+
+    func test1_SignIn() throws {
         // 1) Sign-in screen — launched WITHOUT a ticket (fresh simulator → signed out).
         app = makeApp(ticket: nil)
         app.launch()
@@ -37,12 +47,14 @@ final class DevlogScreenshotTests: XCTestCase {
         } else {
             skip("ios-sign-in-account-1", "no sign-in button (already signed in?)")
         }
-        // no app.terminate(): launch() restarts the app itself, and terminate failed on the CI runner
+        attachSkipped("1")
+    }
 
+    func test2_OverviewAccountIdeas() throws {
         // 2) Signed in as the test account.
         guard let ticket = testTicket() else {
             skip("all signed-in shots", "no ticket (set SUBSHOT_TEST_TICKET or DEBUG_TICKET_SECRET)")
-            attachSkipped()
+            attachSkipped(phase)
             return
         }
         app = makeApp(ticket: ticket)
@@ -57,7 +69,7 @@ final class DevlogScreenshotTests: XCTestCase {
         let todo = button(["Todoliste", "To-dos"])
         guard todo.waitForExistence(timeout: 40) else {
             skip("all signed-in shots", "projects screen did not appear (ticket expired or sign-in failed)")
-            attachSkipped()
+            attachSkipped(phase)
             return
         }
         dismissSystemAlert()
@@ -93,12 +105,8 @@ final class DevlogScreenshotTests: XCTestCase {
         // Open the demo project
         let tile = app.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@", demoProject)).firstMatch
         guard tile.waitForExistence(timeout: 10), tap(tile) else {
-            for n in ["ios-ideas-1", "ios-idea-board-1", "ios-storyboard-shot-list-1", "ios-storyboard-shot-list-2",
-                      "ios-on-set-1", "ios-shoot-planning-1", "ios-shoot-planning-2", "ios-timecode-markers-1",
-                      "ios-post-production-1", "ios-post-production-2", "ios-sharing-team-1", "ios-sharing-team-2"] {
-                skip(n, "demo project «\(demoProject)» not visible for the test account")
-            }
-            attachSkipped()
+            skip("ios-ideas-1", "demo project «\(demoProject)» not visible for the test account")
+            attachSkipped(phase)
             return
         }
         sleep(4)
@@ -110,11 +118,15 @@ final class DevlogScreenshotTests: XCTestCase {
             skip("ios-ideas-1", "ideas page not shown")
         }
 
-        // Storyboard / shot list — relaunch straight into the scripting page (the Clerk session
-        // survives the relaunch, so no new ticket is needed) and open the project again.
-        // no app.terminate(): launch() restarts the app itself, and terminate failed on the CI runner
-        app = makeApp(ticket: nil, section: 1)
+        attachSkipped("2")
+    }
+
+    func test3_ShotListPlanningPostSharing() throws {
+        // Storyboard / shot list — launched straight into the scripting page with a fresh ticket
+        // (each xcodebuild call reinstalls the app, so the session doesn't carry over).
+        app = makeApp(ticket: testTicket(), section: 1, restoreProject: true)
         app.launch()
+        backToProjects()
         let tile2 = app.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@", demoProject)).firstMatch
         guard tile2.waitForExistence(timeout: 30), tap(tile2) else {
             for n in ["ios-storyboard-shot-list-1", "ios-storyboard-shot-list-2", "ios-on-set-1", "ios-shoot-planning-1",
@@ -122,7 +134,7 @@ final class DevlogScreenshotTests: XCTestCase {
                       "ios-sharing-team-1", "ios-sharing-team-2"] {
                 skip(n, "project not reachable after relaunch (session lost?)")
             }
-            attachSkipped()
+            attachSkipped(phase)
             return
         }
         sleep(5)
@@ -214,11 +226,14 @@ final class DevlogScreenshotTests: XCTestCase {
             }
         }
 
-        // Idea board LAST: its embedded web sign-in creates another Clerk session, and the
-        // backend's max-3-sessions guard may then end the app's own session.
-        // no app.terminate(): launch() restarts the app itself, and terminate failed on the CI runner
-        app = makeApp(ticket: nil, section: 0)
+        attachSkipped("3")
+    }
+
+    func test4_IdeaBoard() throws {
+        // Idea board LAST: its embedded web sign-in creates another Clerk session.
+        app = makeApp(ticket: testTicket(), section: 0, restoreProject: true)
         app.launch()
+        backToProjects()
         let tile3 = app.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@", demoProject)).firstMatch
         if tile3.waitForExistence(timeout: 30), tap(tile3) {
             sleep(4)
@@ -228,16 +243,19 @@ final class DevlogScreenshotTests: XCTestCase {
             } else { skip("ios-idea-board-1", "no idea tile found") }
         } else { skip("ios-idea-board-1", "project not reachable after relaunch") }
 
-        attachSkipped()
+        attachSkipped("4")
     }
 
     // MARK: - Helpers
 
-    private func makeApp(ticket: String?, section: Int = 0) -> XCUIApplication {
+    /// `restoreProject`: also hand in the demo project's id — needed for `section` to apply on a
+    /// fresh install, but then the app opens straight into the project (no Projects screen).
+    private func makeApp(ticket: String?, section: Int = 0, restoreProject: Bool = false) -> XCUIApplication {
         let a = XCUIApplication()
         a.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                              // page a project opens on: 0 ideas, 1 shot list (ShotListView.lastOpenedWorkflowSectionKey)
                              "-lastOpenedWorkflowSection", String(section)]
+        if restoreProject { a.launchArguments += ["-lastOpenedProjectId", demoProjectId] }
         if let ticket { a.launchArguments += ["-SubshotTestTicket", ticket] }
         return a
     }
@@ -282,13 +300,25 @@ final class DevlogScreenshotTests: XCTestCase {
         print("SKIPPED \(name): \(why)")
     }
 
-    private func attachSkipped() {
+    /// the running phase's number (from the test name test<N>_…), for the attachment names
+    private var phase: String {
+        let n = name.replacingOccurrences(of: "-[DevlogScreenshotTests test", with: "")
+        return String(n.prefix(1))
+    }
+
+    /// The app reopens the last project after a relaunch — go back to the Projects screen.
+    private func backToProjects() {
+        let back = app.buttons["BackButton"]
+        if back.waitForExistence(timeout: 15), back.isHittable { back.tap(); sleep(2) }
+    }
+
+    private func attachSkipped(_ phase: String) {
         let a = XCTAttachment(string: skipped.isEmpty ? "none" : skipped.joined(separator: "\n"))
-        a.name = "skipped"
+        a.name = "skipped-\(phase)"
         a.lifetime = .keepAlways
         add(a)
         let tree = XCTAttachment(string: app.debugDescription)
-        tree.name = "hierarchy-last"
+        tree.name = "hierarchy-\(phase)"
         tree.lifetime = .keepAlways
         add(tree)
     }

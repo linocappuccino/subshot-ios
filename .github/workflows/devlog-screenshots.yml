@@ -58,32 +58,45 @@ jobs:
             IPHONEOS_DEPLOYMENT_TARGET="$SIM_OS" \
             build-for-testing 2>&1 | tee build.log | grep -E "error:|TEST BUILD (SUCCEEDED|FAILED)" || true
           grep -q "TEST BUILD SUCCEEDED" build.log || { grep -A15 "Unable to find a destination" build.log; exit 1; }
-      - name: Run screenshot test
+      - name: Run screenshot test (4 phases)
         env:
-          # the test fetches its own 2-minute ticket right before the signed-in launch
+          # phase 2 fetches its own 2-minute ticket right before the signed-in launch
           TEST_RUNNER_DEBUG_TICKET_SECRET: ${{ secrets.DEBUG_TICKET_SECRET }}
         run: |
           if [ -z "$TEST_RUNNER_DEBUG_TICKET_SECRET" ]; then echo "::warning::DEBUG_TICKET_SECRET missing — only the sign-in screen will be captured"; fi
-          xcodebuild test-without-building -xctestrun $(ls dd/Build/Products/*.xctestrun | head -1) \
-            -destination "platform=iOS Simulator,id=$SIM_UDID" -only-testing:SubshotUITests/DevlogScreenshotTests \
-            -resultBundlePath devlog.xcresult 2>&1 | grep -E "Test (case|Case)|TEST (EXECUTE )?(SUCCEEDED|FAILED)" || true
+          XCTESTRUN=$(ls dd/Build/Products/*.xctestrun | head -1)
+          # one xcodebuild call per phase: XCUITest can't terminate a running app on this runner,
+          # so the app is stopped from outside between phases (the Clerk session stays in the keychain)
+          for T in test1_SignIn test2_OverviewAccountIdeas test3_ShotListPlanningPostSharing test4_IdeaBoard; do
+            xcrun simctl terminate "$SIM_UDID" com.linocappuccino.subshot.Subshot 2>/dev/null || true
+            sleep 2
+            xcodebuild test-without-building -xctestrun "$XCTESTRUN" \
+              -destination "platform=iOS Simulator,id=$SIM_UDID" \
+              -only-testing:"SubshotUITests/DevlogScreenshotTests/$T" \
+              -resultBundlePath "devlog-$T.xcresult" 2>&1 | grep -E "Test (case|Case)|TEST (EXECUTE )?(SUCCEEDED|FAILED)" || true
+          done
       - name: Export PNGs
         if: always()
         run: |
           mkdir -p raw screenshots
-          [ -d devlog.xcresult ] || { echo "no test results"; exit 0; }
-          xcrun xcresulttool export attachments --path devlog.xcresult --output-path raw
+          for R in devlog-*.xcresult; do
+            [ -d "$R" ] || continue
+            mkdir -p "raw/$R"
+            xcrun xcresulttool export attachments --path "$R" --output-path "raw/$R" >/dev/null
+            xcrun xcresulttool get test-results summary --path "$R" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(sys.argv[1], d["result"]); [print("  FAIL:", f.get("failureText")) for f in d.get("testFailures", [])]' "$R"
+          done
           python3 - <<'PY'
-          import json, os, re, shutil
-          for test in json.load(open("raw/manifest.json")):
-              for a in test.get("attachments", []):
-                  name = re.sub(r"_\d+_[0-9A-F-]{36}(?=\.\w+$)", "", a["suggestedHumanReadableName"])
-                  if name.startswith(("ios-", "skipped")):
-                      shutil.copy(os.path.join("raw", a["exportedFileName"]), os.path.join("screenshots", name))
+          import glob, json, os, re, shutil
+          for manifest in glob.glob("raw/*/manifest.json"):
+              base = os.path.dirname(manifest)
+              for test in json.load(open(manifest)):
+                  for a in test.get("attachments", []):
+                      name = re.sub(r"_\d+_[0-9A-F-]{36}(?=\.\w+$)", "", a["suggestedHumanReadableName"])
+                      if name.startswith(("ios-", "skipped")):
+                          shutil.copy(os.path.join(base, a["exportedFileName"]), os.path.join("screenshots", name))
           print("\n".join(sorted(os.listdir("screenshots"))))
           PY
-          cat screenshots/skipped.txt 2>/dev/null || true
-          xcrun xcresulttool get test-results summary --path devlog.xcresult | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["result"]); [print("FAIL:", f.get("failureText")) for f in d.get("testFailures", [])]'
+          cat screenshots/skipped-*.txt 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
