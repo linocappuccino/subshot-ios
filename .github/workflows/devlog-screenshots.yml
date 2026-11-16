@@ -1,0 +1,120 @@
+name: Devlog screenshots
+# Real iPad simulator screenshots for the Subshot devlog (SubshotUITests/DevlogScreenshotTests).
+# Signs in as the fixed test account via the app's DEBUG-only -SubshotTestTicket launch argument;
+# the UI test fetches the 2-minute ticket itself from POST https://subshot.ch/debug/test-ticket (secret DEBUG_TICKET_SECRET).
+# Output: artifact "devlog-screenshots" with one PNG per devlog slot (ios-<feature>-<n>.png) + skipped.txt.
+on:
+  workflow_dispatch:
+  # GitHub only dispatches workflows that exist on the default branch — until this is merged,
+  # a push to the devlog branch runs it.
+  push:
+    branches: [devlog-test-login]
+jobs:
+  screenshots:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode
+        run: |
+          LATEST=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$LATEST" ]; then sudo xcode-select -s "$LATEST"; fi
+          xcodebuild -version
+      - name: iPad simulator
+        run: |
+          # iPad (prefer Pro 13") on the NEWEST installed iOS runtime
+          read UDID OSVER < <(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          d = json.load(sys.stdin)["devices"]
+          best = None
+          for rt, devs in d.items():
+              if ".iOS-" not in rt: continue
+              ver = tuple(int(x) for x in rt.split(".iOS-")[1].split("-"))
+              for dev in devs:
+                  if "iPad" not in dev["name"]: continue
+                  key = (ver, "iPad Pro 13" in dev["name"])
+                  if best is None or key > best[0]: best = (key, dev["udid"], ".".join(map(str, ver)))
+          print(best[1], best[2])')
+          echo "Using iOS $OSVER: $(xcrun simctl list devices | grep $UDID)"
+          echo "SIM_UDID=$UDID" >> "$GITHUB_ENV"
+          echo "SIM_OS=$OSVER" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          # no permission alerts over the screenshots (Visual Timecode asks for the camera)
+          xcrun simctl privacy "$UDID" grant camera com.linocappuccino.subshot.Subshot || true
+          xcrun simctl privacy "$UDID" grant photos com.linocappuccino.subshot.Subshot || true
+      - name: Build for testing (Debug)
+        # Deployment target = the simulator's iOS (the runner may lag behind the app's 26.5; this
+        # build is only for screenshots, never shipped).
+        # Ad-hoc signed, NOT CODE_SIGNING_ALLOWED=NO: an unsigned simulator app has no keychain
+        # access, Clerk can't keep its client token, and every session token call answers
+        # "signed_out" (found 2026-11-15) → empty Projects screen.
+        run: |
+          set -o pipefail
+          xcodebuild -project Subshot.xcodeproj -scheme Subshot -configuration Debug \
+            -destination "platform=iOS Simulator,id=$SIM_UDID" -derivedDataPath dd \
+            -skipPackagePluginValidation -skipMacroValidation \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= -only-testing:SubshotUITests \
+            IPHONEOS_DEPLOYMENT_TARGET="$SIM_OS" \
+            build-for-testing 2>&1 | tee build.log | grep -E "error:|TEST BUILD (SUCCEEDED|FAILED)" || true
+          grep -q "TEST BUILD SUCCEEDED" build.log || { grep -A15 "Unable to find a destination" build.log; exit 1; }
+      - name: Run screenshot test (4 phases)
+        env:
+          # phase 2 fetches its own 2-minute ticket right before the signed-in launch
+          TEST_RUNNER_DEBUG_TICKET_SECRET: ${{ secrets.DEBUG_TICKET_SECRET }}
+        run: |
+          if [ -z "$TEST_RUNNER_DEBUG_TICKET_SECRET" ]; then echo "::warning::DEBUG_TICKET_SECRET missing — only the sign-in screen will be captured"; fi
+          XCTESTRUN=$(ls dd/Build/Products/*.xctestrun | head -1)
+          # one xcodebuild call per phase: XCUITest can't terminate a running app on this runner,
+          # so the app is stopped from outside between phases (the Clerk session stays in the keychain)
+          for T in test1_SignIn test2_OverviewAccountIdeas test3_ShotListPlanningPostSharing test4_IdeaBoard; do
+            xcrun simctl terminate "$SIM_UDID" com.linocappuccino.subshot.Subshot 2>/dev/null || true
+            sleep 2
+            for TRY in 1 2; do
+              rm -rf "devlog-$T.xcresult"
+              xcodebuild test-without-building -xctestrun "$XCTESTRUN" \
+                -destination "platform=iOS Simulator,id=$SIM_UDID" \
+                -only-testing:"SubshotUITests/DevlogScreenshotTests/$T" \
+                -resultBundlePath "devlog-$T.xcresult" > "phase-$T.log" 2>&1 || true
+              grep -E "Test (case|Case)" "phase-$T.log" || true
+              # a phase that failed (slow runner: snapshot timeouts) gets one more try with a new ticket
+              grep -q "' passed on" "phase-$T.log" && break
+              echo "retrying $T"
+              xcrun simctl terminate "$SIM_UDID" com.linocappuccino.subshot.Subshot 2>/dev/null || true
+              sleep 5
+            done
+          done
+      - name: Export PNGs
+        if: always()
+        run: |
+          mkdir -p raw screenshots
+          for R in devlog-*.xcresult; do
+            [ -d "$R" ] || continue
+            mkdir -p "raw/$R"
+            xcrun xcresulttool export attachments --path "$R" --output-path "raw/$R" >/dev/null
+            xcrun xcresulttool get test-results summary --path "$R" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(sys.argv[1], d["result"]); [print("  FAIL:", f.get("failureText")) for f in d.get("testFailures", [])]' "$R"
+          done
+          python3 - <<'PY'
+          import glob, json, os, re, shutil
+          for manifest in glob.glob("raw/*/manifest.json"):
+              base = os.path.dirname(manifest)
+              for test in json.load(open(manifest)):
+                  for a in test.get("attachments", []):
+                      name = re.sub(r"_\d+_[0-9A-F-]{36}(?=\.\w+$)", "", a["suggestedHumanReadableName"])
+                      if name.startswith(("ios-", "skipped")):
+                          shutil.copy(os.path.join(base, a["exportedFileName"]), os.path.join("screenshots", name))
+          print("\n".join(sorted(os.listdir("screenshots"))))
+          PY
+          cat screenshots/skipped-*.txt 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: devlog-screenshots
+          path: screenshots/
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: devlog-raw-results
+          path: raw/
+          if-no-files-found: ignore

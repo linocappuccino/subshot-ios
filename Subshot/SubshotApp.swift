@@ -13,7 +13,7 @@ import UserNotifications
 /// touches Subshot iOS source, so a glance at the Projects screen settles
 /// whether a `git pull` + rebuild actually picked up the latest commit.
 enum Config {
-    static let buildTag = "b110"
+    static let buildTag = "b111"
 }
 
 /// Registers for remote notifications so a scene-timer push (see
@@ -138,18 +138,34 @@ struct RootView: View {
     @Environment(Clerk.self) private var clerk
     @StateObject private var backendAuth = BackendAuth.shared
     @StateObject private var sessionGuard = SessionGuard.shared
+    #if DEBUG
+    @StateObject private var debugLogin = DebugTestLogin.shared
+    #endif
 
     var body: some View {
         Group {
             if clerk.isLoaded {
+                #if DEBUG
+                let debugLoginPending = DebugTestLogin.ticket != nil && !debugLogin.ready
+                #else
+                let debugLoginPending = false
+                #endif
                 // a session the server revoked (seat protection) counts as signed out at once,
                 // even while Clerk's local state still holds it
-                if clerk.user != nil && clerk.session?.id != sessionGuard.endedSessionId {
+                if clerk.user != nil && !debugLoginPending && clerk.session?.id != sessionGuard.endedSessionId {
                     ProjectListView()
                         .environmentObject(backendAuth)
                         .task { await backendAuth.refreshMe() }
                 } else {
+                    #if DEBUG
+                    if debugLoginPending {
+                        DebugTestLoginView()
+                    } else {
+                        LoginView()
+                    }
+                    #else
                     LoginView()
+                    #endif
                 }
             } else {
                 ProgressView()
@@ -165,3 +181,85 @@ struct RootView: View {
         }
     }
 }
+
+#if DEBUG
+/// 2026-11-15 — debug-only test login for simulator screenshots (devlog): with the launch argument
+/// `-SubshotTestTicket <ticket>` the app signs in to Clerk with that one-time sign-in token
+/// (Backend API sign_in_tokens, minted by the backend's POST /debug/test-ticket for the test
+/// account) and never shows Clerk's AuthView. Lives entirely inside #if DEBUG, so Release builds
+/// (TestFlight/App Store) contain none of it.
+///
+/// RootView keeps showing DebugTestLoginView until a session TOKEN can actually be fetched — a
+/// session that Clerk reports as active but whose token call fails ("signed_out") would otherwise
+/// open an empty Projects screen with no request ever reaching the API (seen 2026-11-15).
+///
+/// Usage: `xcrun simctl launch booted <bundle-id> -SubshotTestTicket <ticket>`
+/// (or Scheme → Run → Arguments in Xcode; the UI test passes it from SUBSHOT_TEST_TICKET).
+@MainActor
+final class DebugTestLogin: ObservableObject {
+    static let shared = DebugTestLogin()
+
+    @Published private(set) var ready = false
+    @Published private(set) var error: String?
+    private var started = false
+
+    /// `-Key value` launch arguments land in UserDefaults' argument domain.
+    nonisolated static var ticket: String? {
+        guard let t = UserDefaults.standard.string(forKey: "SubshotTestTicket"), !t.isEmpty else { return nil }
+        return t
+    }
+
+    func run() async {
+        guard !started, let ticket = Self.ticket else { return }
+        started = true
+        do {
+            // A session from an earlier run (simulator keeps the Clerk client) may be stale — start clean.
+            if Clerk.shared.session != nil { try? await Clerk.shared.auth.signOut() }
+            try await Clerk.shared.auth.signInWithTicket(ticket)
+            var lastError: Error?
+            for _ in 1...5 {
+                do {
+                    if let token = try await Clerk.shared.session?.getToken(.init(skipCache: true)), !token.isEmpty {
+                        print("[TestLogin] signed in, token ok")
+                        ready = true
+                        return
+                    }
+                } catch { lastError = error }
+                try? await Task.sleep(for: .seconds(1))
+            }
+            throw lastError ?? URLError(.userAuthenticationRequired)
+        } catch {
+            print("[TestLogin] failed: \(error)")
+            self.error = String(describing: error)
+        }
+    }
+}
+
+/// Shown instead of LoginView while the ticket sign-in runs (and with the Clerk error if it fails).
+private struct DebugTestLoginView: View {
+    @ObservedObject private var login = DebugTestLogin.shared
+
+    var body: some View {
+        VStack(spacing: 14) {
+            if let error = login.error {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.largeTitle)
+                    .foregroundStyle(.orange)
+                Text("Test login failed")
+                    .font(.headline)
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            } else {
+                ProgressView()
+                Text("Test login …")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .task { await login.run() }
+    }
+}
+#endif

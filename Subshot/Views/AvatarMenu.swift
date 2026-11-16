@@ -86,6 +86,8 @@ struct AvatarMenu: View {
                 size: 30
             )
         }
+        // stable id for the devlog screenshot UI test (SubshotUITests)
+        .accessibilityIdentifier("avatarMenu")
         .disabled(signingOut)
         .sheet(isPresented: $showNotificationSettings) {
             NotificationSettingsView()

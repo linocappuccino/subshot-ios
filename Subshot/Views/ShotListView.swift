@@ -103,6 +103,8 @@ private struct ExpandableToolbar<Content: View>: View {
             } label: {
                 Image(systemName: expanded ? "xmark.circle.fill" : "ellipsis.circle")
             }
+            // stable ids for the devlog screenshot UI test (SubshotUITests)
+            .accessibilityIdentifier("toolbar.more")
         }
         // A little breathing room before the revealed buttons when expanded
         // (2026-07-14, Lino: "mehr platz links") — without it the leftmost
@@ -1724,15 +1726,18 @@ struct ShotListView: View {
                 } label: {
                     Image(systemName: "link")
                 }
+                .accessibilityIdentifier("toolbar.shareLink")
                 Button { showingTeamSheet = true } label: {
                     Image(systemName: "person.2")
                 }
+                .accessibilityIdentifier("toolbar.team")
                 // #11 Schritt 6 (Postproduction-Tracking) — nur sichtbar
                 // wenn das Projekt dieses Modul nutzt (#96).
                 if viewModel.modulePostproduction {
                     Button { showingPostproductionList = true } label: {
                         Image(systemName: "checklist.checked")
                     }
+                    .accessibilityIdentifier("toolbar.postproduction")
                 }
             }
         }
