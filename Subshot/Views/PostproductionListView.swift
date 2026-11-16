@@ -214,6 +214,10 @@ struct PostproductionListView: View {
                                 guard let video = tile.video else { return }
                                 Task { await updateVideoAssignee(video, sectionId: tile.section.id, userId: userId) }
                             },
+                            onChangePlatforms: !canEditStatus ? nil : { platforms in
+                                guard let video = tile.video else { return }
+                                Task { await updateVideoPlatforms(video, sectionId: tile.section.id, platforms: platforms) }
+                            },
                             extras: tile.video.map { extras[$0.id] ?? .empty },
                             onExtrasChange: { x in if let id = tile.video?.id { extras[id] = x } },
                             onError: { errorMessage = $0 },
@@ -605,6 +609,18 @@ struct PostproductionListView: View {
         }
     }
 
+    /// 2026-11-16 — several platforms per video (web parity): the list is replaced as a whole.
+    private func updateVideoPlatforms(_ video: Video, sectionId: String, platforms: [String]) async {
+        do {
+            let updated = try await APIClient.shared.patchVideoPlatforms(video.id, platforms: platforms)
+            if let index = sectionVideos[sectionId]?.firstIndex(where: { $0.id == updated.id }) {
+                sectionVideos[sectionId]?[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     private func updateVersion(_ updated: VideoVersion, videoId: String) {
         for (sectionId, videos) in sectionVideos {
             if let vIndex = videos.firstIndex(where: { $0.id == videoId }),
@@ -648,6 +664,8 @@ private struct PostproductionVideoTile: View {
     /// `editable={canEditStatus}` rather than assuming from the question's
     /// wording alone.
     let onChangeAssignee: (String?) -> Void
+    /// nil = read-only (no right to edit): icons only, no menu
+    var onChangePlatforms: (([String]) -> Void)? = nil
     var extras: VideoExtras? = nil
     var onExtrasChange: ((VideoExtras) -> Void)? = nil
     var onError: ((String) -> Void)? = nil
@@ -670,6 +688,7 @@ private struct PostproductionVideoTile: View {
         onTapUpload: @escaping () -> Void, onPlay: @escaping (Video, VideoVersion) -> Void, onEditTitle: @escaping () -> Void,
         onStatusChange: @escaping (PostproductionStatus) -> Void, onDeadlineChange: @escaping (Date?) -> Void,
         onDeleteVideo: @escaping () -> Void, onChangeAssignee: @escaping (String?) -> Void,
+        onChangePlatforms: (([String]) -> Void)? = nil,
         extras: VideoExtras? = nil, onExtrasChange: ((VideoExtras) -> Void)? = nil, onError: ((String) -> Void)? = nil,
         qc: VideoQC? = nil, onOpenQC: (() -> Void)? = nil,
         rounds: FeedbackRounds.VideoRounds? = nil, onSetRoundLimit: ((Int?) -> Void)? = nil
@@ -694,6 +713,7 @@ private struct PostproductionVideoTile: View {
         self.onDeadlineChange = onDeadlineChange
         self.onDeleteVideo = onDeleteVideo
         self.onChangeAssignee = onChangeAssignee
+        self.onChangePlatforms = onChangePlatforms
         _deadline = State(initialValue: section.postproductionDeadline ?? .now)
     }
 
@@ -1027,8 +1047,16 @@ private struct PostproductionVideoTile: View {
         // matches that same effective behavior (and avoids showing a STALE
         // version's badge while a newer one is mid-upload).
         .overlay(alignment: .topTrailing) {
-            if !uploading, let readyVersion {
-                versionAndCommentBadge(readyVersion)
+            // 2026-11-16 — platform icons stacked vertically below the version badge (web: right, below QC)
+            VStack(alignment: .trailing, spacing: 6) {
+                if !uploading, let readyVersion {
+                    versionAndCommentBadge(readyVersion)
+                }
+                if let video, !uploading {
+                    VideoPlatformStack(platforms: video.platformList, onChange: onChangePlatforms)
+                        .padding(.trailing, 10)
+                        .padding(.top, -4)
+                }
             }
         }
         .overlay(alignment: .topLeading) {
@@ -1072,5 +1100,75 @@ private struct PostproductionVideoTile: View {
             }
         }
         .padding(10)
+    }
+}
+
+/// 2026-11-16 (web parity, VideoTile.tsx) — the video's platform icons, stacked vertically. With
+/// `onChange` (editors) a tap opens a menu to switch platforms on and off (several allowed) or
+/// remove all; empty + editable shows a small «+».
+struct VideoPlatformStack: View {
+    @ObservedObject private var language = AppLanguage.shared
+    let platforms: [String]
+    let onChange: (([String]) -> Void)?
+
+    var body: some View {
+        if let onChange {
+            Menu {
+                ForEach(VideoPlatform.allCases) { p in
+                    Button {
+                        var next = platforms
+                        if let i = next.firstIndex(of: p.rawValue) { next.remove(at: i) } else { next.append(p.rawValue) }
+                        onChange(next)
+                    } label: {
+                        if platforms.contains(p.rawValue) {
+                            Label(p.name, systemImage: "checkmark")
+                        } else {
+                            Text(p.name)
+                        }
+                    }
+                }
+                if !platforms.isEmpty {
+                    Divider()
+                    Button(language.t("videoTile.platformNone"), role: .destructive) { onChange([]) }
+                }
+            } label: {
+                // 36-pt tap area (the icons are 22 pt): otherwise the thumbnail's own tap (play)
+                // often won and the menu only opened on the second try
+                icons(showAdd: true)
+                    .frame(minWidth: 36, minHeight: 36, alignment: .topTrailing)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel(language.t("videoTile.platform"))
+            .accessibilityIdentifier("videoTile.platforms")
+        } else if !platforms.isEmpty {
+            icons(showAdd: false)
+        }
+    }
+
+    @ViewBuilder
+    private func icons(showAdd: Bool) -> some View {
+        if platforms.isEmpty {
+            if showAdd {
+                Image(systemName: "plus")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(.black.opacity(0.5)))
+            }
+        } else {
+            VStack(spacing: 4) {
+                ForEach(platforms, id: \.self) { raw in
+                    if let p = VideoPlatform(rawValue: raw) {
+                        Image(p.imageName)
+                            .resizable()
+                            .interpolation(.high)
+                            .scaledToFit()
+                            .frame(width: 22, height: 22)
+                            .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
+                            .accessibilityLabel(p.name)
+                    }
+                }
+            }
+        }
     }
 }

@@ -1170,14 +1170,42 @@ struct Video: Codable, Identifiable, Hashable {
     /// here). Single person, not a list (unlike Scene.assigneeIds) — see
     /// VideoPatch's own doc comment in schemas.py.
     var assigneeId: String?
+    /// 2026-11-16 (web parity, VideoTile.tsx) — where the video is published: youtube /
+    /// instagram / meta / tiktok, several per video. `platform` is the older single field
+    /// (still sent, = the first one); use `platformList`.
+    var platform: String?
+    var platforms: [String]?
+
+    /// All platforms, in the order the API gives them; falls back to the old single field.
+    /// Unknown values are kept out (no icon for them).
+    var platformList: [String] {
+        let raw = (platforms?.isEmpty == false ? platforms : nil) ?? platform.map { [$0] } ?? []
+        return raw.filter { VideoPlatform(rawValue: $0) != nil }
+    }
 
     enum CodingKeys: String, CodingKey {
-        case id, title, versions
+        case id, title, versions, platform, platforms
         case sectionId = "section_id"
         case sortOrder = "sort_order"
         case createdAt = "created_at"
         case assigneeId = "assignee_id"
     }
+}
+
+/// 2026-11-16 — publishing platforms of a video (icons in Assets.xcassets/Platform-<raw>,
+/// the same PNGs as web's /public/platforms).
+enum VideoPlatform: String, CaseIterable, Identifiable {
+    case youtube, instagram, meta, tiktok
+    var id: String { rawValue }
+    var name: String {
+        switch self {
+        case .youtube: return "YouTube"
+        case .instagram: return "Instagram"
+        case .meta: return "Meta"
+        case .tiktok: return "TikTok"
+        }
+    }
+    var imageName: String { "Platform-\(rawValue)" }
 }
 
 /// On-set take marker (2026-08-29 — "Mark Clip" button in the scene

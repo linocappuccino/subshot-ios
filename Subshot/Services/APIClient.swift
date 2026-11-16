@@ -1515,6 +1515,16 @@ final class APIClient {
         return try await send(req)
     }
 
+    /// 2026-11-16 — `PATCH /videos/{id}` with `{"platforms": [...]}` (`[]` removes all; the
+    /// backend keeps the old single `platform` field = the first one).
+    func patchVideoPlatforms(_ id: String, platforms: [String]) async throws -> Video {
+        var req = try await authorizedRequest("videos/\(id)", method: "PATCH")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let platforms: [String] }
+        req.httpBody = try encoder.encode(Body(platforms: platforms))
+        return try await send(req)
+    }
+
     func createVideoVersion(videoId: String, filename: String, contentType: String) async throws -> VideoVersion {
         var req = try await authorizedRequest("videos/\(videoId)/versions", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
