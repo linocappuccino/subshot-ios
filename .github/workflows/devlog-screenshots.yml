@@ -65,7 +65,7 @@ jobs:
         run: |
           if [ -z "$TEST_RUNNER_DEBUG_TICKET_SECRET" ]; then echo "::warning::DEBUG_TICKET_SECRET missing — only the sign-in screen will be captured"; fi
           xcodebuild test-without-building -xctestrun $(ls dd/Build/Products/*.xctestrun | head -1) \
-            -destination "platform=iOS Simulator,id=$SIM_UDID" -only-testing:SubshotUITests \
+            -destination "platform=iOS Simulator,id=$SIM_UDID" -only-testing:SubshotUITests/DevlogScreenshotTests \
             -resultBundlePath devlog.xcresult 2>&1 | grep -E "Test (case|Case)|TEST (EXECUTE )?(SUCCEEDED|FAILED)" || true
       - name: Export PNGs
         if: always()

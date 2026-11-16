@@ -31,6 +31,7 @@ final class DevlogScreenshotTests: XCTestCase {
         app = makeApp(ticket: nil)
         app.launch()
         if app.buttons["Anmelden"].waitForExistence(timeout: 20) || app.buttons["Sign in"].exists {
+            dismissSystemAlert() // the push-permission alert pops up on the first launch
             sleep(3) // intro animation (icon fly-in, letterbox bars)
             shot("ios-sign-in-account-1")
         } else {
