@@ -288,7 +288,9 @@ final class DevlogScreenshotTests: XCTestCase {
     }
 
     private func shot(_ name: String) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
+        // device screenshot, not app.screenshot(): the app snapshot timed out on the CI runner
+        // while the live schedule sheet was animating
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)

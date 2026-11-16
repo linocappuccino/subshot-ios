@@ -70,10 +70,19 @@ jobs:
           for T in test1_SignIn test2_OverviewAccountIdeas test3_ShotListPlanningPostSharing test4_IdeaBoard; do
             xcrun simctl terminate "$SIM_UDID" com.linocappuccino.subshot.Subshot 2>/dev/null || true
             sleep 2
-            xcodebuild test-without-building -xctestrun "$XCTESTRUN" \
-              -destination "platform=iOS Simulator,id=$SIM_UDID" \
-              -only-testing:"SubshotUITests/DevlogScreenshotTests/$T" \
-              -resultBundlePath "devlog-$T.xcresult" 2>&1 | grep -E "Test (case|Case)|TEST (EXECUTE )?(SUCCEEDED|FAILED)" || true
+            for TRY in 1 2; do
+              rm -rf "devlog-$T.xcresult"
+              xcodebuild test-without-building -xctestrun "$XCTESTRUN" \
+                -destination "platform=iOS Simulator,id=$SIM_UDID" \
+                -only-testing:"SubshotUITests/DevlogScreenshotTests/$T" \
+                -resultBundlePath "devlog-$T.xcresult" > "phase-$T.log" 2>&1 || true
+              grep -E "Test (case|Case)" "phase-$T.log" || true
+              # a phase that failed (slow runner: snapshot timeouts) gets one more try with a new ticket
+              grep -q "' passed on" "phase-$T.log" && break
+              echo "retrying $T"
+              xcrun simctl terminate "$SIM_UDID" com.linocappuccino.subshot.Subshot 2>/dev/null || true
+              sleep 5
+            done
           done
       - name: Export PNGs
         if: always()
