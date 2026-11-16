@@ -1,7 +1,7 @@
 name: Devlog screenshots
 # Real iPad simulator screenshots for the Subshot devlog (SubshotUITests/DevlogScreenshotTests).
 # Signs in as the fixed test account via the app's DEBUG-only -SubshotTestTicket launch argument;
-# the 2-minute ticket comes from POST https://subshot.ch/debug/test-ticket (secret DEBUG_TICKET_SECRET).
+# the UI test fetches the 2-minute ticket itself from POST https://subshot.ch/debug/test-ticket (secret DEBUG_TICKET_SECRET).
 # Output: artifact "devlog-screenshots" with one PNG per devlog slot (ios-<feature>-<n>.png) + skipped.txt.
 on:
   workflow_dispatch:
@@ -60,18 +60,13 @@ jobs:
           grep -q "TEST BUILD SUCCEEDED" build.log || { grep -A15 "Unable to find a destination" build.log; exit 1; }
       - name: Run screenshot test
         env:
-          DEBUG_TICKET_SECRET: ${{ secrets.DEBUG_TICKET_SECRET }}
+          # the test fetches its own 2-minute ticket right before the signed-in launch
+          TEST_RUNNER_DEBUG_TICKET_SECRET: ${{ secrets.DEBUG_TICKET_SECRET }}
         run: |
-          set +x
-          # fetch the ticket right before the run (it lives 2 minutes); never print it
-          TEST_RUNNER_SUBSHOT_TEST_TICKET=$(curl -sf -X POST https://subshot.ch/debug/test-ticket \
-            -H "X-Debug-Secret: $DEBUG_TICKET_SECRET" | python3 -c 'import json,sys; print(json.load(sys.stdin)["ticket"])') || true
-          if [ -z "$TEST_RUNNER_SUBSHOT_TEST_TICKET" ]; then echo "::warning::no test ticket (secret/endpoint) — only the sign-in screen will be captured"; fi
-          export TEST_RUNNER_SUBSHOT_TEST_TICKET
-          echo "::add-mask::$TEST_RUNNER_SUBSHOT_TEST_TICKET"
+          if [ -z "$TEST_RUNNER_DEBUG_TICKET_SECRET" ]; then echo "::warning::DEBUG_TICKET_SECRET missing — only the sign-in screen will be captured"; fi
           xcodebuild test-without-building -xctestrun $(ls dd/Build/Products/*.xctestrun | head -1) \
             -destination "platform=iOS Simulator,id=$SIM_UDID" -only-testing:SubshotUITests \
-            -resultBundlePath devlog.xcresult 2>&1 | grep -E "SHOT |SKIPPED |Test Case|TEST (SUCCEEDED|FAILED)" || true
+            -resultBundlePath devlog.xcresult 2>&1 | grep -E "Test (case|Case)|TEST (EXECUTE )?(SUCCEEDED|FAILED)" || true
       - name: Export PNGs
         if: always()
         run: |

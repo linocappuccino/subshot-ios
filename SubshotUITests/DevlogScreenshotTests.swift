@@ -39,8 +39,8 @@ final class DevlogScreenshotTests: XCTestCase {
         app.terminate()
 
         // 2) Signed in as the test account.
-        guard let ticket = ProcessInfo.processInfo.environment["SUBSHOT_TEST_TICKET"], !ticket.isEmpty else {
-            skip("all signed-in shots", "SUBSHOT_TEST_TICKET not set")
+        guard let ticket = testTicket() else {
+            skip("all signed-in shots", "no ticket (set SUBSHOT_TEST_TICKET or DEBUG_TICKET_SECRET)")
             attachSkipped()
             return
         }
@@ -239,6 +239,33 @@ final class DevlogScreenshotTests: XCTestCase {
                              "-lastOpenedWorkflowSection", String(section)]
         if let ticket { a.launchArguments += ["-SubshotTestTicket", ticket] }
         return a
+    }
+
+    /// The ticket lives 2 minutes — on a slow CI runner it expired before the signed-in launch
+    /// (2026-11-15). So in CI the test fetches it itself, right here, with DEBUG_TICKET_SECRET
+    /// (passed in as TEST_RUNNER_DEBUG_TICKET_SECRET, never printed). Locally a ready ticket in
+    /// SUBSHOT_TEST_TICKET works too.
+    private func testTicket() -> String? {
+        let env = ProcessInfo.processInfo.environment
+        if let t = env["SUBSHOT_TEST_TICKET"], !t.isEmpty { return t }
+        guard let secret = env["DEBUG_TICKET_SECRET"], !secret.isEmpty,
+              let url = URL(string: "https://subshot.ch/debug/test-ticket") else { return nil }
+        var req = URLRequest(url: url, timeoutInterval: 20)
+        req.httpMethod = "POST"
+        req.setValue(secret, forHTTPHeaderField: "X-Debug-Secret")
+        var ticket: String?
+        let done = expectation(description: "test ticket")
+        URLSession.shared.dataTask(with: req) { data, response, _ in
+            if (response as? HTTPURLResponse)?.statusCode == 200, let data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                ticket = json["ticket"] as? String
+            } else {
+                print("test ticket request failed: HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)")
+            }
+            done.fulfill()
+        }.resume()
+        wait(for: [done], timeout: 25)
+        return ticket
     }
 
     private func shot(_ name: String) {
