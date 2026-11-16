@@ -93,6 +93,21 @@ final class SessionGuard: ObservableObject {
         kickedNotice = false
     }
 
+    /// Set by the account menu's own «Sign out» so that one isn't mistaken for a kick.
+    var userSignedOut = false
+
+    /// Clerk removed the session by itself (no failed request of ours) — unless the user signed
+    /// out, check whether it was a kick.
+    func sessionDisappeared(sessionId: String) async {
+        if userSignedOut { userSignedOut = false; return }
+        guard sessionId != endedSessionId else { return }
+        endedSessionId = sessionId
+        BackendAuth.shared.clear()
+        if await APIClient.shared.wasKicked(sessionId: sessionId) {
+            kickedNotice = true
+        }
+    }
+
     func sessionEnded(sessionId: String?) async {
         guard !handling else { return }
         let sid = sessionId ?? Clerk.shared.session?.id ?? lastAliveSessionId

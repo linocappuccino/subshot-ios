@@ -155,6 +155,13 @@ struct RootView: View {
                 ProgressView()
             }
         }
-        .onChange(of: clerk.session?.id) { _, newId in sessionGuard.signedIn(sessionId: newId) }
+        .onChange(of: clerk.session?.id) { oldId, newId in
+            sessionGuard.signedIn(sessionId: newId)
+            // Clerk can drop a revoked session on its own (client refresh on foreground) before
+            // any request of ours fails — still ask whether another device took the seat.
+            if let oldId, newId == nil {
+                Task { await sessionGuard.sessionDisappeared(sessionId: oldId) }
+            }
+        }
     }
 }

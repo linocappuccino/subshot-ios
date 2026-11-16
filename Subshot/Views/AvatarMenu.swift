@@ -110,6 +110,7 @@ struct AvatarMenu: View {
         // Sources/ClerkKit/Core/Auth.swift) — sign-out lives on the `auth`
         // facade, not directly on `Clerk`: `public func signOut(sessionId:
         // String? = nil) async throws` on `Clerk.shared.auth`.
+        SessionGuard.shared.userSignedOut = true
         try? await Clerk.shared.auth.signOut()
         auth.clear()
         signingOut = false
