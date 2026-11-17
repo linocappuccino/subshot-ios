@@ -53,6 +53,10 @@ struct VideoPlayerSheet: View {
     var canEditStage: Bool = false
     @State private var postStage: String?
     @State private var savingStage = false
+    /// 2026-11-17 (b113) — «Feedback abschliessen» (web: client preview; here for editors+)
+    @State private var feedbackLocked = false
+    @State private var closingFeedback = false
+    @State private var showingCloseFeedback = false
 
     @ObservedObject private var language = AppLanguage.shared
     @Environment(\.dismiss) private var dismiss
@@ -163,6 +167,7 @@ struct VideoPlayerSheet: View {
         self.onVersionUpdated = onVersionUpdated
         _comments = State(initialValue: version.comments)
         _postStage = State(initialValue: version.postStage)
+        _feedbackLocked = State(initialValue: version.feedbackLocked ?? false)
     }
 
     var body: some View {
@@ -569,6 +574,63 @@ struct VideoPlayerSheet: View {
             saveFrameButton
             videoDownloadButton
             commentButton
+            if canEditStage || feedbackLocked {
+                closeFeedbackButton
+            }
+        }
+        .alert(language.t("pp.closeFeedbackTitle"), isPresented: $showingCloseFeedback) {
+            Button(language.t("pp.closeFeedbackConfirm")) { Task { await closeFeedback() } }
+            Button(language.t("pp.cancel"), role: .cancel) {}
+        } message: {
+            Text(language.t("pp.closeFeedbackMessage").replacingOccurrences(of: "{count}", with: "\(comments.count)"))
+        }
+    }
+
+    /// 2026-11-17 (b113) — same meaning as the client preview's «Feedback abschliessen»: after closing,
+    /// nobody can give feedback on this version until the next round. Afterwards a locked state.
+    private var closeFeedbackButton: some View {
+        Button {
+            guard !feedbackLocked else { return }
+            player?.pause()
+            showingCloseFeedback = true
+        } label: {
+            VStack(spacing: 2) {
+                if closingFeedback {
+                    ProgressView().tint(.white)
+                } else {
+                    Image(systemName: feedbackLocked ? "lock.fill" : "lock.open")
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                Text(feedbackLocked ? language.t("pp.feedbackClosed") : language.t("pp.closeFeedbackShort"))
+                    .font(.system(size: 9, weight: .semibold))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+            }
+            .foregroundStyle(feedbackLocked ? Color.white.opacity(0.6) : Color.white)
+            .frame(width: 76, height: 52)
+            .background(.black.opacity(0.45))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .disabled(feedbackLocked || closingFeedback || !canEditStage)
+        .accessibilityIdentifier("player.closeFeedback")
+        .accessibilityLabel(feedbackLocked ? language.t("pp.feedbackClosed") : language.t("pp.closeFeedbackTitle"))
+    }
+
+    private func closeFeedback() async {
+        guard !closingFeedback else { return }
+        closingFeedback = true
+        defer { closingFeedback = false }
+        do {
+            _ = try await APIClient.shared.submitVideoFeedback(versionId: version.id)
+            feedbackLocked = true
+            var merged = version
+            merged.comments = comments
+            merged.postStage = postStage
+            merged.feedbackLocked = true
+            onVersionUpdated(merged)
+        } catch {
+            // 409 (a newer version exists) and every other error: the server's own text
+            errorMessage = error.localizedDescription
         }
     }
 

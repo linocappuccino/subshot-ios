@@ -70,7 +70,11 @@ extension AppLanguage {
             "pp.processingFailed": "Die Verarbeitung hat nicht geklappt.",
             "pp.retry": "Erneut versuchen",
             "pp.previewOptimizing": "Vorschau wird optimiert …",
-            "pp.feedbackClosed": "Feedback abgeschlossen",
+            "pp.feedbackClosed": "Feedback geschlossen",
+            "pp.closeFeedbackTitle": "Feedback abschliessen",
+            "pp.closeFeedbackShort": "Feedback schliessen",
+            "pp.closeFeedbackConfirm": "Feedback abschliessen",
+            "pp.closeFeedbackMessage": "Die Kommentare dieser Version ({count}) gehen gesammelt ans Team. Wenn du das Feedback abschliesst, kann niemand mehr Feedback geben bis zur nächsten Feedback-Runde.",
         ],
         "en": [
             "pp.all": "All",
@@ -138,6 +142,10 @@ extension AppLanguage {
             "pp.retry": "Try again",
             "pp.previewOptimizing": "Optimising preview …",
             "pp.feedbackClosed": "Feedback closed",
+            "pp.closeFeedbackTitle": "Close feedback",
+            "pp.closeFeedbackShort": "Close feedback",
+            "pp.closeFeedbackConfirm": "Close feedback",
+            "pp.closeFeedbackMessage": "The comments on this version ({count}) go to the team in one go. If you close the feedback, no one else can give feedback until the next feedback round.",
         ],
     ]
 }

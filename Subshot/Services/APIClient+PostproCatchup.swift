@@ -123,3 +123,20 @@ final class UploadProgressDelegate: NSObject, URLSessionTaskDelegate, @unchecked
         onProgress(min(1, Double(totalBytesSent) / Double(totalBytesExpectedToSend)))
     }
 }
+
+extension APIClient {
+    struct SubmitFeedbackResult: Decodable {
+        let ok: Bool
+        let feedback_locked: Bool?
+        let already_locked: Bool?
+        let comments_notified: Int?
+    }
+
+    /// 2026-11-17 (b113) — «Feedback abschliessen» for signed-in editors+:
+    /// `POST /video-versions/{id}/submit-feedback` (no body; idempotent; 409 = a newer ready version
+    /// exists → the server's detail text is shown).
+    func submitVideoFeedback(versionId: String) async throws -> SubmitFeedbackResult {
+        let req = try await authorizedRequest("video-versions/\(versionId)/submit-feedback", method: "POST")
+        return try await send(req)
+    }
+}

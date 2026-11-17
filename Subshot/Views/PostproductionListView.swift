@@ -1648,6 +1648,15 @@ private struct PostproductionVideoTile: View {
                         .buttonStyle(.plain)
                         .disabled(onOpenQC == nil)
                 }
+                if readyVersion?.feedbackLocked == true {
+                    Label(language.t("pp.feedbackClosed"), systemImage: "lock.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(.black.opacity(0.55), in: Capsule())
+                        .accessibilityIdentifier("pp.feedbackClosedBadge")
+                }
                 if let rounds, rounds.used > 0 || rounds.limit != nil {
                     RoundsBadge(rounds: rounds, canEdit: onSetRoundLimit != nil) { onSetRoundLimit?($0) }
                 }
