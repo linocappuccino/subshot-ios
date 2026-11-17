@@ -1019,9 +1019,13 @@ struct SceneSection: Codable, Identifiable, Hashable {
     /// backend Section.thumbnail_url's own doc comment), overrides the
     /// auto-derived "first scene's own imageUrl" fallback when set.
     var thumbnailUrl: String?
+    /// 2026-11-17 (b113) — section that only exists to hold one uploaded video (the server
+    /// removes it with its last video)
+    var isUnplanned: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id, name
+        case isUnplanned = "is_unplanned"
         case projectId = "project_id"
         case sortOrder = "sort_order"
         case hasProjectInfo = "has_project_info"
@@ -1260,10 +1264,25 @@ struct VideoVersion: Codable, Identifiable, Hashable {
     /// "feinschnitt" / "untertitel" (formerly "color_grading"), nil for old versions. "abgenommen"
     /// is never stored, see PostStage.effective.
     var postStage: String?
+    /// 2026-11-17 (b113, web parity VideoTile.tsx) — processing job of a ready version that has no
+    /// thumbnail yet: queued | running | done | failed (nil = no job info).
+    var processing: String?
+    /// raw string on purpose: a job timestamp may come without a zone suffix, and one undecodable
+    /// date would make the whole [Video] decode fail — parsed leniently in `processingStartedDate`
+    var processingStartedAt: String?
+    var previewStatus: String?
+    /// original pixel size (nil until measured)
+    var width: Int?
+    var height: Int?
+    /// set once the client pressed «Feedback abschliessen» in the preview for this version
+    var feedbackLocked: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case id, status, comments
+        case id, status, comments, processing, width, height
         case postStage = "post_stage"
+        case processingStartedAt = "processing_started_at"
+        case previewStatus = "preview_status"
+        case feedbackLocked = "feedback_locked"
         case videoId = "video_id"
         case versionNumber = "version_number"
         case originalFilename = "original_filename"

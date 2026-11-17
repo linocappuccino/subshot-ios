@@ -66,6 +66,7 @@ final class AppLanguage: ObservableObject {
             supportStrings,
             planningStrings,
             overviewStrings,
+            postproCatchupStrings,
         ]
     }
 
