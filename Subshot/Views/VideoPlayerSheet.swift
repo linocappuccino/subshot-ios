@@ -126,6 +126,13 @@ struct VideoPlayerSheet: View {
     /// actually responsible for the previous two rounds' failures.
     private var videoSize: CGSize {
         let width = UIScreen.main.bounds.width
+        // 2026-11-17 (b113) — vertical / square videos get a taller box (from the version's real
+        // width/height, still a FIXED number per video, never from the keyboard); the player is
+        // aspect-fit inside, so nothing is cropped. Landscape stays 16:9 as before.
+        if let w = version.width, let h = version.height, w > 0, h > 0, Double(w) / Double(h) < 1.3 {
+            let natural = width * CGFloat(h) / CGFloat(w)
+            return CGSize(width: width, height: min(natural, UIScreen.main.bounds.height * 0.55))
+        }
         return CGSize(width: width, height: width * 9.0 / 16.0)
     }
 

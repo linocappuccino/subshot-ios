@@ -18,6 +18,9 @@ struct AsyncShotThumbnail: View {
     /// and cropping the photo to match — used for scene cover images so
     /// mixed photo orientations don't produce inconsistent card heights.
     var lockAspectRatio: Bool = false
+    /// 2026-11-17 (b113) — show the whole image (letterboxed) instead of filling/cropping; used by
+    /// the post-production tiles so 9:16, 1:1 and 4:5 videos aren't cut (web parity)
+    var fitContent: Bool = false
 
     /// Fractional (0-1) face-detected focus point within the source image
     /// (see Folder.backgroundImageFocusX/Y) — when set, the `.fill`-mode
@@ -73,7 +76,7 @@ struct AsyncShotThumbnail: View {
             } else {
                 Image(uiImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
+                    .aspectRatio(contentMode: fitContent ? .fit : .fill)
             }
         } else if failed {
             Image(systemName: "photo")

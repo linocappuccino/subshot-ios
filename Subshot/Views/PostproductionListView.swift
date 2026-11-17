@@ -1483,7 +1483,10 @@ private struct PostproductionVideoTile: View {
             // `.aspectRatio(contentMode: .fill)` do the (single) fill
             // computation against that now-definite frame.
             if let thumbnailUrl = readyVersion?.thumbnailUrl {
-                AsyncShotThumbnail(path: thumbnailUrl, size: nil, lockAspectRatio: false)
+                // 2026-11-17 (b113) — aspect-fit, letterboxed on black: vertical / square videos are
+                // shown whole (was .fill → 9:16 cropped to a 16:9 strip)
+                Color.black
+                AsyncShotThumbnail(path: thumbnailUrl, size: nil, lockAspectRatio: false, fitContent: true)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
             }
