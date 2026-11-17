@@ -276,39 +276,6 @@ final class DevlogScreenshotTests: XCTestCase {
         sleep(5)
         shot("ios-postpro-languages-1")
 
-        var createdLanguage = false
-        let langTabs = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'pp.langTab.' AND NOT identifier IN {'pp.langTab.all', 'pp.langTab.none'}"))
-        if langTabs.count == 0, tap(app.buttons["pp.addLanguage"]) {
-            sleep(1)
-            if tap(app.buttons["🇩🇪 Deutsch"]) {
-                createdLanguage = true
-                sleep(3)
-                // assign the first video → tab counter + badge show it
-                if tap(app.buttons.matching(identifier: "pp.languageBadge").firstMatch) {
-                    sleep(1)
-                    _ = tap(app.buttons["🇩🇪 Deutsch"])
-                    sleep(3)
-                }
-            } else { dismissMenu() }
-        }
-        shot("ios-postpro-languages-2")
-        let firstLang = createdLanguage ? app.buttons["pp.langTab.Deutsch"] : langTabs.firstMatch
-        if tap(firstLang) {
-            sleep(2)
-            shot("ios-postpro-languages-3")
-            _ = tap(all)
-            sleep(1)
-        } else { skip("ios-postpro-languages-3", "no language tab") }
-
-        // format chips (combinable with the language)
-        let fmt = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'pp.formatTab.' AND identifier != 'pp.formatTab.all' AND isEnabled == true")).firstMatch
-        if tap(fmt) {
-            sleep(2)
-            shot("ios-postpro-format-1")
-            _ = tap(app.buttons["pp.formatTab.all"])
-            sleep(1)
-        } else { skip("ios-postpro-format-1", "no format chip (videos without measured size?)") }
-
         // multi-select + bulk actions
         if tap(selectToggle) {
             sleep(1)
@@ -344,6 +311,40 @@ final class DevlogScreenshotTests: XCTestCase {
         } else {
             for n in 1...6 { skip("ios-postpro-bulk-\(n)", "no edit rights / select button missing") }
         }
+
+
+        var createdLanguage = false
+        let langTabs = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'pp.langTab.' AND NOT identifier IN {'pp.langTab.all', 'pp.langTab.none'}"))
+        if langTabs.count == 0, tap(app.buttons["pp.addLanguage"]) {
+            sleep(1)
+            if tap(app.buttons["🇩🇪 Deutsch"]) {
+                createdLanguage = true
+                sleep(3)
+                // assign the first video → tab counter + badge show it
+                if tap(app.buttons.matching(identifier: "pp.languageBadge").firstMatch) {
+                    sleep(1)
+                    _ = tap(app.buttons["🇩🇪 Deutsch"])
+                    sleep(3)
+                }
+            } else { dismissMenu() }
+        }
+        shot("ios-postpro-languages-2")
+        let firstLang = createdLanguage ? app.buttons["pp.langTab.Deutsch"] : langTabs.firstMatch
+        if tap(firstLang) {
+            sleep(2)
+            shot("ios-postpro-languages-3")
+            _ = tap(all)
+            sleep(1)
+        } else { skip("ios-postpro-languages-3", "no language tab") }
+
+        // format chips (combinable with the language)
+        let fmt = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'pp.formatTab.' AND identifier != 'pp.formatTab.all' AND isEnabled == true")).firstMatch
+        if tap(fmt) {
+            sleep(2)
+            shot("ios-postpro-format-1")
+            _ = tap(app.buttons["pp.formatTab.all"])
+            sleep(1)
+        } else { skip("ios-postpro-format-1", "no format chip (videos without measured size?)") }
 
         // uploads: several videos at once, new version on a tile
         if tap(app.buttons["pp.uploadMenu"]) {
