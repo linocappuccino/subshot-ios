@@ -5,6 +5,11 @@ name: Devlog screenshots
 # Output: artifact "devlog-screenshots" with one PNG per devlog slot (ios-<feature>-<n>.png) + skipped.txt.
 on:
   workflow_dispatch:
+    inputs:
+      only:
+        description: "run only these phases (space separated, e.g. test5_PostproCatchup); empty = all"
+        required: false
+        default: ""
   # GitHub only dispatches workflows that exist on the default branch — until this is merged,
   # a push to the devlog branch runs it.
   push:
@@ -67,7 +72,9 @@ jobs:
           XCTESTRUN=$(ls dd/Build/Products/*.xctestrun | head -1)
           # one xcodebuild call per phase: XCUITest can't terminate a running app on this runner,
           # so the app is stopped from outside between phases (the Clerk session stays in the keychain)
-          for T in test1_SignIn test2_OverviewAccountIdeas test3_ShotListPlanningPostSharing test4_IdeaBoard; do
+          PHASES="${{ github.event.inputs.only }}"
+          [ -z "$PHASES" ] && PHASES="test1_SignIn test2_OverviewAccountIdeas test3_ShotListPlanningPostSharing test4_IdeaBoard test5_PostproCatchup"
+          for T in $PHASES; do
             xcrun simctl terminate "$SIM_UDID" com.linocappuccino.subshot.Subshot 2>/dev/null || true
             sleep 2
             for TRY in 1 2; do

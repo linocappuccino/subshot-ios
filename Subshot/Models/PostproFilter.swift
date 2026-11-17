@@ -144,7 +144,9 @@ struct BulkDeleteResult: Decodable {
 /// 2026-11-17 — the language list of web's PostproLanguages.tsx (LANGUAGE_LIST): the language is
 /// picked, its flag comes with it (the server sets the flag from the name anyway).
 enum PostproLanguageCatalog {
-    static let list: [(code: String, name: String, flag: String)] = [
+    struct Entry: Hashable { let code: String; let name: String; let flag: String }
+    static let list: [Entry] = raw.map { Entry(code: $0.0, name: $0.1, flag: $0.2) }
+    private static let raw: [(String, String, String)] = [
         ("de", "Deutsch", "🇩🇪"), ("gsw", "Schweizerdeutsch", "🇨🇭"), ("de-AT", "Deutsch (Österreich)", "🇦🇹"),
         ("fr", "Französisch", "🇫🇷"), ("it", "Italienisch", "🇮🇹"), ("rm", "Rätoromanisch", "🇨🇭"),
         ("en", "Englisch", "🇬🇧"), ("en-US", "Englisch (US)", "🇺🇸"), ("es", "Spanisch", "🇪🇸"),

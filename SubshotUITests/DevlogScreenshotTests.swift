@@ -246,6 +246,142 @@ final class DevlogScreenshotTests: XCTestCase {
         attachSkipped("4")
     }
 
+    /// 2026-11-17 (b113) — the new post-production screens: language tabs + badge, format chips,
+    /// multi-select with the bulk menus and the delete confirmation (cancelled), upload menus.
+    /// Restores the demo data: a language this test creates (only when the project had none) is
+    /// deleted again at the end, which also removes its assignment — nothing else is changed.
+    func test5_PostproCatchup() throws {
+        app = makeApp(ticket: testTicket(), section: 2, restoreProject: true)
+        app.launch()
+        let all = app.buttons["pp.langTab.all"]
+        let selectToggle = app.buttons["pp.selectToggle"]
+        if !(all.waitForExistence(timeout: 45) || selectToggle.exists) {
+            // project opened elsewhere → via the «…» toolbar
+            if tap(app.buttons["toolbar.more"], timeout: 10) { _ = tap(app.buttons["toolbar.postproduction"]) }
+        }
+        guard all.waitForExistence(timeout: 20) || selectToggle.waitForExistence(timeout: 5) else {
+            skip("ios-postpro-*", "post-production page with the new header not reached")
+            attachSkipped(phase)
+            return
+        }
+        sleep(5)
+        shot("ios-postpro-languages-1")
+
+        var createdLanguage = false
+        let langTabs = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'pp.langTab.' AND NOT identifier IN {'pp.langTab.all', 'pp.langTab.none'}"))
+        if langTabs.count == 0, tap(app.buttons["pp.addLanguage"]) {
+            sleep(1)
+            if tap(app.buttons["🇩🇪 Deutsch"]) {
+                createdLanguage = true
+                sleep(3)
+                // assign the first video → tab counter + badge show it
+                if tap(app.buttons.matching(identifier: "pp.languageBadge").firstMatch) {
+                    sleep(1)
+                    _ = tap(app.buttons["🇩🇪 Deutsch"])
+                    sleep(3)
+                }
+            } else { dismissMenu() }
+        }
+        shot("ios-postpro-languages-2")
+        let firstLang = createdLanguage ? app.buttons["pp.langTab.Deutsch"] : langTabs.firstMatch
+        if tap(firstLang) {
+            sleep(2)
+            shot("ios-postpro-languages-3")
+            _ = tap(all)
+            sleep(1)
+        } else { skip("ios-postpro-languages-3", "no language tab") }
+
+        // format chips (combinable with the language)
+        let fmt = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'pp.formatTab.' AND identifier != 'pp.formatTab.all' AND isEnabled == true")).firstMatch
+        if tap(fmt) {
+            sleep(2)
+            shot("ios-postpro-format-1")
+            _ = tap(app.buttons["pp.formatTab.all"])
+            sleep(1)
+        } else { skip("ios-postpro-format-1", "no format chip (videos without measured size?)") }
+
+        // multi-select + bulk actions
+        if tap(selectToggle) {
+            sleep(1)
+            let tiles = app.descendants(matching: .any).matching(identifier: "pp.selectTile")
+            for i in 0..<min(2, tiles.count) { _ = tap(tiles.element(boundBy: i)); usleep(400_000) }
+            sleep(1)
+            shot("ios-postpro-bulk-1")
+            for (id, name) in [("pp.bulkLanguage", "ios-postpro-bulk-2"), ("pp.bulkEditor", "ios-postpro-bulk-3"), ("pp.bulkStatus", "ios-postpro-bulk-4")] {
+                if tap(app.buttons[id]) {
+                    sleep(1)
+                    shot(name)
+                    dismissMenu()
+                } else { skip(name, "\(id) not found") }
+            }
+            if tap(app.buttons["pp.bulkPlatform"]) {
+                sleep(2)
+                shot("ios-postpro-bulk-5")
+                closeSheet()
+            } else { skip("ios-postpro-bulk-5", "platform button not found") }
+            if tap(app.buttons["pp.bulkDelete"]) {
+                sleep(1)
+                shot("ios-postpro-bulk-6")
+                // CANCEL — the demo videos stay
+                let alert = app.alerts.firstMatch
+                for label in ["Abbrechen", "Cancel"] where alert.buttons[label].exists {
+                    alert.buttons[label].tap()
+                    break
+                }
+                sleep(1)
+            } else { skip("ios-postpro-bulk-6", "delete button not found") }
+            _ = tap(selectToggle)
+            sleep(1)
+        } else {
+            for n in 1...6 { skip("ios-postpro-bulk-\(n)", "no edit rights / select button missing") }
+        }
+
+        // uploads: several videos at once, new version on a tile
+        if tap(app.buttons["pp.uploadMenu"]) {
+            sleep(1)
+            shot("ios-postpro-upload-1")
+            dismissMenu()
+        } else { skip("ios-postpro-upload-1", "upload menu not found") }
+        if tap(app.buttons.matching(identifier: "pp.tileMenu").firstMatch) {
+            sleep(1)
+            if tap(button(["Neue Version hochladen", "Upload new version"])) { sleep(1) }
+            shot("ios-postpro-upload-2")
+            dismissMenu()
+            dismissMenu()
+        } else { skip("ios-postpro-upload-2", "tile menu not found") }
+
+        // live processing state (only if a video is being processed right now)
+        let processing = app.descendants(matching: .any).matching(identifier: "pp.processingState").firstMatch
+        if processing.exists { shot("ios-postpro-processing-1") } else { skip("ios-postpro-processing-1", "no video in processing right now") }
+
+        // restore the demo data
+        if createdLanguage {
+            let tab = app.buttons["pp.langTab.Deutsch"]
+            if tab.waitForExistence(timeout: 5) {
+                tab.press(forDuration: 1.2)
+                sleep(1)
+                if tap(button(["Löschen", "Delete"])) {
+                    sleep(1)
+                    let alert = app.alerts.firstMatch
+                    for label in ["Löschen", "Delete"] where alert.buttons[label].exists {
+                        alert.buttons[label].tap()
+                        break
+                    }
+                    sleep(3)
+                }
+            }
+            if app.buttons["pp.langTab.Deutsch"].exists {
+                skip("restore", "test language «Deutsch» could NOT be deleted — remove it by hand")
+            } else { print("RESTORED demo data (test language deleted)") }
+        }
+        attachSkipped("5")
+    }
+
+    private func dismissMenu() {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.25)).tap()
+        sleep(1)
+    }
+
     // MARK: - Helpers
 
     /// `restoreProject`: also hand in the demo project's id — needed for `section` to apply on a

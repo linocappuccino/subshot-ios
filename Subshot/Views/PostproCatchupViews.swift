@@ -55,7 +55,7 @@ struct LanguageTabsRow: View {
     let onRename: (String, String, String) -> Void
     let onDelete: (PostproLanguagesOverview.Language) -> Void
 
-    private var addable: [(code: String, name: String, flag: String)] {
+    private var addable: [PostproLanguageCatalog.Entry] {
         PostproLanguageCatalog.list.filter { c in !overview.languages.contains(where: { $0.name == c.name }) }
     }
 
@@ -156,15 +156,17 @@ struct FacetChipsRow: View {
 /// a tiny frame in the format's shape (web: FormatIcon)
 struct FormatShapeIcon: View {
     let format: String
-    var body: some View {
-        let size: CGSize = switch format {
-        case "9:16": CGSize(width: 7, height: 12)
-        case "16:9": CGSize(width: 13, height: 7.5)
-        case "1:1": CGSize(width: 10, height: 10)
-        case "4:5": CGSize(width: 8.5, height: 10.5)
-        case "5:4": CGSize(width: 10.5, height: 8.5)
-        default: CGSize(width: 12, height: 6)
+    private var size: CGSize {
+        switch format {
+        case "9:16": return CGSize(width: 7, height: 12)
+        case "16:9": return CGSize(width: 13, height: 7.5)
+        case "1:1": return CGSize(width: 10, height: 10)
+        case "4:5": return CGSize(width: 8.5, height: 10.5)
+        case "5:4": return CGSize(width: 10.5, height: 8.5)
+        default: return CGSize(width: 12, height: 6)
         }
+    }
+    var body: some View {
         RoundedRectangle(cornerRadius: 2)
             .strokeBorder(lineWidth: 1.5)
             .frame(width: size.width, height: size.height)

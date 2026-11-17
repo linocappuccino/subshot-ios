@@ -336,11 +336,11 @@ struct PostproductionListView: View {
                     LanguageBadgeView(
                         current: lang,
                         languages: langs.languages,
-                        onChange: canEditStatus ? { lid in Task { await assignLanguage([video.id], lid) } } : nil,
-                        onNew: canEditStatus ? {
+                        onChange: canEditStatus ? Optional({ (lid: String?) in Task { await assignLanguage([video.id], lid) } }) : nil,
+                        onNew: canEditStatus ? Optional({
                             pendingAssignIds = [video.id]
                             showingLanguageCatalog = true
-                        } : nil
+                        }) : nil
                     )
                     if let f = langs.formats?[video.id] { SmallInfoBadge(text: f) }
                     if let v = video.versions.last(where: { $0.status == "ready" }), let w = v.width, let h = v.height {
@@ -619,8 +619,7 @@ struct PostproductionListView: View {
             .accessibilityIdentifier("pp.bulkDeleteConfirm")
             Button(language.t("pp.cancel"), role: .cancel) {}
         } message: {
-            let titles = shownVideos.filter { picked.contains($0.id) }.map { "• \($0.title)" }
-            Text((titles.prefix(12) + (titles.count > 12 ? ["…"] : [])).joined(separator: "\n") + "\n\n" + language.t("pp.deleteEmphasis"))
+            Text(bulkDeleteMessage)
         }
         .alert(language.t("pp.editLanguage"), isPresented: Binding(get: { deletingLanguage != nil }, set: { if !$0 { deletingLanguage = nil } })) {
             Button(language.t("pp.deleteLanguage"), role: .destructive) {
@@ -676,6 +675,13 @@ struct PostproductionListView: View {
             Text(errorMessage ?? "")
         }
         .preferredColorScheme(.dark)
+    }
+
+    private var bulkDeleteMessage: String {
+        let titles: [String] = shownVideos.filter { picked.contains($0.id) }.map { "• " + $0.title }
+        var lines: [String] = Array(titles.prefix(12))
+        if titles.count > 12 { lines.append("…") }
+        return lines.joined(separator: "\n") + "\n\n" + language.t("pp.deleteEmphasis")
     }
 
     private func showToast(_ text: String) {
