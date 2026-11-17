@@ -252,7 +252,15 @@ final class DevlogScreenshotTests: XCTestCase {
     /// deleted again at the end, which also removes its assignment — nothing else is changed.
     func test5_PostproCatchup() throws {
         app = makeApp(ticket: testTicket(), section: 2, restoreProject: true)
+        addUIInterruptionMonitor(withDescription: "notifications") { alert in
+            for label in ["Don’t Allow", "Don't Allow", "Nicht erlauben"] where alert.buttons[label].exists {
+                alert.buttons[label].tap()
+                return true
+            }
+            return false
+        }
         app.launch()
+        dismissSystemAlert()
         let all = app.buttons["pp.langTab.all"]
         let selectToggle = app.buttons["pp.selectToggle"]
         if !(all.waitForExistence(timeout: 45) || selectToggle.exists) {
@@ -264,6 +272,7 @@ final class DevlogScreenshotTests: XCTestCase {
             attachSkipped(phase)
             return
         }
+        dismissSystemAlert()
         sleep(5)
         shot("ios-postpro-languages-1")
 
