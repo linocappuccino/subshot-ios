@@ -1,6 +1,7 @@
 import SwiftUI
 import WebKit
 import UIKit
+import Combine
 
 // 2026-11-18 (hybrid app, step 3) — one reusable screen that shows a Subshot web page inside the app
 // (Postproduction first; Ideas and Deliver work the same way). Built like IdeaBoardScreen:
