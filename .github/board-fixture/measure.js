@@ -58,7 +58,7 @@ async function pageMetrics(page) {
   const results = [];
   for (const vp of VIEWPORTS) {
     const browser = await webkit.launch();
-    const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: vp.dpr, isMobile: true, hasTouch: true,
+    const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: vp.dpr, isMobile: false, hasTouch: false,
       userAgent: 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148' });
     const page = await ctx.newPage();
     const r = await fetch('https://subshot.ch/debug/test-ticket', { method: 'POST', headers: { 'X-Debug-Secret': secret } });
