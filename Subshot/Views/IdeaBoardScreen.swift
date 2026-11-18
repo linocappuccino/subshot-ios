@@ -86,6 +86,10 @@ final class BoardWebPool: NSObject, WKScriptMessageHandler, WKNavigationDelegate
 
     /// the board was closed — free its memory, stay warm
     func release() {
+        BoardNavLog.write("release")
+        #if DEBUG
+        probeTimer?.invalidate(); probeTimer = nil; probeTapDone = false
+        #endif
         inUse = false
         onMessage = nil; onCrash = nil; onIdeaReached = nil; onNeedsSignIn = nil
         webView.load(URLRequest(url: Self.warmURL))
@@ -104,10 +108,52 @@ final class BoardWebPool: NSObject, WKScriptMessageHandler, WKNavigationDelegate
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any] else { return }
         if body["type"] as? String == "warm" { signedIn = body["signedIn"] as? Bool; BoardNavLog.write("warm signedIn=\(String(describing: signedIn))") }
+        if body["type"] as? String == "ready" { BoardNavLog.write("ready") ; startProbe() }
         onMessage?(body)
     }
 
     // MARK: WKNavigationDelegate
+
+    // MARK: DEBUG probe for the UI-test proof (launch argument -UITestBoardProbe YES)
+
+    #if DEBUG
+    private var probeTimer: Timer?
+    private var probeTapDone = false
+    private var probeReadyAt: Date?
+    #endif
+
+    /// every 2 s: JS round trip (how blocked the page is, e.g. while zooming) + element counts; 20 s after
+    /// «ready» one tap on the first video (pointer events like a finger) → must create exactly one player
+    func startProbe() {
+        #if DEBUG
+        guard UserDefaults.standard.bool(forKey: "UITestBoardProbe"), probeTimer == nil else { return }
+        probeReadyAt = Date()
+        let metrics = "(function(){return [document.querySelectorAll('video').length, document.querySelectorAll('img[data-video-still]').length, document.querySelectorAll('img').length, document.querySelectorAll('[data-gif-still]').length].join(',')})()"
+        probeTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.inUse else { return }
+                let t0 = Date()
+                self.webView.evaluateJavaScript(metrics) { result, _ in
+                    let ms = Int(Date().timeIntervalSince(t0) * 1000)
+                    let v = (result as? String) ?? "?"
+                    BoardNavLog.write("ping ms=\(ms) videos,stills,imgs,gifstills=\(v)")
+                }
+                if !self.probeTapDone, let r = self.probeReadyAt, Date().timeIntervalSince(r) > 20 {
+                    self.probeTapDone = true
+                    let tap = """
+                    (function(){var t=document.querySelector('[data-video-toggle]'); if(!t) return 'no-toggle';
+                    var r=t.getBoundingClientRect(), x=r.left+r.width/2, y=r.top+r.height/2, o={bubbles:true,cancelable:true,clientX:x,clientY:y,pointerId:1,pointerType:'touch',isPrimary:true};
+                    t.dispatchEvent(new PointerEvent('pointerdown',o)); t.dispatchEvent(new PointerEvent('pointerup',o)); t.dispatchEvent(new MouseEvent('click',o));
+                    return 'tapped';})()
+                    """
+                    self.webView.evaluateJavaScript(tap) { result, _ in
+                        BoardNavLog.write("videotap \((result as? String) ?? "?")")
+                    }
+                }
+            }
+        }
+        #endif
+    }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         BoardNavLog.write("TERMINATED inUse=\(inUse)")
@@ -269,7 +315,7 @@ struct IdeaBoardScreen: View {
             default: break
             }
         }
-        pool.onIdeaReached = { loading = false }
+        pool.onIdeaReached = { loading = false; BoardNavLog.write("ideaReached"); BoardWebPool.shared.startProbe() }
         pool.onCrash = { handleCrash() }
         pool.onNeedsSignIn = { Task { await signInWithTicket() } }
         if pool.signedIn == false {

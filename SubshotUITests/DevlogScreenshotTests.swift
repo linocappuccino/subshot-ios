@@ -467,6 +467,42 @@ final class DevlogScreenshotTests: XCTestCase {
         attachSkipped("8-\(device)")
     }
 
+    /// 2026-11-18 — proof of the board fix: «Speichertest 12 / 40 / 100» (synthetic, test account), opened by the
+    /// app with ?media=still; each: open, wait, zoom 4×, wait (the app's DEBUG probe taps one video 20 s after
+    /// «ready» and logs pings / element counts / terminations to Documents/boardnav.log), screenshots, error
+    /// message check, close. The workflow collects the log + memory samples.
+    func test9_BoardProof() throws {
+        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        app = makeApp(ticket: testTicket(), section: 0, restoreProject: true)
+        app.launchArguments += ["-UITestBoardProbe", "YES"]
+        addUIInterruptionMonitor(withDescription: "notifications") { alert in
+            for label in ["Don’t Allow", "Don't Allow", "Nicht erlauben"] where alert.buttons[label].exists {
+                alert.buttons[label].tap()
+                return true
+            }
+            return false
+        }
+        app.launch()
+        dismissSystemAlert()
+        sleep(15) // ideas grid → the app warms the board web view (/embed/warm, logs signedIn)
+        for size in ["12", "40", "100"] {
+            let tile = app.staticTexts["Speichertest \(size)"]
+            if !tile.waitForExistence(timeout: 15) { for _ in 0..<4 where !tile.exists { app.swipeUp(); sleep(1) } }
+            guard tap(tile, timeout: 5) else { skip("boardproof-\(size)-\(device)", "tile not found"); continue }
+            sleep(25)
+            shot("ios-boardproof-\(size)-\(device)-1-open")
+            app.webViews.firstMatch.pinch(withScale: 4, velocity: 3)
+            sleep(25) // probe taps the first video meanwhile
+            shot("ios-boardproof-\(size)-\(device)-2-zoom-video")
+            let msg = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'too big for the device memory' OR label CONTAINS 'zu gross für den Speicher'")).firstMatch
+            if msg.exists { skip("boardproof-\(size)-\(device)", "ERROR MESSAGE SHOWN") }
+            let close = app.buttons.matching(NSPredicate(format: "label == 'Close' OR label == 'Schliessen'")).firstMatch
+            if !tap(close, timeout: 3) { app.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.97)).tap() }
+            sleep(5)
+        }
+        attachSkipped("9-\(device)")
+    }
+
     private func mark(_ label: String) {
         print("MEMPHASE \(Int(Date().timeIntervalSince1970)) \(label)")
     }
