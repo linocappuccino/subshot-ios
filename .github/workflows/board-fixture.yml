@@ -1,0 +1,36 @@
+name: Board memory fixture
+# 2026-11-18 — synthetic test boards (12 / 40 / 100 media) in the test account's demo project, or their removal.
+# Tag `board-fixture-create-<n>` creates (replacing old ones), `board-fixture-delete-<n>` deletes them all.
+on:
+  push:
+    tags: ['board-fixture-create-*', 'board-fixture-delete-*']
+jobs:
+  fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Tools
+        run: |
+          sudo apt-get update -qq >/dev/null && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core >/dev/null
+          npm init -y >/dev/null && npm i playwright@1.49.1 >/dev/null && npx playwright install --with-deps chromium >/dev/null
+      - name: Media
+        if: startsWith(github.ref_name, 'board-fixture-create-')
+        run: bash .github/board-fixture/make_media.sh
+      - name: Boards
+        env:
+          DEBUG_TICKET_SECRET: ${{ secrets.DEBUG_TICKET_SECRET }}
+        run: |
+          case "$GITHUB_REF_NAME" in
+            board-fixture-create-*) node .github/board-fixture/fixture.js create ;;
+            *) node .github/board-fixture/fixture.js delete ;;
+          esac
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: board-fixture
+          path: fixture.json
+          if-no-files-found: ignore
