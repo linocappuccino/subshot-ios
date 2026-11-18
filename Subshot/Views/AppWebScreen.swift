@@ -200,7 +200,24 @@ final class AppWebController: NSObject, ObservableObject, WKNavigationDelegate, 
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         if phase == .loading { phase = .ready }
+        #if DEBUG
+        // UI test only (-UITestWebOpenFirstVideoAfter <s>): open the first video tile, no screen search needed
+        let delay = UserDefaults.standard.double(forKey: "UITestWebOpenFirstVideoAfter")
+        if delay > 0, !didScheduleTestOpen {
+            didScheduleTestOpen = true
+            // the ticket sign-in reaches the page client-side (no second didFinish) → wait, then poll for the tile
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak webView] in
+                webView?.evaluateJavaScript("""
+                (function(){var n=0;var t=setInterval(function(){var e=document.querySelector('[data-video-tile] [class*="group/thumb"]');
+                if(e){e.click();clearInterval(t);} else if(++n>30){clearInterval(t);}},1000);})();
+                """)
+            }
+        }
+        #endif
     }
+    #if DEBUG
+    private var didScheduleTestOpen = false
+    #endif
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         let code = (error as NSError).code

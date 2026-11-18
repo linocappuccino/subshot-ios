@@ -111,7 +111,8 @@ jobs:
             sleep 2
             for TRY in 1 2; do
               rm -rf "devlog-$T$SUF.xcresult"
-              xcodebuild test-without-building -xctestrun "$XCTESTRUN" \
+              # hard limit per call (a hanging UI query must not eat the whole job)
+              perl -e 'alarm shift; exec @ARGV' 900 xcodebuild test-without-building -xctestrun "$XCTESTRUN" \
                 -destination "platform=iOS Simulator,id=$SIM" \
                 -only-testing:"SubshotUITests/DevlogScreenshotTests/$T" \
                 -resultBundlePath "devlog-$T$SUF.xcresult" > "phase-$T$SUF.log" 2>&1 || true

@@ -399,6 +399,9 @@ final class DevlogScreenshotTests: XCTestCase {
     func test6_HybridPostpro() throws {
         let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
         app = makeApp(ticket: testTicket(), section: 2, restoreProject: true)
+        // the app itself opens the first video tile 35 s after the page loaded (DEBUG hook) — searching
+        // the web page's elements from the test is far too slow on the CI runner
+        app.launchArguments += ["-UITestWebOpenFirstVideoAfter", "35"]
         addUIInterruptionMonitor(withDescription: "notifications") { alert in
             for label in ["Don’t Allow", "Don't Allow", "Nicht erlauben"] where alert.buttons[label].exists {
                 alert.buttons[label].tap()
@@ -408,37 +411,23 @@ final class DevlogScreenshotTests: XCTestCase {
         }
         app.launch()
         dismissSystemAlert()
-        let web = app.webViews.firstMatch
-        guard web.waitForExistence(timeout: 45) else {
+        guard app.webViews.firstMatch.waitForExistence(timeout: 60) else {
             skip("ios-hybrid-postpro-\(device)-*", "no web view (flag off or post-production not opened)")
-            attachSkipped(phase)
+            attachSkipped("6-\(device)")
             return
         }
-        // the page is there once the language tabs / tiles render
-        let marker = web.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] 'Alpenbahn' OR label BEGINSWITH 'Alle' OR label BEGINSWITH 'All'")).firstMatch
-        if !marker.waitForExistence(timeout: 60) { print("web marker not found — shooting anyway") }
-        dismissSystemAlert()
-        sleep(6)
+        sleep(20)
         shot("ios-hybrid-postpro-\(device)-1")
-
-        // open the first video (tile thumbnail)
-        let thumbs = web.images.allElementsBoundByIndex.filter { $0.frame.width > 120 && $0.frame.height > 70 && $0.isHittable }
-        if let first = thumbs.first {
-            first.tap()
-            sleep(8)
-            shot("ios-hybrid-postpro-\(device)-2")
-            // back: the opened video is a page-history step → native back button
-            if !tap(app.buttons["appWeb.back"], timeout: 3) { app.swipeRight() }
-            sleep(3)
-        } else { skip("ios-hybrid-postpro-\(device)-2", "no video thumbnail in the web page") }
-
+        sleep(40)
+        shot("ios-hybrid-postpro-\(device)-2")
+        // back: the opened video is a page-history step → native back button
+        _ = tap(app.buttons["appWeb.back"], timeout: 5)
+        sleep(4)
         // upload: the page's file input → iOS picker menu (Photos / Files / camera) — cancelled
-        let choose = web.buttons.matching(NSPredicate(format: "label == 'Dateien wählen' OR label == 'Choose files' OR label CONTAINS[c] 'Video'")).firstMatch
-        if tap(choose, timeout: 8) {
+        let choose = app.webViews.buttons.matching(NSPredicate(format: "label == 'Dateien wählen' OR label == 'Choose files'")).firstMatch
+        if tap(choose, timeout: 10) {
             sleep(3)
             shot("ios-hybrid-postpro-\(device)-3")
-            for label in ["Abbrechen", "Cancel"] where app.buttons[label].exists { app.buttons[label].tap(); break }
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
         } else { skip("ios-hybrid-postpro-\(device)-3", "upload button not found in the web page") }
         attachSkipped("6-\(device)")
     }
