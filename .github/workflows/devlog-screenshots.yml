@@ -10,6 +10,14 @@ on:
         description: "run only these phases (space separated, e.g. test5_PostproCatchup); empty = all"
         required: false
         default: ""
+      iphone:
+        description: "also run the phases on an iPhone simulator (yes/no)"
+        required: false
+        default: "no"
+      memory:
+        description: "sample the WebKit processes' memory every 2 s (yes/no)"
+        required: false
+        default: "no"
   # GitHub only dispatches workflows that exist on the default branch — until this is merged,
   # a push to the devlog branch runs it.
   push:
@@ -48,6 +56,30 @@ jobs:
           # no permission alerts over the screenshots (Visual Timecode asks for the camera)
           xcrun simctl privacy "$UDID" grant camera com.linocappuccino.subshot.Subshot || true
           xcrun simctl privacy "$UDID" grant photos com.linocappuccino.subshot.Subshot || true
+      - name: iPhone simulator
+        if: ${{ github.event.inputs.iphone == 'yes' }}
+        run: |
+          # iPhone (prefer «Pro», not Max) on the same iOS runtime as the iPad
+          PHONE=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys, os
+          d = json.load(sys.stdin)["devices"]
+          want = os.environ["SIM_OS"].replace(".", "-")
+          best = None
+          for rt, devs in d.items():
+              if not rt.endswith("iOS-" + want): continue
+              for dev in devs:
+                  n = dev["name"]
+                  if not n.startswith("iPhone"): continue
+                  key = ("Pro" in n and "Max" not in n, n)
+                  if best is None or key > best[0]: best = (key, dev["udid"])
+          print(best[1] if best else "")')
+          if [ -z "$PHONE" ]; then echo "::warning::no iPhone simulator for iOS $SIM_OS"; exit 0; fi
+          echo "Using $(xcrun simctl list devices | grep $PHONE)"
+          echo "PHONE_UDID=$PHONE" >> "$GITHUB_ENV"
+          xcrun simctl boot "$PHONE" || true
+          xcrun simctl bootstatus "$PHONE" -b
+          xcrun simctl privacy "$PHONE" grant camera com.linocappuccino.subshot.Subshot || true
+          xcrun simctl privacy "$PHONE" grant photos com.linocappuccino.subshot.Subshot || true
       - name: Build for testing (Debug)
         # Deployment target = the simulator's iOS (the runner may lag behind the app's 26.5; this
         # build is only for screenshots, never shipped).
@@ -74,23 +106,52 @@ jobs:
           # so the app is stopped from outside between phases (the Clerk session stays in the keychain)
           PHASES="${{ github.event.inputs.only }}"
           [ -z "$PHASES" ] && PHASES="test1_SignIn test2_OverviewAccountIdeas test3_ShotListPlanningPostSharing test4_IdeaBoard test5_PostproCatchup"
+          if [ "${{ github.event.inputs.memory }}" = "yes" ]; then
+            # every 2 s: all WebKit processes of the simulators (WebContent / GPU / Networking) — RSS and footprint
+            ( echo "epoch,pid,name,rss_kb,phys_footprint" > memory.csv
+              while true; do
+                E=$(date +%s)
+                for P in $(pgrep -f "com.apple.WebKit\.(WebContent|GPU|Networking)" || true); do
+                  N=$(ps -o comm= -p $P | sed 's#.*/##')
+                  R=$(ps -o rss= -p $P | tr -d ' ')
+                  F=$(footprint -p $P 2>/dev/null | grep -m1 -i "phys_footprint:" | awk '{print $2 $3}')
+                  [ -n "$R" ] && echo "$E,$P,$N,$R,$F" >> memory.csv
+                done
+                sleep 2
+              done ) &
+            echo $! > sampler.pid
+          fi
+          SIMS="$SIM_UDID"
+          [ -n "$PHONE_UDID" ] && SIMS="$SIM_UDID $PHONE_UDID"
+          for SIM in $SIMS; do
+          SUF=$([ "$SIM" = "$SIM_UDID" ] && echo "" || echo "-iphone")
           for T in $PHASES; do
-            xcrun simctl terminate "$SIM_UDID" com.linocappuccino.subshot.Subshot 2>/dev/null || true
+            xcrun simctl terminate "$SIM" com.linocappuccino.subshot.Subshot 2>/dev/null || true
             sleep 2
             for TRY in 1 2; do
-              rm -rf "devlog-$T.xcresult"
-              xcodebuild test-without-building -xctestrun "$XCTESTRUN" \
-                -destination "platform=iOS Simulator,id=$SIM_UDID" \
+              rm -rf "devlog-$T$SUF.xcresult"
+              # hard limit per call (a hanging UI query must not eat the whole job)
+              perl -e 'alarm shift; exec @ARGV' 900 xcodebuild test-without-building -xctestrun "$XCTESTRUN" \
+                -destination "platform=iOS Simulator,id=$SIM" \
                 -only-testing:"SubshotUITests/DevlogScreenshotTests/$T" \
-                -resultBundlePath "devlog-$T.xcresult" > "phase-$T.log" 2>&1 || true
-              grep -E "Test (case|Case)" "phase-$T.log" || true
+                -resultBundlePath "devlog-$T$SUF.xcresult" > "phase-$T$SUF.log" 2>&1 || true
+              grep -E "Test (case|Case)" "phase-$T$SUF.log" || true
               # a phase that failed (slow runner: snapshot timeouts) gets one more try with a new ticket
-              grep -q "' passed on" "phase-$T.log" && break
+              grep -q "' passed on" "phase-$T$SUF.log" && break
               echo "retrying $T"
-              xcrun simctl terminate "$SIM_UDID" com.linocappuccino.subshot.Subshot 2>/dev/null || true
+              xcrun simctl terminate "$SIM" com.linocappuccino.subshot.Subshot 2>/dev/null || true
               sleep 5
             done
           done
+          done
+      - name: Memory samples
+        if: always()
+        run: |
+          [ -f sampler.pid ] && kill $(cat sampler.pid) 2>/dev/null || true
+          mkdir -p screenshots
+          [ -f memory.csv ] && cp memory.csv screenshots/ || true
+          for L in phase-*.log; do [ -f "$L" ] && grep -h "MEMPHASE" "$L" | sed "s#^.*MEMPHASE#$L MEMPHASE#" ; done > screenshots/phases.txt 2>/dev/null || true
+          wc -l screenshots/memory.csv screenshots/phases.txt 2>/dev/null || true
       - name: Export PNGs
         if: always()
         run: |

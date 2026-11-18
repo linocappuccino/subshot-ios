@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 /// 2026-11-15 — real iPad screenshots for the Subshot devlog (one entry per fundamental feature).
 /// Runs in CI (.github/workflows/devlog-screenshots.yml) against the live backend as the fixed
@@ -390,6 +391,61 @@ final class DevlogScreenshotTests: XCTestCase {
     private func dismissMenu() {
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.25)).tap()
         sleep(1)
+    }
+
+    /// 2026-11-18 (board memory) — opens the synthetic boards «Speichertest 12 / 40 / 100» (test account's demo
+    /// project, created by the board-fixture workflow) one after another, waits, pans and zooms. The workflow
+    /// samples the WebKit processes' memory meanwhile; «MEMPHASE <epoch> <label>» lines mark the steps.
+    func test7_BoardMemory() throws {
+        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        app = makeApp(ticket: testTicket(), section: 0, restoreProject: true)
+        addUIInterruptionMonitor(withDescription: "notifications") { alert in
+            for label in ["Don’t Allow", "Don't Allow", "Nicht erlauben"] where alert.buttons[label].exists {
+                alert.buttons[label].tap()
+                return true
+            }
+            return false
+        }
+        app.launch()
+        dismissSystemAlert()
+        sleep(8)
+        mark("start")
+        for size in ["12", "40", "100"] {
+            let title = "Speichertest \(size)"
+            let tile = app.staticTexts[title]
+            if !tile.waitForExistence(timeout: 20) {
+                // further down the ideas grid
+                for _ in 0..<4 where !tile.exists { app.swipeUp(); sleep(1) }
+            }
+            guard tap(tile, timeout: 5) else { skip("board-\(size)-\(device)", "tile «\(title)» not found"); continue }
+            mark("open-\(size)")
+            sleep(30)
+            mark("loaded-\(size)")
+            shot("ios-boardmem-\(size)-\(device)-1")
+            let web = app.webViews.firstMatch
+            for _ in 0..<3 { web.swipeLeft(); sleep(2) }
+            for _ in 0..<2 { web.swipeUp(); sleep(2) }
+            mark("panned-\(size)")
+            web.pinch(withScale: 2.5, velocity: 2)
+            sleep(6)
+            mark("zoomed-in-\(size)")
+            web.pinch(withScale: 0.25, velocity: -2)
+            sleep(8)
+            mark("zoomed-out-\(size)")
+            shot("ios-boardmem-\(size)-\(device)-2")
+            let crashed = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'too big for the device memory' OR label CONTAINS 'zu gross für den Speicher'")).firstMatch.exists
+            mark(crashed ? "CRASH-MESSAGE-\(size)" : "ok-\(size)")
+            // close: the board's native ✕ (bottom left)
+            let close = app.buttons.matching(NSPredicate(format: "label == 'Close' OR label == 'Schliessen' OR identifier == 'xmark'")).firstMatch
+            if !tap(close, timeout: 3) { app.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.97)).tap() }
+            sleep(6)
+            mark("closed-\(size)")
+        }
+        attachSkipped("7-\(device)")
+    }
+
+    private func mark(_ label: String) {
+        print("MEMPHASE \(Int(Date().timeIntervalSince1970)) \(label)")
     }
 
     // MARK: - Helpers
