@@ -15,7 +15,9 @@ const fs = require('fs');
   const ctx = await browser.newContext({ viewport: { width: 1024, height: 1366 }, deviceScaleFactor: 2, hasTouch: true });
   const page = await ctx.newPage();
   await page.goto(`https://app.subshot.ch/embed/auth?ticket=${encodeURIComponent(ticket)}&next=/embed/warm`, { waitUntil: 'domcontentloaded' });
-  await page.waitForURL(/embed\/warm/, { timeout: 45000 }).catch(() => lines.push('auth ended on ' + page.url().replace(/\?.*/, '')));
+  // the PATH must be /embed/warm (the auth URL itself carries next=/embed/warm in its query)
+  await page.waitForURL((u) => u.pathname.startsWith('/embed/warm'), { timeout: 60000 }).catch(() => lines.push('auth ended on ' + page.url().replace(/\?.*/, '')));
+  await page.waitForTimeout(4000);
   const pid = 'c15ead5c-1d16-4f9b-ac97-547fb244e7a4';
   const pages = { postpro: `/projects/${pid}/postproduction`, ideas: `/projects/${pid}`, deliver: `/projects/${pid}/deliver` };
   for (const w of [390, 1024]) {
