@@ -1,0 +1,32 @@
+name: Board memory measure
+# 2026-11-18 — the three synthetic test boards in WebKit (iPhone 390 / iPad 1024), memory + media metrics.
+# Tag `board-measure-<n>` (normal app embed) or `board-measure-fix-<n>` (with lite=1&media=still).
+on:
+  push:
+    tags: ['board-measure-*']
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: WebKit
+        run: npm init -y >/dev/null && npm i playwright@1.49.1 >/dev/null && npx playwright install --with-deps webkit >/dev/null
+      - name: Measure
+        env:
+          DEBUG_TICKET_SECRET: ${{ secrets.DEBUG_TICKET_SECRET }}
+          BOARDS: '[{"title":"Speichertest 12","id":"df5e018a-7afb-4ee7-9bb9-da08b53da388"},{"title":"Speichertest 40","id":"de384bb3-4ab6-4264-9106-8eca1f65d8d0"},{"title":"Speichertest 100","id":"61f61ef1-b3e9-4442-8047-df5b170dbdbb"}]'
+        run: |
+          case "$GITHUB_REF_NAME" in board-measure-fix-*) export EMBED_QUERY="lite=1&media=still" ;; esac
+          node .github/board-fixture/measure.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: board-memory
+          path: |
+            board-memory.json
+            shots/
+          if-no-files-found: ignore
