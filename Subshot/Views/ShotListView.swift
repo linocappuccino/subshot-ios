@@ -605,11 +605,21 @@ struct ShotListView: View {
         // page.tsx, which has no ProjectInfoBox at all, unlike the Ideas/
         // Scripting panels below.
         if activeWorkflowSection == .postproduction {
-            PostproductionListView(
-                viewModel: viewModel, embedded: true,
-                initialVideoId: pendingDeepLinkKind == "video" ? pendingDeepLinkId : nil
-            )
+            // 2026-11-18 (hybrid app) — the web page by default (AppWeb.useWebPostpro); the native
+            // screen stays as the fallback behind the flag
+            if AppWeb.useWebPostpro {
+                AppWebScreen(
+                    path: AppWeb.postproPath(projectId: viewModel.projectId, videoId: pendingDeepLinkKind == "video" ? pendingDeepLinkId : nil),
+                    embedded: true
+                )
                 .transition(.opacity)
+            } else {
+                PostproductionListView(
+                    viewModel: viewModel, embedded: true,
+                    initialVideoId: pendingDeepLinkKind == "video" ? pendingDeepLinkId : nil
+                )
+                    .transition(.opacity)
+            }
         } else {
         ScrollView {
             // TikTok-style scroll (2026-07-13, Lino: "wenn man einmal
@@ -3845,7 +3855,11 @@ private struct ShotListSheetsAndAlerts: ViewModifier {
                 SceneAIImageSheet(scene: scene, viewModel: viewModel)
             }
             .sheet(isPresented: $showingPostproductionList) {
-                PostproductionListView(viewModel: viewModel)
+                if AppWeb.useWebPostpro {
+                    AppWebScreen(path: AppWeb.postproPath(projectId: viewModel.projectId))
+                } else {
+                    PostproductionListView(viewModel: viewModel)
+                }
             }
             // #276 — the Ideas page's bottom-right FAB's own "just created,
             // now open it" sheet; independent of IdeaGridView's own

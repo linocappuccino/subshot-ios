@@ -434,6 +434,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 8U22CFDKB8;
+				CODE_SIGN_ENTITLEMENTS = Subshot.entitlements;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Wird benötigt, um Fotos für Szenen/Einstellungen aufzunehmen und den Timecode einer Kamera per Visual Timecode Sync zu lesen";
@@ -468,6 +469,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 8U22CFDKB8;
+				CODE_SIGN_ENTITLEMENTS = Subshot.entitlements;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Wird benötigt, um Fotos für Szenen/Einstellungen aufzunehmen und den Timecode einer Kamera per Visual Timecode Sync zu lesen";

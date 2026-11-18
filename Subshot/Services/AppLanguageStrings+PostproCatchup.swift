@@ -6,6 +6,8 @@ import Foundation
 extension AppLanguage {
     static let postproCatchupStrings: [String: [String: String]] = [
         "de": [
+            "appWeb.loadFailed": "Die Seite konnte nicht geladen werden. Prüfe die Verbindung.",
+            "appWeb.back": "Zurück",
             "pp.all": "Alle",
             "pp.unassigned": "Nicht zugeordnet",
             "pp.addLanguage": "+ Sprache",
@@ -77,6 +79,8 @@ extension AppLanguage {
             "pp.closeFeedbackMessage": "Die Kommentare dieser Version ({count}) gehen gesammelt ans Team. Wenn du das Feedback abschliesst, kann niemand mehr Feedback geben bis zur nächsten Feedback-Runde.",
         ],
         "en": [
+            "appWeb.loadFailed": "The page couldn't be loaded. Check your connection.",
+            "appWeb.back": "Back",
             "pp.all": "All",
             "pp.unassigned": "Not assigned",
             "pp.addLanguage": "+ Language",
