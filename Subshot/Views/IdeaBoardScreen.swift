@@ -78,6 +78,8 @@ final class BoardWebPool: NSObject, WKScriptMessageHandler, WKNavigationDelegate
     }
 
     func open(_ url: URL) {
+        BoardNavLog.write("open signedIn=\(String(describing: signedIn)) \(BoardNavLog.clean(url))")
+        BoardNavLog.cookieNames(webView)
         inUse = true
         webView.load(URLRequest(url: url))
     }
@@ -101,22 +103,29 @@ final class BoardWebPool: NSObject, WKScriptMessageHandler, WKNavigationDelegate
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any] else { return }
-        if body["type"] as? String == "warm" { signedIn = body["signedIn"] as? Bool }
+        if body["type"] as? String == "warm" { signedIn = body["signedIn"] as? Bool; BoardNavLog.write("warm signedIn=\(String(describing: signedIn))") }
         onMessage?(body)
     }
 
     // MARK: WKNavigationDelegate
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        BoardNavLog.write("TERMINATED inUse=\(inUse)")
         if inUse { onCrash?() }
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        BoardNavLog.write("didFinish \(BoardNavLog.clean(webView.url))")
         if webView.url?.path.hasPrefix("/embed/idea") == true { onIdeaReached?() }
+    }
+
+    func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+        BoardNavLog.write("serverRedirect → \(BoardNavLog.clean(webView.url))")
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let target = action.request.url else { return decisionHandler(.allow) }
+        BoardNavLog.write("decidePolicyFor main=\(action.targetFrame?.isMainFrame ?? false) type=\(action.navigationType.rawValue) \(BoardNavLog.clean(target))")
         // the board needs a web session → let the screen fetch a ticket instead of showing a login form
         if target.host == Self.host, target.path.hasPrefix("/sign-in") {
             signedIn = false
@@ -305,4 +314,38 @@ struct IdeaBoardScreen: View {
         }
     }
 
+}
+
+
+/// 2026-11-18 (board memory / sign-in path) — DEBUG-only navigation log of the board web view, written to
+/// Documents/boardnav.log so the UI-test workflow can read it from the simulator. Query values are removed
+/// (tickets!), cookie VALUES are never logged — only names and domains.
+enum BoardNavLog {
+    nonisolated static func clean(_ url: URL?) -> String {
+        guard let url, var c = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return "nil" }
+        c.queryItems = c.queryItems?.map { URLQueryItem(name: $0.name, value: $0.name == "next" ? $0.value : "…") }
+        return c.string ?? "?"
+    }
+
+    nonisolated static func write(_ line: String) {
+        #if DEBUG
+        guard let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let url = dir.appendingPathComponent("boardnav.log")
+        let text = "\(Int(Date().timeIntervalSince1970)) \(line)\n"
+        if let h = try? FileHandle(forWritingTo: url) {
+            h.seekToEndOfFile(); h.write(Data(text.utf8)); try? h.close()
+        } else {
+            try? Data(text.utf8).write(to: url)
+        }
+        #endif
+    }
+
+    @MainActor static func cookieNames(_ web: WKWebView) {
+        #if DEBUG
+        web.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
+            let names = cookies.filter { $0.domain.contains("subshot") }.map { "\($0.domain):\($0.name)" }.sorted()
+            write("cookies \(names.isEmpty ? "none" : names.joined(separator: " "))")
+        }
+        #endif
+    }
 }

@@ -14,6 +14,10 @@ on:
         description: "also run the phases on an iPhone simulator (yes/no)"
         required: false
         default: "no"
+      noipad:
+        description: "skip the iPad simulator (yes/no)"
+        required: false
+        default: "no"
       memory:
         description: "sample the WebKit processes' memory every 2 s (yes/no)"
         required: false
@@ -123,6 +127,7 @@ jobs:
           fi
           SIMS="$SIM_UDID"
           [ -n "$PHONE_UDID" ] && SIMS="$SIM_UDID $PHONE_UDID"
+          [ "${{ github.event.inputs.noipad }}" = "yes" ] && [ -n "$PHONE_UDID" ] && SIMS="$PHONE_UDID"
           for SIM in $SIMS; do
           SUF=$([ "$SIM" = "$SIM_UDID" ] && echo "" || echo "-iphone")
           for T in $PHASES; do
@@ -136,6 +141,9 @@ jobs:
                 -only-testing:"SubshotUITests/DevlogScreenshotTests/$T" \
                 -resultBundlePath "devlog-$T$SUF.xcresult" > "phase-$T$SUF.log" 2>&1 || true
               grep -E "Test (case|Case)" "phase-$T$SUF.log" || true
+              # the app's DEBUG board navigation log (if any) — from the app's data container
+              C=$(xcrun simctl get_app_container "$SIM" com.linocappuccino.subshot.Subshot data 2>/dev/null || true)
+              [ -n "$C" ] && [ -f "$C/Documents/boardnav.log" ] && cp "$C/Documents/boardnav.log" "boardnav-$T$SUF-$TRY.log" || true
               # a phase that failed (slow runner: snapshot timeouts) gets one more try with a new ticket
               grep -q "' passed on" "phase-$T$SUF.log" && break
               echo "retrying $T"
@@ -150,6 +158,7 @@ jobs:
           [ -f sampler.pid ] && kill $(cat sampler.pid) 2>/dev/null || true
           mkdir -p screenshots
           [ -f memory.csv ] && cp memory.csv screenshots/ || true
+          cp boardnav-*.log screenshots/ 2>/dev/null || true
           for L in phase-*.log; do [ -f "$L" ] && grep -h "MEMPHASE" "$L" | sed "s#^.*MEMPHASE#$L MEMPHASE#" ; done > screenshots/phases.txt 2>/dev/null || true
           wc -l screenshots/memory.csv screenshots/phases.txt 2>/dev/null || true
       - name: Export PNGs

@@ -444,6 +444,29 @@ final class DevlogScreenshotTests: XCTestCase {
         attachSkipped("7-\(device)")
     }
 
+    /// 2026-11-18 — short run for the board sign-in path: open «Speichertest 12», wait, screenshot. The app's
+    /// DEBUG navigation log (Documents/boardnav.log) is collected by the workflow.
+    func test8_BoardNav() throws {
+        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        app = makeApp(ticket: testTicket(), section: 0, restoreProject: true)
+        addUIInterruptionMonitor(withDescription: "notifications") { alert in
+            for label in ["Don’t Allow", "Don't Allow", "Nicht erlauben"] where alert.buttons[label].exists {
+                alert.buttons[label].tap()
+                return true
+            }
+            return false
+        }
+        app.launch()
+        dismissSystemAlert()
+        sleep(8)
+        let tile = app.staticTexts["Speichertest 12"]
+        if !tile.waitForExistence(timeout: 20) { for _ in 0..<4 where !tile.exists { app.swipeUp(); sleep(1) } }
+        guard tap(tile, timeout: 5) else { skip("boardnav-\(device)", "tile not found"); attachSkipped("8-\(device)"); return }
+        sleep(40)
+        shot("ios-boardnav-\(device)-1")
+        attachSkipped("8-\(device)")
+    }
+
     private func mark(_ label: String) {
         print("MEMPHASE \(Int(Date().timeIntervalSince1970)) \(label)")
     }
