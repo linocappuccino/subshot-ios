@@ -17,15 +17,17 @@ const VIEWPORTS = [
 ];
 
 function webkitRssMB() {
-  try {
-    const out = execSync("ps -eo rss,comm | grep -E 'WebKitWebProces|WebKitGPUProces|WebKitNetworkPr' || true").toString();
-    const by = {};
-    for (const l of out.trim().split('\n').filter(Boolean)) {
-      const [rss, name] = l.trim().split(/\s+/);
-      by[name] = (by[name] || 0) + Number(rss) / 1024;
-    }
-    return by;
-  } catch { return {}; }
+  // /proc directly (the Playwright container has no ps): every WebKit helper process, RSS summed per name
+  const by = {};
+  for (const pid of fs.readdirSync('/proc').filter((d) => /^\d+$/.test(d))) {
+    try {
+      const comm = fs.readFileSync(`/proc/${pid}/comm`, 'utf8').trim();
+      if (!/^WebKit(Web|GPU|Network)/.test(comm)) continue;
+      const m = fs.readFileSync(`/proc/${pid}/status`, 'utf8').match(/VmRSS:\s+(\d+)/);
+      if (m) by[comm] = (by[comm] || 0) + Number(m[1]) / 1024;
+    } catch { /* process gone */ }
+  }
+  return by;
 }
 
 async function pageMetrics(page) {
@@ -64,14 +66,18 @@ function withTimeout(p, ms, what) {
     const browser = await webkit.launch();
     const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: vp.dpr, isMobile: false, hasTouch: false,
       userAgent: 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148' });
-    const page = await ctx.newPage();
+    const login = await ctx.newPage();
     const r = await fetch('https://subshot.ch/debug/test-ticket', { method: 'POST', headers: { 'X-Debug-Secret': secret } });
     if (r.status !== 200) throw new Error('ticket ' + r.status);
     const { ticket } = await r.json();
-    await page.goto(`https://app.subshot.ch/embed/auth?ticket=${encodeURIComponent(ticket)}&next=/embed/warm`);
-    await page.waitForURL((u) => u.pathname.startsWith('/embed/warm'), { timeout: 60000 });
-    await page.waitForTimeout(3000);
+    await login.goto(`https://app.subshot.ch/embed/auth?ticket=${encodeURIComponent(ticket)}&next=/embed/warm`);
+    await login.waitForURL((u) => u.pathname.startsWith('/embed/warm'), { timeout: 60000 });
+    await login.waitForTimeout(3000);
+    await login.close();
     for (const b of BOARDS) {
+      const page = await ctx.newPage();
+      let crashed = null;
+      page.on('crash', () => { crashed = new Date().toISOString(); console.log(crashed, b.title, vp.name, 'PAGE CRASHED'); });
       await page.goto('https://app.subshot.ch/embed/warm');
       await page.waitForTimeout(4000);
       const base = webkitRssMB();
@@ -109,12 +115,13 @@ function withTimeout(p, ms, what) {
       await withTimeout(page.screenshot({ path: `shots/${b.title.replace(/\s+/g, '-')}-${vp.name}-2.png`, timeout: 20000 }), 25000, 'shot2');
       clearInterval(timer);
       page.off('response', onResp);
-      const res = { board: b.title, viewport: vp.name, query: QUERY || 'none', rss_before_mb: base, rss_at_load_mb: atLoad, rss_peak_mb: peak,
+      const res = { board: b.title, viewport: vp.name, query: QUERY || 'none', crashed, rss_before_mb: base, rss_at_load_mb: atLoad, rss_peak_mb: peak,
         received_mb: Object.fromEntries(Object.entries(bytes).map(([k, v]) => [k, +(v / 1e6).toFixed(1)])), at_load: loaded, after_pan_zoom: after };
       for (const side of ['rss_before_mb', 'rss_at_load_mb', 'rss_peak_mb']) for (const k in res[side]) res[side][k] = Math.round(res[side][k]);
       results.push(res);
       console.log(JSON.stringify(res));
       fs.writeFileSync('board-memory.json', JSON.stringify(results, null, 2));
+      await page.close().catch(() => {});
     }
     await browser.close();
   }
