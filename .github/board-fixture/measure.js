@@ -51,6 +51,10 @@ async function pageMetrics(page) {
   });
 }
 
+function withTimeout(p, ms, what) {
+  return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout ' + what)), ms))]).catch((e) => ({ error: String(e.message || e) }));
+}
+
 (async () => {
   const secret = process.env.DEBUG_TICKET_SECRET || '';
   if (!secret) throw new Error('DEBUG_TICKET_SECRET missing');
@@ -87,18 +91,22 @@ async function pageMetrics(page) {
       const url = `https://app.subshot.ch/embed/idea/${PROJECT}/${b.id}${QUERY ? '?' + QUERY : ''}`;
       await page.goto(url, { waitUntil: 'domcontentloaded' });
       await page.waitForTimeout(25000);
-      const loaded = await pageMetrics(page);
+      console.log(new Date().toISOString(), b.title, vp.name, 'loaded, measuring');
+      const loaded = await withTimeout(pageMetrics(page), 20000, 'metrics');
       const atLoad = webkitRssMB();
-      await page.screenshot({ path: `shots/${b.title.replace(/\s+/g, '-')}-${vp.name}-1.png` });
+      await withTimeout(page.screenshot({ path: `shots/${b.title.replace(/\s+/g, '-')}-${vp.name}-1.png`, timeout: 20000 }), 25000, 'shot1');
+      console.log(new Date().toISOString(), b.title, vp.name, 'pan/zoom');
       // pan + zoom (wheel = pan, ctrl+wheel = zoom on the board)
       await page.mouse.move(vp.width / 2, vp.height / 2);
-      for (let i = 0; i < 6; i++) { await page.mouse.wheel(400, 300); await page.waitForTimeout(800); }
-      for (let i = 0; i < 4; i++) { await page.keyboard.down('Control'); await page.mouse.wheel(0, -300); await page.keyboard.up('Control'); await page.waitForTimeout(800); }
-      await page.waitForTimeout(4000);
-      for (let i = 0; i < 6; i++) { await page.keyboard.down('Control'); await page.mouse.wheel(0, 400); await page.keyboard.up('Control'); await page.waitForTimeout(800); }
-      await page.waitForTimeout(6000);
-      const after = await pageMetrics(page);
-      await page.screenshot({ path: `shots/${b.title.replace(/\s+/g, '-')}-${vp.name}-2.png` });
+      await withTimeout((async () => {
+        for (let i = 0; i < 6; i++) { await page.mouse.wheel(400, 300); await page.waitForTimeout(800); }
+        for (let i = 0; i < 4; i++) { await page.keyboard.down('Control'); await page.mouse.wheel(0, -300); await page.keyboard.up('Control'); await page.waitForTimeout(800); }
+        await page.waitForTimeout(4000);
+        for (let i = 0; i < 6; i++) { await page.keyboard.down('Control'); await page.mouse.wheel(0, 400); await page.keyboard.up('Control'); await page.waitForTimeout(800); }
+        await page.waitForTimeout(6000);
+      })(), 60000, 'panzoom');
+      const after = await withTimeout(pageMetrics(page), 20000, 'metrics2');
+      await withTimeout(page.screenshot({ path: `shots/${b.title.replace(/\s+/g, '-')}-${vp.name}-2.png`, timeout: 20000 }), 25000, 'shot2');
       clearInterval(timer);
       page.off('response', onResp);
       const res = { board: b.title, viewport: vp.name, query: QUERY || 'none', rss_before_mb: base, rss_at_load_mb: atLoad, rss_peak_mb: peak,
@@ -106,6 +114,7 @@ async function pageMetrics(page) {
       for (const side of ['rss_before_mb', 'rss_at_load_mb', 'rss_peak_mb']) for (const k in res[side]) res[side][k] = Math.round(res[side][k]);
       results.push(res);
       console.log(JSON.stringify(res));
+      fs.writeFileSync('board-memory.json', JSON.stringify(results, null, 2));
     }
     await browser.close();
   }

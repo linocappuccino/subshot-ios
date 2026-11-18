@@ -7,7 +7,7 @@ on:
 jobs:
   measure:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     container:
       image: mcr.microsoft.com/playwright:v1.49.1-noble
     steps:
