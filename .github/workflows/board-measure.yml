@@ -8,13 +8,12 @@ jobs:
   measure:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    container:
+      image: mcr.microsoft.com/playwright:v1.49.1-noble
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
       - name: WebKit
-        run: npm init -y >/dev/null && npm i playwright@1.49.1 >/dev/null && npx playwright install --with-deps webkit >/dev/null
+        run: npm init -y >/dev/null && npm i playwright@1.49.1 >/dev/null && apt-get install -y -qq procps >/dev/null 2>&1 || true
       - name: Measure
         env:
           DEBUG_TICKET_SECRET: ${{ secrets.DEBUG_TICKET_SECRET }}
