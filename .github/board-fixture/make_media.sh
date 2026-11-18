@@ -18,7 +18,7 @@ for i in 1 2; do
 done
 # 60 photos 4000×3000
 for i in $(seq -w 1 60); do
-  ffmpeg -loglevel error -y -f lavfi -i "mandelbrot=size=4000x3000:start_scale=$((i % 7 + 1)):end_pts=1" -frames:v 1 -q:v 4 "p-$i.jpg"
+  ffmpeg -loglevel error -y -f lavfi -i "mandelbrot=size=4000x3000:start_scale=$((10#$i % 7 + 1)):end_pts=1" -frames:v 1 -q:v 4 "p-$i.jpg"
 done
 # 10 GIFs
 for i in $(seq -w 1 10); do
