@@ -127,7 +127,9 @@ final class BoardWebPool: NSObject, WKScriptMessageHandler, WKNavigationDelegate
         guard let target = action.request.url else { return decisionHandler(.allow) }
         BoardNavLog.write("decidePolicyFor main=\(action.targetFrame?.isMainFrame ?? false) type=\(action.navigationType.rawValue) \(BoardNavLog.clean(target))")
         // the board needs a web session → let the screen fetch a ticket instead of showing a login form
-        if target.host == Self.host, target.path.hasPrefix("/sign-in") {
+        // 2026-11-18 — also Clerk's account portal (accounts.subshot.ch/sign-in), not only app.subshot.ch/sign-in:
+        // missing it left the Clerk login page (behind a Cloudflare check) in the board view
+        if let host = target.host, host == "subshot.ch" || host.hasSuffix(".subshot.ch"), target.path.hasPrefix("/sign-in") {
             signedIn = false
             if inUse { onNeedsSignIn?() }
             return decisionHandler(.cancel)
@@ -182,21 +184,20 @@ struct IdeaBoardScreen: View {
     @State private var usedTicket = false
     /// 2026-11-01 (out of memory on big boards): after the first crash the board reloads in
     /// «Speichersparmodus» (?lite=1 — only the small R2 image versions) instead of trying the same thing 3×
-    /// 2026-11-18 (Lino: «jedes board muss IMMER öffnen bar sein») — a ladder instead of giving up: every time
-    /// iOS ends the board's web process the board reloads one step lighter, and only if even the step without
-    /// any media is too much does the message come:
-    ///   0 normal (the embed is always in saving mode: 1×, culling, no blur)
-    ///   1 ?lite=1                — only the small R2 image versions
-    ///   2 ?lite=1&media=still    — videos / GIFs only as still images until tapped (one player at a time)
-    ///   3 ?lite=1&media=off      — media as placeholders, text / structure only
+    /// 2026-11-18 (Lino: «jedes board muss IMMER öffnen bar sein») — the board always opens with media as stills
+    /// (?media=still: still image + play, exactly one <video> after a tap, GIFs as stills — measured in WebKit:
+    /// <video> elements made every zoom step ≈6× slower). If iOS still ends the web process, one step lighter
+    /// instead of the message; the message only if even the media-free step is too much:
+    ///   0 ?media=still
+    ///   1 ?lite=1&media=still   — also only the small R2 image versions
+    ///   2 ?lite=1&media=off     — media as placeholders, text / structure only
     @State private var level = 0
-    private static let maxLevel = 3
+    private static let maxLevel = 2
 
     private var levelQuery: [URLQueryItem] {
         var q: [URLQueryItem] = []
         if level >= 1 { q.append(URLQueryItem(name: "lite", value: "1")) }
-        if level == 2 { q.append(URLQueryItem(name: "media", value: "still")) }
-        if level >= 3 { q.append(URLQueryItem(name: "media", value: "off")) }
+        q.append(URLQueryItem(name: "media", value: level >= 2 ? "off" : "still"))
         return q
     }
 
