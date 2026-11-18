@@ -169,14 +169,32 @@ struct IdeaBoardScreen: View {
     @ObservedObject private var language = AppLanguage.shared
     @State private var failed = false
     @State private var loading = true
-    @State private var crashes: [Date] = []
     @State private var crashed = false
     @State private var usedTicket = false
     /// 2026-11-01 (out of memory on big boards): after the first crash the board reloads in
     /// «Speichersparmodus» (?lite=1 — only the small R2 image versions) instead of trying the same thing 3×
-    @State private var lite = false
+    /// 2026-11-18 (Lino: «jedes board muss IMMER öffnen bar sein») — a ladder instead of giving up: every time
+    /// iOS ends the board's web process the board reloads one step lighter, and only if even the step without
+    /// any media is too much does the message come:
+    ///   0 normal (the embed is always in saving mode: 1×, culling, no blur)
+    ///   1 ?lite=1                — only the small R2 image versions
+    ///   2 ?lite=1&media=still    — videos / GIFs only as still images until tapped (one player at a time)
+    ///   3 ?lite=1&media=off      — media as placeholders, text / structure only
+    @State private var level = 0
+    private static let maxLevel = 3
 
-    private var ideaPath: String { "/embed/idea/\(viewModel.projectId)/\(idea.id)" + (lite ? "?lite=1" : "") }
+    private var levelQuery: [URLQueryItem] {
+        var q: [URLQueryItem] = []
+        if level >= 1 { q.append(URLQueryItem(name: "lite", value: "1")) }
+        if level == 2 { q.append(URLQueryItem(name: "media", value: "still")) }
+        if level >= 3 { q.append(URLQueryItem(name: "media", value: "off")) }
+        return q
+    }
+
+    private var ideaPath: String {
+        let q = levelQuery.map { "\($0.name)=\($0.value ?? "")" }.joined(separator: "&")
+        return "/embed/idea/\(viewModel.projectId)/\(idea.id)" + (q.isEmpty ? "" : "?" + q)
+    }
 
     var body: some View {
         ZStack {
@@ -254,7 +272,7 @@ struct IdeaBoardScreen: View {
     /// straight to the board (the web session is there, or we find out via a /sign-in redirect)
     private func openBoard() {
         var c = URLComponents(url: BoardWebPool.base.appendingPathComponent("embed/idea/\(viewModel.projectId)/\(idea.id)"), resolvingAgainstBaseURL: false)
-        if lite { c?.queryItems = [URLQueryItem(name: "lite", value: "1")] }
+        if !levelQuery.isEmpty { c?.queryItems = levelQuery }
         if let url = c?.url { BoardWebPool.shared.open(url) } else { failed = true }
     }
 
@@ -276,19 +294,15 @@ struct IdeaBoardScreen: View {
     }
 
     private func handleCrash() {
-        let now = Date()
-        crashes = crashes.filter { now.timeIntervalSince($0) < 60 } + [now]
-        if !lite {
-            // first crash: straight into the memory-saving mode (the web page shows a short note)
-            lite = true
-            crashes = [now]
+        // one step lighter per crash; the message only after the lightest step (no media) crashed too
+        if level < Self.maxLevel {
+            level += 1
+            print("board: web process ended, reloading at level \(level)")
             loading = true
             openBoard()
-        } else if crashes.count >= 2 {
-            crashed = true
         } else {
-            loading = true
-            openBoard()
+            crashed = true
         }
     }
+
 }
