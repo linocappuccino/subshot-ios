@@ -1,0 +1,30 @@
+name: Hybrid web width check
+# 2026-11-18 — screenshots of the web pages (post-production, ideas, deliver) at 390 and 1024 px, signed in
+# as the test account (same DEBUG_TICKET_SECRET as the devlog screenshots). Plan basis for the hybrid app.
+on:
+  push:
+    branches: [hybrid-check]
+  workflow_dispatch:
+jobs:
+  shots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Playwright
+        run: |
+          npm init -y >/dev/null
+          npm i playwright@1.49.1 >/dev/null
+          npx playwright install --with-deps chromium >/dev/null
+      - name: Screenshots
+        env:
+          DEBUG_TICKET_SECRET: ${{ secrets.DEBUG_TICKET_SECRET }}
+        run: node .github/hybrid-check/shots.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hybrid-check
+          path: shots/
