@@ -11,7 +11,8 @@ name: TestFlight
 #   ASC_KEY_ID      — App Store Connect API key id (10 characters)
 #   ASC_ISSUER_ID   — issuer id (UUID) from the same page
 #   ASC_KEY_P8      — the full contents of AuthKey_<id>.p8 (-----BEGIN PRIVATE KEY----- …)
-# The key needs the role «App Manager» (or Admin) so it may create the distribution certificate.
+# The key needs the role «Admin» (App Manager only with «access to cloud-managed distribution certificates»)
+# so Xcode may create the distribution certificate.
 on:
   workflow_dispatch:
   push:
