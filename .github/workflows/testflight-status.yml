@@ -1,0 +1,23 @@
+name: TestFlight status
+# 2026-11-18 — newest builds and their processing state in App Store Connect; makes sure the internal
+# group «Intern» exists with the account holder in it. Start: push a tag `asc-status-<anything>`.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['asc-status-*']
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q "pyjwt[crypto]==2.9.0"
+      - name: Status
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: python .github/asc/testflight_status.py
