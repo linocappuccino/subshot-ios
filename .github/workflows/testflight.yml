@@ -1,0 +1,99 @@
+name: TestFlight
+# 2026-11-18 (hybrid plan) — archive, sign (App Store distribution) and upload the app to TestFlight.
+# Signing: Xcode "cloud signing" with an App Store Connect API key (-allowProvisioningUpdates) — the
+# distribution certificate and profile are created/managed by Apple, no .p12 / profile files needed.
+# Build number = 100 + this workflow's run number (always increasing).
+#
+# Start: Actions → TestFlight → Run workflow (needs this file on the default branch), or push a tag
+# `testflight-<anything>` (works from any branch, e.g. `git tag testflight-b113 && git push origin testflight-b113`).
+#
+# Secrets (repository → Settings → Secrets and variables → Actions):
+#   ASC_KEY_ID      — App Store Connect API key id (10 characters)
+#   ASC_ISSUER_ID   — issuer id (UUID) from the same page
+#   ASC_KEY_P8      — the full contents of AuthKey_<id>.p8 (-----BEGIN PRIVATE KEY----- …)
+# The key needs the role «App Manager» (or Admin) so it may create the distribution certificate.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['testflight-*']
+jobs:
+  testflight:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      TEAM_ID: 8U22CFDKB8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Secrets present?
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          missing=""
+          [ -z "$ASC_KEY_ID" ] && missing="$missing ASC_KEY_ID"
+          [ -z "$ASC_ISSUER_ID" ] && missing="$missing ASC_ISSUER_ID"
+          [ -z "$ASC_KEY_P8" ] && missing="$missing ASC_KEY_P8"
+          if [ -n "$missing" ]; then echo "::error::missing secrets:$missing"; exit 1; fi
+      - name: Xcode
+        run: |
+          LATEST=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$LATEST" ]; then sudo xcode-select -s "$LATEST"; fi
+          xcodebuild -version
+      - name: API key file
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/asc"
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/asc/AuthKey_$ASC_KEY_ID.p8"
+          chmod 600 "$RUNNER_TEMP/asc/AuthKey_$ASC_KEY_ID.p8"
+      - name: Archive (Release, signed)
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -o pipefail
+          BUILD=$((100 + ${{ github.run_number }}))
+          echo "BUILD_NUMBER=$BUILD" >> "$GITHUB_ENV"
+          xcodebuild -project Subshot.xcodeproj -scheme Subshot -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Subshot.xcarchive" \
+            -skipPackagePluginValidation -skipMacroValidation \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey_$ASC_KEY_ID.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic CURRENT_PROJECT_VERSION="$BUILD" \
+            archive 2>&1 | tee archive.log | grep -E "error:|ARCHIVE (SUCCEEDED|FAILED)" || true
+          grep -q "ARCHIVE SUCCEEDED" archive.log
+      - name: Export + upload to TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -o pipefail
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>uploadSymbols</key><true/>
+          </dict></plist>
+          EOF
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Subshot.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey_$ASC_KEY_ID.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            2>&1 | tee export.log | grep -E "error:|EXPORT (SUCCEEDED|FAILED)|Upload|uploaded" || true
+          grep -q "EXPORT SUCCEEDED" export.log
+          echo "### Uploaded build $BUILD_NUMBER to TestFlight" >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc"
+      - name: Errors
+        if: failure()
+        run: grep -h -n "error:" archive.log export.log 2>/dev/null | head -60 || true
