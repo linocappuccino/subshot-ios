@@ -393,11 +393,11 @@ struct ShotListView: View {
     /// "Ohne Abschnitt" bucket).
     private var scrollSnapTargetCount: Int {
         let unassignedShotsTarget = viewModel.shots(in: nil).isEmpty ? 0 : 1
-        if viewModel.sections.isEmpty {
+        if viewModel.shotlistSections.isEmpty {
             return unassignedShotsTarget + 1
         }
         let unassignedScenesTarget = viewModel.scenes(in: nil).isEmpty ? 0 : 1
-        return unassignedShotsTarget + viewModel.sections.count + unassignedScenesTarget
+        return unassignedShotsTarget + viewModel.shotlistSections.count + unassignedScenesTarget
     }
     /// iPad-only column count, adjustable via a slider (see
     /// columnCountPopover) — 1...4, stored as Double since Slider needs a
@@ -693,7 +693,7 @@ struct ShotListView: View {
                         initialSelectedIdeaId: pendingDeepLinkKind == "idea" ? pendingDeepLinkId : nil
                     )
                         .transition(.opacity)
-                } else if !viewModel.sections.isEmpty && openSectionId == nil {
+                } else if !viewModel.shotlistSections.isEmpty && openSectionId == nil {
                     // 2026-08-30 — Skript-Auswahlübersicht (web-parity, siehe
                     // project memory): erst eine Kachel-Übersicht der
                     // Abschnitte (jeder Abschnitt = eine abgenommene Idee),
@@ -740,7 +740,7 @@ struct ShotListView: View {
                         // renders exactly like before (flat scene list, no headers).
                         // Only once at least one section exists does grouping (with
                         // an explicit "Ohne Abschnitt" bucket for the rest) kick in.
-                        if viewModel.sections.isEmpty {
+                        if viewModel.shotlistSections.isEmpty {
                             // scenes(in: nil), not the raw array — a project with no
                             // sections yet still has every scene's sectionId == nil,
                             // so this is equivalent to the unsectioned bucket below,
@@ -751,7 +751,7 @@ struct ShotListView: View {
                             // Abschnitt (openSectionId), matched web's
                             // identische Filterung. "Ohne Abschnitt" wird in
                             // diesem fokussierten Modus nie gezeigt (s.o.).
-                            ForEach(viewModel.sections.filter { $0.id == openSectionId }) { section in
+                            ForEach(viewModel.shotlistSections.filter { $0.id == openSectionId }) { section in
                                 // 2026-09-09, Lino: "2 sortierfunktionien 1. die
                                 // Szenenreihenfolge 2. Shotreihenfolge... web-parity
                                 // mit page.tsx's SegmentedControl. Only for a REAL
@@ -1999,7 +1999,7 @@ struct ShotListView: View {
     private func scriptOverviewGrid() -> some View {
         let columns = [GridItem(.adaptive(minimum: 160), spacing: 12)]
         LazyVGrid(columns: columns, spacing: 12) {
-            ForEach(viewModel.sections) { section in
+            ForEach(viewModel.shotlistSections) { section in
                 // 2026-08-31, Todoist #96 — open (unresolved) public preview
                 // comment count for this section, same "💬 {n}" badge idea
                 // VideoTile/IdeaTile already use for their own open-comment
@@ -2239,7 +2239,7 @@ struct ShotListView: View {
     /// back, but doesn't fight the user's toggle while they're actively
     /// looking at it mid-visit.
     private func collapseFullyDoneSections() {
-        let doneKeys = viewModel.sections.filter { isSectionFullyDone($0) }.map(\.id)
+        let doneKeys = viewModel.shotlistSections.filter { isSectionFullyDone($0) }.map(\.id)
         guard !doneKeys.isEmpty else { return }
         collapsedSections.formUnion(doneKeys)
     }
@@ -2250,7 +2250,7 @@ struct ShotListView: View {
     /// previously-opened section was deleted meanwhile/no longer exists).
     private var targetSectionIdForNewScene: String? {
         guard let key = lastOpenedSectionKey, key != unassignedSectionKey else { return nil }
-        return viewModel.sections.contains { $0.id == key } ? key : nil
+        return viewModel.shotlistSections.contains { $0.id == key } ? key : nil
     }
 
     private func toggleSectionCollapse(_ section: SceneSection?) {

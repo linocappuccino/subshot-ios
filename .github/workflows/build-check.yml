@@ -27,6 +27,16 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
             build 2>&1 | tee build.log | grep -E "error:|warning: .*deprecated|BUILD (SUCCEEDED|FAILED)" || true
           grep -q "BUILD SUCCEEDED" build.log
+      - name: Unit tests (simulator)
+        run: |
+          set -o pipefail
+          SIM=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next(x["udid"] for rt in sorted(d, reverse=True) if ".iOS-" in rt for x in d[rt] if x["name"].startswith("iPhone")))')
+          OS=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next(rt.split(".iOS-")[1].replace("-",".") for rt in sorted(d, reverse=True) if ".iOS-" in rt and any(x["name"].startswith("iPhone") for x in d[rt])))')
+          xcodebuild test -project Subshot.xcodeproj -scheme Subshot -destination "platform=iOS Simulator,id=$SIM" \
+            -only-testing:SubshotTests -skipPackagePluginValidation -skipMacroValidation \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= IPHONEOS_DEPLOYMENT_TARGET="$OS" \
+            2>&1 | tee test.log | grep -E "Test (Case|case|Suite)|error:|TEST (SUCCEEDED|FAILED)|Executed" || true
+          grep -q "TEST SUCCEEDED" test.log
       - name: Bundled fonts
         run: find ~/Library/Developer/Xcode/DerivedData -path "*Subshot.app/*" -iname "*.ttf" | sed 's#.*Subshot.app/#Subshot.app/#'
       - name: Errors

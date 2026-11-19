@@ -21,6 +21,12 @@ final class ShotListViewModel: ObservableObject {
     // preserves that order per-section for free — no separate `.sorted`
     // needed in scenes(in:) anymore, same simplification shots(in:) below
     // already relies on.
+    /// 2026-11-19 — the sections the shot list shows (website rule, see ShotlistFilter): no unplanned video
+    /// sections, no post-production video groups without scenes. Post-production keeps using `sections`.
+    var shotlistSections: [SceneSection] {
+        ShotlistFilter.visible(sections, sectionIdsWithScenes: Set(scenes.compactMap(\.sectionId)))
+    }
+
     @Published var scenes: [Scene] = [] {
         didSet { scenesBySectionId = Dictionary(grouping: scenes, by: \.sectionId) }
     }

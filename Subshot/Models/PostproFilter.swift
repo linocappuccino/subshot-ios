@@ -175,3 +175,19 @@ enum PostproLanguageCatalog {
         return String(letters.prefix(2)).uppercased()
     }
 }
+
+/// 2026-11-19 (Lino: «in der shotlist noch super viele andere shotlisten … die nicht da sein sollten») — the same
+/// rule as the website's shot list (subshot-web app/projects/[id]/page.tsx:1813, since 2026-11-18): a section is a
+/// shot list unless it is «unplanned» (one uploaded video) or sits in post-production without any scene (the
+/// DaVinci plugin's / upload's video groups). Those stay visible in Post-production; they are never deleted.
+enum ShotlistFilter {
+    static func isShotlist(_ section: SceneSection, sectionIdsWithScenes: Set<String>) -> Bool {
+        if section.isUnplanned == true { return false }
+        if section.inPostproduction && !sectionIdsWithScenes.contains(section.id) { return false }
+        return true
+    }
+
+    static func visible(_ sections: [SceneSection], sectionIdsWithScenes: Set<String>) -> [SceneSection] {
+        sections.filter { isShotlist($0, sectionIdsWithScenes: sectionIdsWithScenes) }
+    }
+}
