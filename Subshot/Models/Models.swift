@@ -120,7 +120,7 @@ enum ProjectPipelineStage: String, Codable {
 
     var label: String {
         switch self {
-        case .idea: return "Idee / Konzept"
+        case .idea: return "Konzept"
         case .scripting: return "Scripting / Shooting"
         case .postproduction: return "Postproduction"
         case .done: return "Abgeschlossen"

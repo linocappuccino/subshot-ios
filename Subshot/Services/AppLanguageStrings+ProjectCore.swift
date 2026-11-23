@@ -285,7 +285,7 @@ extension AppLanguage {
             "shareLinkSheet.passwordProtectionHeader": "Passwortschutz",
             "shareLinkSheet.protectedHint": "Aktiv — Besucher müssen das Passwort eingeben, bevor sie die Vorschau sehen.",
             "shareLinkSheet.unprotectedHint": "Sinnvoll für Projekte/Kunden, wo nichts öffentlich einsehbar sein soll, auch nicht mit dem Link.",
-            "shareLinkSheet.titleIdeas": "Ideen-Link teilen",
+            "shareLinkSheet.titleIdeas": "Konzept-Link teilen",
             "shareLinkSheet.titleVideo": "Video-Feedback-Link teilen",
             "shareLinkSheet.titleDefault": "Link teilen",
             // 2026-07-27, Todoist #356, text updated 2026-08-09 (#389's
@@ -579,7 +579,7 @@ extension AppLanguage {
             "shareLinkSheet.passwordProtectionHeader": "Password protection",
             "shareLinkSheet.protectedHint": "Active — visitors must enter the password before they can see the preview.",
             "shareLinkSheet.unprotectedHint": "Useful for projects/clients where nothing should be publicly viewable, even with the link.",
-            "shareLinkSheet.titleIdeas": "Share ideas link",
+            "shareLinkSheet.titleIdeas": "Share concept link",
             "shareLinkSheet.titleVideo": "Share video feedback link",
             "shareLinkSheet.titleDefault": "Share link",
             "shareLinkSheet.notAllInternallyReviewedTitle": "Internal review required:",

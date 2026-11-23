@@ -23,7 +23,7 @@ extension AppLanguage {
     static let ideasStrings: [String: [String: String]] = [
         "de": [
             // IdeaGridView.swift
-            "ideaGrid.heading": "💡 Ideen",
+            "ideaGrid.heading": "💡 Konzept",
             "ideaGrid.emptyState": "Noch keine Ideen — leg die erste Idee für dieses Projekt an, bevor es ins Scripting geht.",
             "ideaGrid.groupIdea": "Idee",
             "ideaGrid.groupFeedback1": "1. Feedback",
@@ -199,7 +199,7 @@ extension AppLanguage {
         ],
         "en": [
             // IdeaGridView.swift
-            "ideaGrid.heading": "💡 Ideas",
+            "ideaGrid.heading": "💡 Concept",
             "ideaGrid.emptyState": "No ideas yet — create the first idea for this project before moving into scripting.",
             "ideaGrid.groupIdea": "Idea",
             "ideaGrid.groupFeedback1": "1st feedback",

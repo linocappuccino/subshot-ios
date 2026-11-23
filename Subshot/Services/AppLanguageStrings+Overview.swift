@@ -7,7 +7,7 @@ extension AppLanguage {
         "de": [
             "overview.search": "Projekte oder Kunden suchen …",
             "overview.all": "Alle",
-            "overview.step.ideas": "Ideen",
+            "overview.step.ideas": "Konzept",
             "overview.step.scenes": "Shotlist",
             "overview.step.postproduction": "Postproduction",
             "overview.step.deliver": "Deliver",
@@ -38,7 +38,7 @@ extension AppLanguage {
         "en": [
             "overview.search": "Search projects or clients …",
             "overview.all": "All",
-            "overview.step.ideas": "Ideas",
+            "overview.step.ideas": "Concept",
             "overview.step.scenes": "Shotlist",
             "overview.step.postproduction": "Postproduction",
             "overview.step.deliver": "Deliver",
