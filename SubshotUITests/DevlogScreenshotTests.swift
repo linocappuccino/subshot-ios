@@ -113,7 +113,7 @@ final class DevlogScreenshotTests: XCTestCase {
         sleep(4)
 
         // Ideas (the launch argument opens the project on the ideas page)
-        if app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Ideas' OR label CONTAINS 'Ideen'")).firstMatch.waitForExistence(timeout: 10) {
+        if app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Ideas' OR label CONTAINS 'Ideen' OR label CONTAINS 'Concept' OR label CONTAINS 'Konzept'")).firstMatch.waitForExistence(timeout: 10) {
             shot("ios-ideas-1")
         } else {
             skip("ios-ideas-1", "ideas page not shown")
