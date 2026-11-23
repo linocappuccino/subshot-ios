@@ -51,7 +51,7 @@ extension AppLanguage {
             // strings were deliberately NOT touched here).
             "shotListViewModel.unnamedScene": "Unbenannte Szene",
             "shotListViewModel.sceneDeletedUndoLabel": "Szene „{name}“ gelöscht",
-            "shotListViewModel.newIdeaTitle": "Neue Idee",
+            "shotListViewModel.newIdeaTitle": "Neues Konzept",
 
             // TodoSidebarSheet.swift (#412) — keys copied verbatim from
             // web's lib/i18n.tsx todoSidebar.* so both platforms read
@@ -92,7 +92,7 @@ extension AppLanguage {
 
             "shotListViewModel.unnamedScene": "Untitled scene",
             "shotListViewModel.sceneDeletedUndoLabel": "Scene \u{201C}{name}\u{201D} deleted",
-            "shotListViewModel.newIdeaTitle": "New idea",
+            "shotListViewModel.newIdeaTitle": "New concept",
 
             "projectListView.todoListButton": "To-dos",
             "todoSidebar.sheetTitle": "To-do list",

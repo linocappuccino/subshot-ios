@@ -296,7 +296,7 @@ extension AppLanguage {
             // the generic "Fehler") since Lino doesn't consider this an
             // error state, just a blocking precondition.
             "shareLinkSheet.notAllInternallyReviewedTitle": "Interne Abnahme notwendig:",
-            "shareLinkSheet.notAllInternallyReviewed": "Es wurde noch keine Idee intern abgenommen. Bitte zuerst mindestens eine Idee intern abnehmen, bevor der Preview-Link erstellt werden kann.",
+            "shareLinkSheet.notAllInternallyReviewed": "Es wurde noch kein Konzept intern abgenommen. Bitte zuerst mindestens ein Konzept intern abnehmen, bevor der Preview-Link erstellt werden kann.",
             "shareLinkSheet.openCommentsExist": "Es sind noch offene Kommentare vorhanden. Bitte zuerst jeden offenen Kommentar abhaken oder löschen, bevor der Preview-Link wieder erstellt/geteilt werden kann.",
 
             // ProjectInfoBox.swift (also covers SectionInfoBox / SceneProjectInfoTile,
@@ -583,7 +583,7 @@ extension AppLanguage {
             "shareLinkSheet.titleVideo": "Share video feedback link",
             "shareLinkSheet.titleDefault": "Share link",
             "shareLinkSheet.notAllInternallyReviewedTitle": "Internal review required:",
-            "shareLinkSheet.notAllInternallyReviewed": "No idea has been internally approved yet. Please internally approve at least one idea before the preview link can be created.",
+            "shareLinkSheet.notAllInternallyReviewed": "No concept has been internally approved yet. Please internally approve at least one concept before the preview link can be created.",
             "shareLinkSheet.openCommentsExist": "Some comments are still open. Please resolve or delete every open comment before the preview link can be created/shared again.",
 
             // ProjectInfoBox.swift (also covers SectionInfoBox / SceneProjectInfoTile,
