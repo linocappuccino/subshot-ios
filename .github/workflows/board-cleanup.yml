@@ -1,0 +1,26 @@
+name: Board test cleanup
+# 2026-11-24 — deletes ONLY the three synthetic «Speichertest» boards of the test account (ids checked) and proves
+# their R2 media are gone. Start: push a tag `board-cleanup-<n>`.
+on:
+  push:
+    tags: ['board-cleanup-*']
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: mcr.microsoft.com/playwright:v1.49.1-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Playwright
+        run: npm init -y >/dev/null && npm i playwright@1.49.1 >/dev/null
+      - name: Cleanup
+        env:
+          DEBUG_TICKET_SECRET: ${{ secrets.DEBUG_TICKET_SECRET }}
+        run: node .github/api-audit/board_cleanup.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: board-cleanup
+          path: board-cleanup.json
+          if-no-files-found: ignore
