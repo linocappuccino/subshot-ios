@@ -1,0 +1,30 @@
+name: Upload size live check
+# 2026-11-24 — upload-size contract (API 7ec9b9b) live, app flow, test account; cleans up after itself.
+# Start: push a tag `upload-live-<n>`.
+on:
+  push:
+    tags: ['upload-live-*']
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/playwright:v1.49.1-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools + 2-second test video
+        run: |
+          apt-get update -qq >/dev/null && apt-get install -y -qq ffmpeg >/dev/null
+          ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=320x568:rate=24:duration=2" -c:v libx264 -pix_fmt yuv420p -movflags +faststart test.mp4
+          ls -la test.mp4
+          npm init -y >/dev/null && npm i playwright@1.49.1 >/dev/null
+      - name: Check
+        env:
+          DEBUG_TICKET_SECRET: ${{ secrets.DEBUG_TICKET_SECRET }}
+        run: node .github/api-audit/upload_live.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: upload-live
+          path: upload-live.json
+          if-no-files-found: ignore
