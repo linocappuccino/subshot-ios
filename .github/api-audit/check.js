@@ -87,14 +87,14 @@ function missing(obj, keys) {
   for (const p of [`projects/${P}/languages`, `projects/${P}/video-extras`, `projects/${P}/video-qc?target=-14`, `projects/${P}/feedback-rounds`]) add('Postpro', p, await get(p));
   // Deliver (web page; the app has no own screen) — the API the web uses
   for (const p of [`projects/${P}/deliver`, `projects/${P}/deliver-settings`]) add('Deliver (Web)', p, await get(p));
+  // Einstellungen
+  add('Einstellungen', 'me', await get('me'));
   // Board embed page itself (signed in)
   if (firstIdea) {
     const t0 = Date.now();
     const resp = await page.goto(`https://app.subshot.ch/embed/idea/${P}/${firstIdea}?media=still`);
     out.push({ screen: 'Board-Embed (Seite)', path: '/embed/idea/:project/:id?media=still', status: resp ? resp.status() : 0, ms: Date.now() - t0, issues: page.url().includes('/sign-in') ? ['redirected to sign-in'] : [] });
   }
-  // Einstellungen
-  add('Einstellungen', 'me', await get('me'));
   // 401 without token (same calls)
   for (const p of ['me', 'projects', `projects/${P}`, `projects/${P}/videos`, `projects/${P}/ideas`]) {
     const r = await get(p, false);
