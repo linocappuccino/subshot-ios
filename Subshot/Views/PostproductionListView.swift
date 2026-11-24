@@ -65,6 +65,8 @@ struct PostproductionListView: View {
     @State private var pendingAssignIds: [String]?
     @State private var showingLanguageCatalog = false
     @State private var toast: String?
+    /// 2026-11-24 (audit #5) — a 413 «storage full» → dialog with «Speicher erweitern» (like the web)
+    @State private var storageFull: UploadLimitProblem?
     @State private var uploads: [PPUploadItem] = []
     @State private var showingMultiPhotoPicker = false
     @State private var multiPhotoItems: [PhotosPickerItem] = []
@@ -666,6 +668,14 @@ struct PostproductionListView: View {
                 updateVersion(updated, videoId: item.video.id)
             }
         }
+        .alert(language.t("pp.storageFullTitle"), isPresented: Binding(get: { storageFull != nil }, set: { if !$0 { storageFull = nil } })) {
+            // the blue button like the website's StorageLimitDialog → the team page's storage picker
+            Button(language.t("pp.storageUpgrade")) { UIApplication.shared.open(UploadLimitProblem.upgradeURL) }
+                .keyboardShortcut(.defaultAction)
+            Button(language.t("pp.later"), role: .cancel) {}
+        } message: {
+            Text(storageFullText(storageFull))
+        }
         .alert(language.t("postproductionListView.errorAlertTitle"), isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -682,6 +692,27 @@ struct PostproductionListView: View {
         var lines: [String] = Array(titles.prefix(12))
         if titles.count > 12 { lines.append("…") }
         return lines.joined(separator: "\n") + "\n\n" + language.t("pp.deleteEmphasis")
+    }
+
+    /// 2026-11-24 (audit #5) — the two 413 answers in plain words; «storage full» also opens the upgrade dialog
+    private func uploadErrorText(_ error: Error, fallback: String) -> String {
+        switch UploadLimitProblem.from(error) {
+        case .tooLarge(_, let maxBytes):
+            return language.t("pp.uploadTooLarge").replacingOccurrences(of: "{max}", with: UploadLimitProblem.sizeLabel(maxBytes))
+        case .storageFull(let used, let limit, let scope, let teamId):
+            storageFull = .storageFull(usedBytes: used, limitBytes: limit, scope: scope, teamId: teamId)
+            return language.t("pp.storageFullShort")
+        case nil:
+            return error.localizedDescription.isEmpty ? language.t(fallback) : error.localizedDescription
+        }
+    }
+
+    private func storageFullText(_ p: UploadLimitProblem?) -> String {
+        guard case .storageFull(let used, let limit, let scope, _) = p else { return "" }
+        let key = scope == "trial" ? "pp.storageFullTrial" : "pp.storageFullMessage"
+        return language.t(key)
+            .replacingOccurrences(of: "{used}", with: UploadLimitProblem.sizeLabel(used))
+            .replacingOccurrences(of: "{limit}", with: UploadLimitProblem.sizeLabel(limit))
     }
 
     private func showToast(_ text: String) {
@@ -931,7 +962,7 @@ struct PostproductionListView: View {
                 }
                 setUpload(id) { $0.state = .done; $0.progress = 1 }
             } catch {
-                setUpload(id) { $0.state = .error(error.localizedDescription.isEmpty ? language.t("pp.createVideoFailed") : error.localizedDescription) }
+                setUpload(id) { $0.state = .error(uploadErrorText(error, fallback: "pp.createVideoFailed")) }
                 // a failed upload into a freshly created unplanned section must not leave an empty box
                 if let s = createdSection {
                     try? await APIClient.shared.deleteSection(s.id)
@@ -946,7 +977,8 @@ struct PostproductionListView: View {
 
     /// version draft → R2 PUT with progress → complete (the same 3 steps as the web)
     private func uploadFile(_ file: NamedMovieFile, to videoId: String, progress: @escaping (Double) -> Void) async throws -> VideoVersion {
-        let draft = try await APIClient.shared.createVideoVersion(videoId: videoId, filename: file.url.lastPathComponent, contentType: file.contentType)
+        let draft = try await APIClient.shared.createVideoVersion(videoId: videoId, filename: file.url.lastPathComponent, contentType: file.contentType,
+                                                                  sizeBytes: UploadLimitProblem.fileSize(file.url))
         guard let s = draft.playbackUrl, let uploadURL = URL(string: s) else {
             throw APIError.server(status: 0, message: language.t("postproductionListView.noUploadUrl"))
         }
@@ -990,7 +1022,8 @@ struct PostproductionListView: View {
             if isNewVersion { showToast(language.t("pp.versionUploaded")) }
             await reloadLanguages()
         } catch {
-            errorMessage = error.localizedDescription.isEmpty ? language.t("pp.uploadFailed") : error.localizedDescription
+            let text = uploadErrorText(error, fallback: "pp.uploadFailed")
+            if storageFull == nil { errorMessage = text }
         }
     }
 

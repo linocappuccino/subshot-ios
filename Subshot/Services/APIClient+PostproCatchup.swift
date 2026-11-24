@@ -105,6 +105,8 @@ extension APIClient {
         var req = URLRequest(url: presignedURL)
         req.httpMethod = "PUT"
         req.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        // exactly the size announced with size_bytes (the presigned URL is signed for it)
+        if let size = UploadLimitProblem.fileSize(fileURL) { req.setValue(String(size), forHTTPHeaderField: "Content-Length") }
         let delegate = UploadProgressDelegate(onProgress: progress)
         let (_, response) = try await URLSession.shared.upload(for: req, fromFile: fileURL, delegate: delegate)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {

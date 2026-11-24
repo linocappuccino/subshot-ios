@@ -139,7 +139,8 @@ struct VideoPanelView: View {
             defer { try? FileManager.default.removeItem(at: movie.url) }
             let filename = movie.url.lastPathComponent
             let contentType = movie.url.pathExtension.lowercased() == "mov" ? "video/quicktime" : "video/mp4"
-            let version = try await APIClient.shared.createVideoVersion(videoId: videoId, filename: filename, contentType: contentType)
+            let version = try await APIClient.shared.createVideoVersion(videoId: videoId, filename: filename, contentType: contentType,
+                                                                        sizeBytes: UploadLimitProblem.fileSize(movie.url))
             guard let uploadURLString = version.playbackUrl, let uploadURL = URL(string: uploadURLString) else {
                 errorMessage = language.t("videoPanelView.noUploadUrl")
                 return

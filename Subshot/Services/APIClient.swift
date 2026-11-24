@@ -1525,11 +1525,13 @@ final class APIClient {
         return try await send(req)
     }
 
-    func createVideoVersion(videoId: String, filename: String, contentType: String) async throws -> VideoVersion {
+    /// 2026-11-24 (audit #5) — `sizeBytes`: the file's exact size; the server checks it against the limits
+    /// (413 upload_too_large / storage_limit_reached) and signs the R2 PUT for exactly this Content-Length.
+    func createVideoVersion(videoId: String, filename: String, contentType: String, sizeBytes: Int64? = nil) async throws -> VideoVersion {
         var req = try await authorizedRequest("videos/\(videoId)/versions", method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        struct Body: Encodable { let original_filename: String; let content_type: String }
-        req.httpBody = try encoder.encode(Body(original_filename: filename, content_type: contentType))
+        struct Body: Encodable { let original_filename: String; let content_type: String; let size_bytes: Int64? }
+        req.httpBody = try encoder.encode(Body(original_filename: filename, content_type: contentType, size_bytes: sizeBytes))
         return try await send(req)
     }
 
@@ -1543,6 +1545,8 @@ final class APIClient {
         var req = URLRequest(url: presignedURL)
         req.httpMethod = "PUT"
         req.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        // exactly the size announced with size_bytes (the presigned URL is signed for it)
+        if let size = UploadLimitProblem.fileSize(fileURL) { req.setValue(String(size), forHTTPHeaderField: "Content-Length") }
         let (_, response) = try await URLSession.shared.upload(for: req, fromFile: fileURL)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw APIError.server(status: (response as? HTTPURLResponse)?.statusCode ?? 0, message: "R2 upload failed")
