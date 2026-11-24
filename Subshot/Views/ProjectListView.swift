@@ -345,14 +345,31 @@ struct ProjectListView: View {
         .overlay {
             if isFiltering {
                 EmptyView()
-            } else if viewModel.isLoading && viewModel.projects.isEmpty && viewModel.folders.isEmpty {
-                ProgressView()
-            } else if viewModel.projects.isEmpty && viewModel.folders.isEmpty {
-                ContentUnavailableView(
-                    language.t("projectListView.emptyTitle"),
-                    systemImage: "film.stack",
-                    description: Text(language.t("projectListView.emptyDescription"))
-                )
+            } else {
+                switch ProjectListContentState.of(hasItems: !(viewModel.projects.isEmpty && viewModel.folders.isEmpty),
+                                                  isLoading: viewModel.isLoading, loadError: viewModel.loadError) {
+                case .content:
+                    EmptyView()
+                case .loading:
+                    ProgressView()
+                case .failed(let message):
+                    // 2026-11-24 (audit #4) — offline / server error: say so, with a way to retry
+                    ContentUnavailableView {
+                        Label(language.t("projectListView.loadFailedTitle"), systemImage: "wifi.exclamationmark")
+                    } description: {
+                        Text(message)
+                    } actions: {
+                        Button(language.t("projectListView.retry")) { Task { await viewModel.load() } }
+                            .buttonStyle(.borderedProminent)
+                            .accessibilityIdentifier("projects.retry")
+                    }
+                case .empty:
+                    ContentUnavailableView(
+                        language.t("projectListView.emptyTitle"),
+                        systemImage: "film.stack",
+                        description: Text(language.t("projectListView.emptyDescription"))
+                    )
+                }
             }
         }
         .overlay(alignment: .bottomTrailing) {

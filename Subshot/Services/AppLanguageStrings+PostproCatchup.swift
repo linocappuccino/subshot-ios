@@ -6,6 +6,8 @@ import Foundation
 extension AppLanguage {
     static let postproCatchupStrings: [String: [String: String]] = [
         "de": [
+            "projectListView.loadFailedTitle": "Projekte konnten nicht geladen werden",
+            "projectListView.retry": "Erneut versuchen",
             "pp.all": "Alle",
             "pp.unassigned": "Nicht zugeordnet",
             "pp.addLanguage": "+ Sprache",
@@ -77,6 +79,8 @@ extension AppLanguage {
             "pp.closeFeedbackMessage": "Die Kommentare dieser Version ({count}) gehen gesammelt ans Team. Wenn du das Feedback abschliesst, kann niemand mehr Feedback geben bis zur nächsten Feedback-Runde.",
         ],
         "en": [
+            "projectListView.loadFailedTitle": "Couldn't load the projects",
+            "projectListView.retry": "Try again",
             "pp.all": "All",
             "pp.unassigned": "Not assigned",
             "pp.addLanguage": "+ Language",

@@ -106,6 +106,8 @@ final class BoardWebPool: NSObject, WKScriptMessageHandler, WKNavigationDelegate
     // MARK: WKScriptMessageHandler
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        // 2026-11-24 (audit #3) — only the board page itself (main frame on app.subshot.ch) may talk to the app
+        guard BoardWebPolicy.acceptsMessage(isMainFrame: message.frameInfo.isMainFrame, host: message.frameInfo.securityOrigin.host) else { return }
         guard let body = message.body as? [String: Any] else { return }
         if body["type"] as? String == "warm" { signedIn = body["signedIn"] as? Bool; BoardNavLog.write("warm signedIn=\(String(describing: signedIn))") }
         if body["type"] as? String == "ready" { BoardNavLog.write("ready") ; startProbe() }
@@ -182,7 +184,13 @@ final class BoardWebPool: NSObject, WKScriptMessageHandler, WKNavigationDelegate
         }
         // links that leave the app (Google Maps, inspiration sites, downloads …) open in Safari
         if action.navigationType == .linkActivated || action.targetFrame == nil, target.host != Self.host {
-            UIApplication.shared.open(target)
+            if BoardWebPolicy.isExternalOpenable(target) { UIApplication.shared.open(target) }
+            return decisionHandler(.cancel)
+        }
+        // 2026-11-24 (audit #2) — the board PAGE (main frame) only ever shows Subshot / Clerk / R2; a redirect or
+        // script navigation anywhere else goes to Safari instead. Embedded iframes (videos, previews) stay as they are.
+        if action.targetFrame?.isMainFrame == true, !BoardWebPolicy.isAllowedPage(target) {
+            if BoardWebPolicy.isExternalOpenable(target) { UIApplication.shared.open(target) }
             return decisionHandler(.cancel)
         }
         decisionHandler(.allow)

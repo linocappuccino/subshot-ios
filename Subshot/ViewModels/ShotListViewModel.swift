@@ -819,7 +819,7 @@ final class ShotListViewModel: ObservableObject {
         // section now, not bumped to "Ohne Abschnitt" — matches the backend,
         // which does the same real deletion (2026-07-11).
         let removedSceneIds = Set(scenes.filter { $0.sectionId == section.id }.map(\.id))
-        sections.removeAll { $0.id == section.id }
+        sections = ShotlistFilter.afterShotlistDelete(sections, deletedId: section.id)
         scenes.removeAll { removedSceneIds.contains($0.id) }
         shots.removeAll { shot in
             guard let sceneId = shot.sceneId else { return false }
@@ -827,6 +827,8 @@ final class ShotListViewModel: ObservableObject {
         }
         do {
             try await APIClient.shared.deleteSection(section.id)
+            // the server's actual result (kept as a post-production group or gone)
+            await load(resetGeneration: false, includeSecondary: false)
         } catch {
             errorMessage = error.localizedDescription
         }

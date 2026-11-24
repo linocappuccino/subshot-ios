@@ -62,12 +62,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             UIView.setAnimationsEnabled(false)
         }
         #endif
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
-            guard granted else { return }
-            DispatchQueue.main.async {
-                application.registerForRemoteNotifications()
-            }
-        }
+        // 2026-11-24 (audit #7) — no permission prompt at the first start any more: only register when the
+        // user already allowed it; the question itself comes when notifications are opened (PushPermission)
+        PushPermission.registerIfAlreadyAllowed()
         return true
     }
 
@@ -79,7 +76,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     }
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
-        print("[Push] Remote notification registration failed (expected until the Xcode Push Notifications capability + server APNs key are set up): \(error)")
+        #if DEBUG
+        print("[Push] Remote notification registration failed: \(error)")
+        #endif
     }
 
     /// Show the alert even while the app is open — otherwise a scene-timer

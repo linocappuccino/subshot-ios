@@ -190,4 +190,18 @@ enum ShotlistFilter {
     static func visible(_ sections: [SceneSection], sectionIdsWithScenes: Set<String>) -> [SceneSection] {
         sections.filter { isShotlist($0, sectionIdsWithScenes: sectionIdsWithScenes) }
     }
+
+    /// 2026-11-24 (audit #10) — local state right after a shot list is deleted. The server keeps a section that
+    /// is in post-production as a pure post-production group (is_unplanned, all videos stay — main.py
+    /// _delete_section_cascade); so it stays here too (hidden from the shot list, its tiles stay in
+    /// Post-production). Only a section outside post-production disappears. The next load syncs the rest.
+    static func afterShotlistDelete(_ sections: [SceneSection], deletedId: String) -> [SceneSection] {
+        sections.compactMap { s in
+            guard s.id == deletedId else { return s }
+            guard s.inPostproduction else { return nil }
+            var kept = s
+            kept.isUnplanned = true
+            return kept
+        }
+    }
 }

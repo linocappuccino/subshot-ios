@@ -18,6 +18,13 @@ struct NotificationsSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        bodyContent
+            // 2026-11-24 (audit #7) — the push question comes here, when notifications are opened
+            .onAppear { PushPermission.requestIfNeeded() }
+    }
+
+    @ViewBuilder
+    private var bodyContent: some View {
         NavigationStack {
             List {
                 if viewModel.notifications.isEmpty {

@@ -147,7 +147,10 @@ struct AsyncShotThumbnail: View {
                 // and impossible to diagnose without a compiler/device
                 // (Lino's Postproduction "tiles are empty" report). Log the
                 // actual error so a next repro at least shows WHY.
-                print("[AsyncShotThumbnail] fetch failed (attempt \(attempt + 1)/3) for \(path): \(error)")
+                // 2026-11-24 (audit #6) — DEBUG builds only, and without the query (the signature)
+                #if DEBUG
+                print("[AsyncShotThumbnail] fetch failed (attempt \(attempt + 1)/3) for \(LogRedact.url(path)): \(error)")
+                #endif
                 if attempt < 2 {
                     try? await Task.sleep(nanoseconds: 400_000_000 * UInt64(attempt + 1))
                 }

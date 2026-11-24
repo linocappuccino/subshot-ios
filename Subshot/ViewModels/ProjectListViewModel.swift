@@ -17,6 +17,9 @@ final class ProjectListViewModel: ObservableObject {
     @Published var folders: [ProjectFolder] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
+    /// 2026-11-24 (audit #4) — the last LOAD failed (offline, server error): the list shows it with «Erneut
+    /// versuchen» instead of the misleading «Noch keine Projekte»; cleared by the next successful load
+    @Published var loadError: String?
     /// Batched notifications (currently just todo-item assignments — see the
     /// backend Notification model docstring for the collapsing logic).
     @Published var notifications: [AppNotification] = []
@@ -39,7 +42,9 @@ final class ProjectListViewModel: ObservableObject {
         do {
             projects = try await APIClient.shared.listProjects(folderId: folderId)
             folders = try await APIClient.shared.listFolders(parentFolderId: folderId)
+            loadError = nil
         } catch {
+            if !APIError.isCancellation(error) { loadError = error.localizedDescription }
             // See APIError.isCancellation — a cancelled request (e.g. this
             // same load() still running from the initial .task when
             // .refreshable fires it again) isn't a real failure and
@@ -308,5 +313,18 @@ final class ProjectListViewModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+
+/// 2026-11-24 (audit #4) — what the Projects list shows when it has nothing to list (unit-tested)
+enum ProjectListContentState: Equatable {
+    case content, loading, failed(String), empty
+
+    nonisolated static func of(hasItems: Bool, isLoading: Bool, loadError: String?) -> ProjectListContentState {
+        if hasItems { return .content }
+        if isLoading { return .loading }
+        if let loadError { return .failed(loadError) }
+        return .empty
     }
 }
