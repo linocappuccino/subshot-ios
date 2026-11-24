@@ -1,0 +1,26 @@
+name: API audit (read-only)
+# 2026-11-24 — signed-in GET check of every main screen's API calls as the test account (no writes, no secrets
+# in the log). Start: push a tag `api-audit-<n>`.
+on:
+  push:
+    tags: ['api-audit-*']
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/playwright:v1.49.1-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Playwright
+        run: npm init -y >/dev/null && npm i playwright@1.49.1 >/dev/null
+      - name: Check
+        env:
+          DEBUG_TICKET_SECRET: ${{ secrets.DEBUG_TICKET_SECRET }}
+        run: node .github/api-audit/check.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: api-audit
+          path: api-audit.json
+          if-no-files-found: ignore
